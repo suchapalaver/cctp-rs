@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.1] - 2026-05-19
+
+### Changed
+
+- Updated alloy dependencies — `alloy-primitives` and `alloy-sol-types`
+  from 1.5 to 1.6, and the workspace 2.0.x crates (`alloy-contract`,
+  `alloy-json-rpc`, `alloy-network`, `alloy-provider`, `alloy-rpc-types`,
+  `alloy-transport`, dev-only `alloy-signer-local`) from 2.0.4 to 2.0.5.
+  No source changes required; semver-compatible for callers on alloy
+  1.x / 2.0.x.
+
 ## [5.0.0] - 2026-05-06
 
 ### Added
