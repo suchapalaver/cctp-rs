@@ -16,7 +16,7 @@ alloy-chains = "0.2"
 alloy-contract = { version = "2.0", default-features = false }
 alloy-json-rpc = { version = "2.0", default-features = false }
 alloy-network = { version = "2.0", default-features = false }
-alloy-primitives = { version = "1.5", default-features = false, features = [
+alloy-primitives = { version = "1.6", default-features = false, features = [
     "serde",
     "std",
     "rlp",
@@ -26,7 +26,7 @@ alloy-provider = { version = "2.0", default-features = false, features = [
     "reqwest",
 ] }
 alloy-rpc-types = "2.0"
-alloy-sol-types = { version = "1.5", features = ["json"] }
+alloy-sol-types = { version = "1.6", features = ["json"] }
 alloy-transport = { version = "2.0", default-features = false }
 async-trait = "0.1"
 bon = "3.9"
