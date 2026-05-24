@@ -34,7 +34,7 @@ pub enum MintResult {
 }
 
 use super::bridge_trait::CctpBridge;
-use super::config::{PollingConfig, IRIS_API, IRIS_API_SANDBOX, MESSAGES_PATH_V2};
+use super::config::{iris_api_url, PollingConfig, MESSAGES_PATH_V2};
 use crate::contracts::erc20::Erc20Contract;
 use crate::contracts::message_transmitter::MessageTransmitter::MessageSent;
 use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contract};
@@ -115,11 +115,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         if let Some(url) = &self.api_url_override {
             return url.clone();
         }
-        if self.source_chain.is_testnet() {
-            Url::parse(IRIS_API_SANDBOX).unwrap()
-        } else {
-            Url::parse(IRIS_API).unwrap()
-        }
+        iris_api_url(self.source_chain)
     }
 
     /// Returns the source chain

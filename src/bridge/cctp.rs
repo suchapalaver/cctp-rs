@@ -19,7 +19,7 @@ use tracing::{debug, error, info, Instrument};
 use url::Url;
 
 use super::bridge_trait::CctpBridge;
-use super::config::{PollingConfig, ATTESTATION_PATH_V1, IRIS_API, IRIS_API_SANDBOX};
+use super::config::{iris_api_url, PollingConfig, ATTESTATION_PATH_V1};
 use crate::contracts::message_transmitter::MessageTransmitter::MessageSent;
 use crate::protocol::FinalityThreshold;
 
@@ -66,11 +66,7 @@ impl<P: Provider<Ethereum> + Clone> Cctp<P> {
         if let Some(url) = &self.api_url_override {
             return url.clone();
         }
-        if self.source_chain.is_testnet() {
-            Url::parse(IRIS_API_SANDBOX).unwrap()
-        } else {
-            Url::parse(IRIS_API).unwrap()
-        }
+        iris_api_url(self.source_chain)
     }
 
     /// Returns the source chain
@@ -473,6 +469,7 @@ impl<P: Provider<Ethereum> + Clone> CctpBridge for Cctp<P> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::config::{IRIS_API, IRIS_API_SANDBOX};
     use super::*;
     use alloy_chains::NamedChain;
     use alloy_primitives::{Address, FixedBytes};
