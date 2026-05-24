@@ -450,17 +450,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                                 let attestation_bytes = message
                                     .attestation
                                     .as_ref()
-                                    .ok_or_else(|| {
-                                        spans::record_error_with_context(
-                                            "AttestationDataMissing",
-                                            "Attestation status is complete but attestation field is null",
-                                            Some("This indicates an unexpected API response format"),
-                                        );
-                                        error!(event = "attestation_data_missing");
-                                        CctpError::AttestationFailed(
-                                            AttestationFailureKind::AttestationMissing,
-                                        )
-                                    })?
+                                    .ok_or_else(super::attestation_data_missing)?
                                     .to_vec();
 
                                 let message_bytes = message
@@ -489,17 +479,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                                 Ok(Some((message_bytes, attestation_bytes)))
                             }
                             AttestationStatus::Failed => {
-                                spans::record_error_with_context(
-                                    "AttestationFailed",
-                                    "Circle API returned failed status for attestation",
-                                    Some(
-                                        "The message may be invalid or the source transaction may have failed",
-                                    ),
-                                );
-                                error!(event = "attestation_failed");
-                                Err(CctpError::AttestationFailed(
-                                    AttestationFailureKind::ApiReportedFailed,
-                                ))
+                                Err(super::attestation_api_reported_failed())
                             }
                             AttestationStatus::Pending | AttestationStatus::PendingConfirmations => {
                                 debug!(event = "attestation_pending");
