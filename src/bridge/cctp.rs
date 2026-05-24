@@ -15,7 +15,7 @@ use bon::Builder;
 use reqwest::{Client, Response};
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Instrument};
 use url::Url;
 
 use super::bridge_trait::CctpBridge;
@@ -119,75 +119,78 @@ impl<P: Provider<Ethereum> + Clone> Cctp<P> {
     ) -> Result<(Vec<u8>, FixedBytes<32>)> {
         let span =
             spans::get_message_sent_event(tx_hash, &self.source_chain, &self.destination_chain);
-        let _guard = span.enter();
 
-        let tx_receipt = match self.source_provider.get_transaction_receipt(tx_hash).await {
-            Ok(receipt) => receipt,
-            Err(e) => {
-                spans::record_error_with_context(
-                    "ReceiptRetrievalFailed",
-                    &format!("Failed to get transaction receipt: {e}"),
-                    Some("RPC call to get_transaction_receipt failed"),
-                );
-                error!(
-                    error = %e,
-                    event = "transaction_receipt_retrieval_failed"
-                );
-                return Err(e.into());
-            }
-        };
-
-        if let Some(tx_receipt) = tx_receipt {
-            // Calculate the event topic by hashing the event signature
-            let message_sent_topic = alloy_primitives::keccak256(b"MessageSent(bytes)");
-
-            let message_sent_log = tx_receipt
-                .inner
-                .logs()
-                .iter()
-                .find(|log| {
-                    log.topics()
-                        .first()
-                        .is_some_and(|topic| topic.as_slice() == message_sent_topic)
-                })
-                .ok_or_else(|| {
+        async move {
+            let tx_receipt = match self.source_provider.get_transaction_receipt(tx_hash).await {
+                Ok(receipt) => receipt,
+                Err(e) => {
                     spans::record_error_with_context(
-                        "MessageSentEventNotFound",
-                        "MessageSent event not found in transaction logs",
-                        Some(&format!(
-                            "Transaction contained {} logs but none matched MessageSent signature",
-                            tx_receipt.inner.logs().len()
-                        )),
+                        "ReceiptRetrievalFailed",
+                        &format!("Failed to get transaction receipt: {e}"),
+                        Some("RPC call to get_transaction_receipt failed"),
                     );
                     error!(
-                        available_logs = tx_receipt.inner.logs().len(),
-                        event = "message_sent_event_not_found"
+                        error = %e,
+                        event = "transaction_receipt_retrieval_failed"
                     );
-                    CctpError::MessageSentEventMissing { tx_hash }
-                })?;
+                    return Err(e.into());
+                }
+            };
 
-            // Decode the log data using the generated event bindings
-            let decoded = MessageSent::abi_decode_data(&message_sent_log.data().data)?;
+            if let Some(tx_receipt) = tx_receipt {
+                // Calculate the event topic by hashing the event signature
+                let message_sent_topic = alloy_primitives::keccak256(b"MessageSent(bytes)");
 
-            let message_sent_event = decoded.0.to_vec();
-            let message_hash = alloy_primitives::keccak256(&message_sent_event);
+                let message_sent_log = tx_receipt
+                    .inner
+                    .logs()
+                    .iter()
+                    .find(|log| {
+                        log.topics()
+                            .first()
+                            .is_some_and(|topic| topic.as_slice() == message_sent_topic)
+                    })
+                    .ok_or_else(|| {
+                        spans::record_error_with_context(
+                            "MessageSentEventNotFound",
+                            "MessageSent event not found in transaction logs",
+                            Some(&format!(
+                                "Transaction contained {} logs but none matched MessageSent signature",
+                                tx_receipt.inner.logs().len()
+                            )),
+                        );
+                        error!(
+                            available_logs = tx_receipt.inner.logs().len(),
+                            event = "message_sent_event_not_found"
+                        );
+                        CctpError::MessageSentEventMissing { tx_hash }
+                    })?;
 
-            info!(
-                message_hash = %hex::encode(message_hash),
-                message_length_bytes = message_sent_event.len(),
-                event = "message_sent_event_extracted"
-            );
+                // Decode the log data using the generated event bindings
+                let decoded = MessageSent::abi_decode_data(&message_sent_log.data().data)?;
 
-            Ok((message_sent_event, message_hash))
-        } else {
-            spans::record_error_with_context(
-                "TransactionNotFound",
-                "Transaction receipt not found",
-                Some("The transaction may not have been mined yet or the RPC node doesn't have it"),
-            );
-            error!(event = "transaction_not_found");
-            Err(CctpError::TransactionNotFound { tx_hash })
+                let message_sent_event = decoded.0.to_vec();
+                let message_hash = alloy_primitives::keccak256(&message_sent_event);
+
+                info!(
+                    message_hash = %hex::encode(message_hash),
+                    message_length_bytes = message_sent_event.len(),
+                    event = "message_sent_event_extracted"
+                );
+
+                Ok((message_sent_event, message_hash))
+            } else {
+                spans::record_error_with_context(
+                    "TransactionNotFound",
+                    "Transaction receipt not found",
+                    Some("The transaction may not have been mined yet or the RPC node doesn't have it"),
+                );
+                error!(event = "transaction_not_found");
+                Err(CctpError::TransactionNotFound { tx_hash })
+            }
         }
+        .instrument(span)
+        .await
     }
 
     /// Gets the attestation for a message hash from Circle's Iris API
@@ -245,134 +248,152 @@ impl<P: Provider<Ethereum> + Clone> Cctp<P> {
             max_attempts,
             poll_interval,
         );
-        let _guard = span.enter();
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(CctpError::Network)?;
-        let url = self.create_url(message_hash)?;
+        async move {
+            let client = Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .map_err(CctpError::Network)?;
+            let url = self.create_url(message_hash)?;
 
-        info!(
-            url = %url,
-            event = "attestation_polling_started"
-        );
+            info!(
+                url = %url,
+                event = "attestation_polling_started"
+            );
 
-        for attempt in 1..=max_attempts {
-            let attempt_span = spans::get_attestation(&url, attempt);
-            let _attempt_guard = attempt_span.enter();
-
-            let response = match self.fetch_attestation_response(&client, &url).await {
-                Ok(r) => r,
-                Err(e) => {
-                    spans::record_error_with_context(
-                        "HttpRequestFailed",
-                        &format!("Failed to fetch attestation: {e}"),
-                        Some(&format!("Attempt {attempt}/{max_attempts}")),
-                    );
-                    error!(
-                        error = %e,
-                        attempt = attempt,
-                        event = "attestation_http_request_failed"
-                    );
-                    return Err(e);
-                }
-            };
-
-            let status_code = response.status().as_u16();
-            let process_span = spans::process_attestation_response(status_code, attempt);
-            let _process_guard = process_span.enter();
-
-            // Handle rate limiting
-            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                let secs = 5 * 60;
-                debug!(sleep_secs = secs, event = "rate_limit_exceeded");
-                sleep(Duration::from_secs(secs)).await;
-                continue;
-            }
-
-            // Handle 404 status - treat as pending since the attestation likely doesn't exist yet
-            if response.status() == reqwest::StatusCode::NOT_FOUND {
-                debug!(event = "attestation_not_found");
-                sleep(Duration::from_secs(poll_interval)).await;
-                continue;
-            }
-
-            // Ensure the response status is successful before trying to parse JSON
-            response.error_for_status_ref()?;
-
-            // Get response body as text first for better error logging
-            let response_text = response.text().await?;
-
-            let attestation: AttestationResponse = match serde_json::from_str(&response_text) {
-                Ok(attestation) => attestation,
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        response_body = %response_text,
-                        message_hash = %hex::encode(message_hash),
-                        attempt = attempt,
-                        event = "attestation_decode_failed"
-                    );
-                    sleep(Duration::from_secs(poll_interval)).await;
-                    continue;
-                }
-            };
-
-            match attestation.status {
-                AttestationStatus::Complete => {
-                    let attestation_bytes = attestation
-                        .attestation
-                        .ok_or_else(|| {
+            for attempt in 1..=max_attempts {
+                let attempt_span = spans::get_attestation(&url, attempt);
+                let attempt_result: Result<Option<AttestationBytes>> = async {
+                    let response = match self.fetch_attestation_response(&client, &url).await {
+                        Ok(r) => r,
+                        Err(e) => {
                             spans::record_error_with_context(
-                                "AttestationDataMissing",
-                                "Attestation status is complete but attestation field is null",
-                                Some("This indicates an unexpected API response format"),
+                                "HttpRequestFailed",
+                                &format!("Failed to fetch attestation: {e}"),
+                                Some(&format!("Attempt {attempt}/{max_attempts}")),
                             );
-                            error!(event = "attestation_data_missing");
-                            CctpError::AttestationFailed(AttestationFailureKind::AttestationMissing)
-                        })?
-                        .to_vec();
+                            error!(
+                                error = %e,
+                                attempt = attempt,
+                                event = "attestation_http_request_failed"
+                            );
+                            return Err(e);
+                        }
+                    };
 
-                    info!(
-                        attestation_length_bytes = attestation_bytes.len(),
-                        event = "attestation_complete"
-                    );
-                    return Ok(attestation_bytes);
+                    let status_code = response.status().as_u16();
+                    let process_span = spans::process_attestation_response(status_code, attempt);
+
+                    async {
+                        // Handle rate limiting
+                        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                            let secs = 5 * 60;
+                            debug!(sleep_secs = secs, event = "rate_limit_exceeded");
+                            sleep(Duration::from_secs(secs)).await;
+                            return Ok(None);
+                        }
+
+                        // Handle 404 status - treat as pending since the attestation likely doesn't exist yet
+                        if response.status() == reqwest::StatusCode::NOT_FOUND {
+                            debug!(event = "attestation_not_found");
+                            sleep(Duration::from_secs(poll_interval)).await;
+                            return Ok(None);
+                        }
+
+                        // Ensure the response status is successful before trying to parse JSON
+                        response.error_for_status_ref()?;
+
+                        // Get response body as text first for better error logging
+                        let response_text = response.text().await?;
+
+                        let attestation: AttestationResponse =
+                            match serde_json::from_str(&response_text) {
+                                Ok(attestation) => attestation,
+                                Err(e) => {
+                                    error!(
+                                        error = %e,
+                                        response_body = %response_text,
+                                        message_hash = %hex::encode(message_hash),
+                                        attempt = attempt,
+                                        event = "attestation_decode_failed"
+                                    );
+                                    sleep(Duration::from_secs(poll_interval)).await;
+                                    return Ok(None);
+                                }
+                            };
+
+                        match attestation.status {
+                            AttestationStatus::Complete => {
+                                let attestation_bytes = attestation
+                                    .attestation
+                                    .ok_or_else(|| {
+                                        spans::record_error_with_context(
+                                            "AttestationDataMissing",
+                                            "Attestation status is complete but attestation field is null",
+                                            Some("This indicates an unexpected API response format"),
+                                        );
+                                        error!(event = "attestation_data_missing");
+                                        CctpError::AttestationFailed(
+                                            AttestationFailureKind::AttestationMissing,
+                                        )
+                                    })?
+                                    .to_vec();
+
+                                info!(
+                                    attestation_length_bytes = attestation_bytes.len(),
+                                    event = "attestation_complete"
+                                );
+                                Ok(Some(attestation_bytes))
+                            }
+                            AttestationStatus::Failed => {
+                                spans::record_error_with_context(
+                                    "AttestationFailed",
+                                    "Circle API returned failed status for attestation",
+                                    Some(
+                                        "The message may be invalid or the source transaction may have failed",
+                                    ),
+                                );
+                                error!(event = "attestation_failed");
+                                Err(CctpError::AttestationFailed(
+                                    AttestationFailureKind::ApiReportedFailed,
+                                ))
+                            }
+                            AttestationStatus::Pending | AttestationStatus::PendingConfirmations => {
+                                debug!(event = "attestation_pending");
+                                sleep(Duration::from_secs(poll_interval)).await;
+                                Ok(None)
+                            }
+                        }
+                    }
+                    .instrument(process_span)
+                    .await
                 }
-                AttestationStatus::Failed => {
-                    spans::record_error_with_context(
-                        "AttestationFailed",
-                        "Circle API returned failed status for attestation",
-                        Some(
-                            "The message may be invalid or the source transaction may have failed",
-                        ),
-                    );
-                    error!(event = "attestation_failed");
-                    return Err(CctpError::AttestationFailed(
-                        AttestationFailureKind::ApiReportedFailed,
-                    ));
-                }
-                AttestationStatus::Pending | AttestationStatus::PendingConfirmations => {
-                    debug!(event = "attestation_pending");
-                    sleep(Duration::from_secs(poll_interval)).await;
+                .instrument(attempt_span)
+                .await;
+
+                match attempt_result {
+                    Ok(Some(bytes)) => return Ok(bytes),
+                    Ok(None) => continue,
+                    Err(e) => return Err(e),
                 }
             }
-        }
 
-        spans::record_error_with_context(
-            "AttestationTimeout",
-            &format!("Attestation polling timed out after {max_attempts} attempts"),
-            Some(&format!(
-                "Total duration: {} seconds",
-                u64::from(max_attempts) * poll_interval
-            )),
-        );
-        error!(
-            total_duration_secs = u64::from(max_attempts) * poll_interval,
-            event = "attestation_timeout"
-        );
-        Err(CctpError::AttestationTimeout)
+            spans::record_error_with_context(
+                "AttestationTimeout",
+                &format!("Attestation polling timed out after {max_attempts} attempts"),
+                Some(&format!(
+                    "Total duration: {} seconds",
+                    u64::from(max_attempts) * poll_interval
+                )),
+            );
+            error!(
+                total_duration_secs = u64::from(max_attempts) * poll_interval,
+                event = "attestation_timeout"
+            );
+            Err(CctpError::AttestationTimeout)
+        }
+        .instrument(span)
+        .await
     }
 
     /// Constructs the Iris API URL for attestation polling

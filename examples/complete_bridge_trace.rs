@@ -109,7 +109,7 @@ use alloy_chains::NamedChain;
 use alloy_primitives::{Address, FixedBytes, TxHash};
 use alloy_provider::ProviderBuilder;
 use cctp_rs::{Cctp, CctpError};
-use tracing::{error, info, info_span};
+use tracing::{error, info, info_span, Instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
@@ -204,65 +204,68 @@ async fn demonstrate_complete_bridge_flow(
         destination_chain = %bridge.destination_chain(),
         operation_type = "full_bridge_flow"
     );
-    let _guard = span.enter();
 
-    // Step 1: Get MessageSent event (simulated)
-    info!(step = 1, event = "extracting_message_sent_event");
+    async {
+        // Step 1: Get MessageSent event (simulated)
+        info!(step = 1, event = "extracting_message_sent_event");
 
-    let example_tx_hash: TxHash =
-        "0x9f3ce6edbf3d1f08cfe3a20b7ce43c3d01e55fe3c2d7a9e5a2b5e5c8d6f9c2a1"
-            .parse()
-            .unwrap();
+        let example_tx_hash: TxHash =
+            "0x9f3ce6edbf3d1f08cfe3a20b7ce43c3d01e55fe3c2d7a9e5a2b5e5c8d6f9c2a1"
+                .parse()
+                .unwrap();
 
-    match bridge.get_message_sent_event(example_tx_hash).await {
-        Ok((message, hash)) => {
-            info!(
-                message_length_bytes = message.len(),
-                message_hash = %hash,
-                event = "message_sent_event_extracted_successfully"
-            );
+        match bridge.get_message_sent_event(example_tx_hash).await {
+            Ok((message, hash)) => {
+                info!(
+                    message_length_bytes = message.len(),
+                    message_hash = %hash,
+                    event = "message_sent_event_extracted_successfully"
+                );
+            }
+            Err(e) => {
+                info!(
+                    error = %e,
+                    expected = true,
+                    event = "message_sent_event_not_found_expected"
+                );
+            }
         }
-        Err(e) => {
-            info!(
-                error = %e,
-                expected = true,
-                event = "message_sent_event_not_found_expected"
-            );
+
+        // Step 2: Get attestation with retry
+        info!(step = 2, event = "polling_for_attestation");
+
+        let message_hash: FixedBytes<32> = FixedBytes::from([0xaa; 32]);
+
+        match bridge
+            .get_attestation(
+                message_hash,
+                cctp_rs::PollingConfig::default()
+                    .with_max_attempts(3)
+                    .with_poll_interval_secs(2),
+            )
+            .await
+        {
+            Ok(attestation) => {
+                info!(
+                    attestation_length_bytes = attestation.len(),
+                    event = "attestation_retrieved_successfully"
+                );
+            }
+            Err(e) => {
+                info!(
+                    error_type = "AttestationTimeout",
+                    expected = true,
+                    event = "attestation_timeout_expected"
+                );
+                // Don't log the full error as it's expected
+                let _ = e;
+            }
         }
+
+        info!(event = "bridge_operation_complete");
     }
-
-    // Step 2: Get attestation with retry
-    info!(step = 2, event = "polling_for_attestation");
-
-    let message_hash: FixedBytes<32> = FixedBytes::from([0xaa; 32]);
-
-    match bridge
-        .get_attestation(
-            message_hash,
-            cctp_rs::PollingConfig::default()
-                .with_max_attempts(3)
-                .with_poll_interval_secs(2),
-        )
-        .await
-    {
-        Ok(attestation) => {
-            info!(
-                attestation_length_bytes = attestation.len(),
-                event = "attestation_retrieved_successfully"
-            );
-        }
-        Err(e) => {
-            info!(
-                error_type = "AttestationTimeout",
-                expected = true,
-                event = "attestation_timeout_expected"
-            );
-            // Don't log the full error as it's expected
-            let _ = e;
-        }
-    }
-
-    info!(event = "bridge_operation_complete");
+    .instrument(span)
+    .await;
 }
 
 /// Demonstrates error tracking with OpenTelemetry attributes
@@ -279,51 +282,55 @@ async fn demonstrate_error_tracking(
         "error_tracking_demonstration",
         operation_type = "error_scenarios"
     );
-    let _guard = span.enter();
 
-    // Scenario 1: Transaction not found
-    info!(scenario = 1, event = "testing_transaction_not_found");
+    async {
+        // Scenario 1: Transaction not found
+        info!(scenario = 1, event = "testing_transaction_not_found");
 
-    let invalid_tx: TxHash = "0x0000000000000000000000000000000000000000000000000000000000000000"
-        .parse()
-        .unwrap();
+        let invalid_tx: TxHash =
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+                .parse()
+                .unwrap();
 
-    match bridge.get_message_sent_event(invalid_tx).await {
-        Ok(_) => {
-            info!(event = "unexpected_success");
+        match bridge.get_message_sent_event(invalid_tx).await {
+            Ok(_) => {
+                info!(event = "unexpected_success");
+            }
+            Err(e) => {
+                // Error is already recorded on span via record_error_with_context
+                info!(error_recorded = true, event = "error_attributes_captured");
+                // Note: error.type, error.message, error.context are now on the span
+                let _ = e;
+            }
         }
-        Err(e) => {
-            // Error is already recorded on span via record_error_with_context
-            info!(error_recorded = true, event = "error_attributes_captured");
-            // Note: error.type, error.message, error.context are now on the span
-            let _ = e;
+
+        // Scenario 2: Invalid message hash for attestation
+        info!(scenario = 2, event = "testing_attestation_not_found");
+
+        let invalid_hash: FixedBytes<32> = FixedBytes::from([0x00; 32]);
+
+        match bridge
+            .get_attestation(
+                invalid_hash,
+                cctp_rs::PollingConfig::default()
+                    .with_max_attempts(2)
+                    .with_poll_interval_secs(1),
+            )
+            .await
+        {
+            Ok(_) => {
+                info!(event = "unexpected_success");
+            }
+            Err(e) => {
+                info!(error_recorded = true, event = "error_attributes_captured");
+                let _ = e;
+            }
         }
+
+        info!(event = "error_tracking_demonstration_complete");
     }
-
-    // Scenario 2: Invalid message hash for attestation
-    info!(scenario = 2, event = "testing_attestation_not_found");
-
-    let invalid_hash: FixedBytes<32> = FixedBytes::from([0x00; 32]);
-
-    match bridge
-        .get_attestation(
-            invalid_hash,
-            cctp_rs::PollingConfig::default()
-                .with_max_attempts(2)
-                .with_poll_interval_secs(1),
-        )
-        .await
-    {
-        Ok(_) => {
-            info!(event = "unexpected_success");
-        }
-        Err(e) => {
-            info!(error_recorded = true, event = "error_attributes_captured");
-            let _ = e;
-        }
-    }
-
-    info!(event = "error_tracking_demonstration_complete");
+    .instrument(span)
+    .await;
 }
 
 /// Demonstrates chain validation error tracking
