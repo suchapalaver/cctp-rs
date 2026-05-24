@@ -101,11 +101,20 @@ pub struct CctpV2<P: Provider<Ethereum> + Clone> {
 
     /// Maximum fee willing to pay for fast transfer (in USDC atomic units)
     max_fee: Option<U256>,
+
+    /// Override the Iris API base URL. Primarily intended for pointing the
+    /// bridge at a local mock server (e.g. `wiremock`) in tests, or at a
+    /// custom Iris-compatible endpoint. When `None`, the URL is selected
+    /// from the source chain's mainnet/testnet status.
+    api_url_override: Option<Url>,
 }
 
 impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// Returns the CCTP v2 API URL for the current environment
     pub fn api_url(&self) -> Url {
+        if let Some(url) = &self.api_url_override {
+            return url.clone();
+        }
         if self.source_chain.is_testnet() {
             Url::parse(IRIS_API_SANDBOX).unwrap()
         } else {

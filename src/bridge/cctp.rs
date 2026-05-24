@@ -52,11 +52,20 @@ pub struct Cctp<P: Provider<Ethereum> + Clone> {
     source_chain: NamedChain,
     destination_chain: NamedChain,
     recipient: Address,
+
+    /// Override the Iris API base URL. Primarily intended for pointing the
+    /// bridge at a local mock server (e.g. `wiremock`) in tests, or at a
+    /// custom Iris-compatible endpoint. When `None`, the URL is selected
+    /// from the source chain's mainnet/testnet status.
+    api_url_override: Option<Url>,
 }
 
 impl<P: Provider<Ethereum> + Clone> Cctp<P> {
     /// Returns the CCTP API URL for the current environment
     pub fn api_url(&self) -> Url {
+        if let Some(url) = &self.api_url_override {
+            return url.clone();
+        }
         if self.source_chain.is_testnet() {
             Url::parse(IRIS_API_SANDBOX).unwrap()
         } else {
