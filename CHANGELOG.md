@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.2] - 2026-05-23
+
+### Fixed
+
+- OpenTelemetry traces no longer attribute events from unrelated async
+  tasks to CCTP attestation and message-extraction spans. Previous
+  versions held a `Span::enter()` guard live across `.await` points
+  inside `Cctp::get_attestation`, `Cctp::get_message_sent_event`, and
+  their v2 counterparts; in async Rust that leaves the span "current"
+  on the executor thread after the future yields, so events emitted
+  by other tasks landed under attestation spans and made production
+  traces misleading. The affected futures now attach their span via
+  `tracing::Instrument`, which correctly enters on poll and exits on
+  yield. The retry-loop demo in `examples/complete_bridge_trace.rs`
+  was updated to the same shape.
+
+### Changed
+
+- `cctp_rs::spans` module documentation no longer demonstrates the
+  unsafe `let _guard = span.enter();` pattern for async work. The
+  module-level example uses `tracing::Instrument`, and the
+  `record_error` / `record_error_with_context` doctests note that the
+  entered-guard pattern shown is for synchronous scopes only.
+
 ## [5.1.1] - 2026-05-19
 
 ### Changed
