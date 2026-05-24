@@ -138,6 +138,10 @@ pub fn get_attestation(url: &Url, attempt: u32) -> Span {
         "cctp_rs.get_attestation",
         url = %url,
         attempt = attempt,
+        error.type = tracing::field::Empty,
+        error.message = tracing::field::Empty,
+        error.context = tracing::field::Empty,
+        otel.status_code = "OK",
     )
 }
 
@@ -150,6 +154,10 @@ pub fn process_attestation_response(status_code: u16, attempt: u32) -> Span {
         "cctp_rs.process_attestation_response",
         status_code = status_code,
         attempt = attempt,
+        error.type = tracing::field::Empty,
+        error.message = tracing::field::Empty,
+        error.context = tracing::field::Empty,
+        otel.status_code = "OK",
     )
 }
 
