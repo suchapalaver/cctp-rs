@@ -15,12 +15,19 @@
 //!
 //! # Example
 //!
+//! These helpers return [`tracing::Span`]s ready to attach to either
+//! synchronous scopes via [`Span::in_scope`] or asynchronous work via
+//! [`tracing::Instrument`]. **Never hold a `Span::enter()` guard across an
+//! `.await` point** — in async Rust that leaks the entered span onto
+//! unrelated tasks after a scheduler switch and produces misleading traces.
+//!
 //! ```rust,no_run
 //! use cctp_rs::spans;
 //! use alloy_primitives::FixedBytes;
 //! use alloy_chains::NamedChain;
+//! use tracing::Instrument;
 //!
-//! // Create a span for attestation polling
+//! # async fn example() {
 //! let message_hash = FixedBytes::from([0u8; 32]);
 //! let span = spans::get_attestation_with_retry(
 //!     &message_hash,
@@ -29,8 +36,14 @@
 //!     30,  // max attempts
 //!     60,  // poll interval
 //! );
-//! let _guard = span.enter();
-//! // Your custom attestation logic here
+//!
+//! async {
+//!     // Your custom async attestation logic here — every `.await` is
+//!     // properly bracketed by the span via `Instrument`.
+//! }
+//! .instrument(span)
+//! .await;
+//! # }
 //! ```
 
 use alloy_chains::NamedChain;
@@ -259,6 +272,10 @@ pub fn get_transaction_receipt(tx_hash: TxHash, chain: &NamedChain) -> Span {
 ///
 /// # Example
 ///
+/// Call from inside a synchronous scope, or from inside an
+/// [`tracing::Instrument`]-attached future — never with a `Span::enter()`
+/// guard held across an `.await`.
+///
 /// ```rust,no_run
 /// use cctp_rs::spans;
 /// use cctp_rs::CctpError;
@@ -291,6 +308,10 @@ pub fn record_error<E: std::error::Error>(error: &E) {
 /// This variant allows adding additional context fields to the error.
 ///
 /// # Example
+///
+/// Call from inside a synchronous scope, or from inside an
+/// [`tracing::Instrument`]-attached future — never with a `Span::enter()`
+/// guard held across an `.await`.
 ///
 /// ```rust,no_run
 /// use cctp_rs::spans;
