@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use alloy_chains::NamedChain;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 /// Circle Iris API environment URLs
 ///
@@ -10,6 +12,18 @@ use serde::{Deserialize, Serialize};
 ///
 pub const IRIS_API: &str = "https://iris-api.circle.com";
 pub const IRIS_API_SANDBOX: &str = "https://iris-api-sandbox.circle.com";
+
+/// Returns the Iris API base URL for the given chain.
+///
+/// Selects [`IRIS_API_SANDBOX`] when `chain` is a testnet and [`IRIS_API`]
+/// otherwise.
+pub fn iris_api_url(chain: NamedChain) -> Url {
+    if chain.is_testnet() {
+        Url::parse(IRIS_API_SANDBOX).unwrap()
+    } else {
+        Url::parse(IRIS_API).unwrap()
+    }
+}
 
 /// CCTP v1 attestation API path
 pub const ATTESTATION_PATH_V1: &str = "/v1/attestations/";
