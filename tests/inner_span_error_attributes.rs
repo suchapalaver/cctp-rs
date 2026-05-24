@@ -215,6 +215,58 @@ async fn v1_attempt_span_records_http_request_failed() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn v1_process_response_span_records_attestation_data_missing() {
+    let (records, _guard) = install_record_subscriber();
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "complete",
+            "attestation": null
+        })))
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let provider = dummy_provider();
+    let bridge = Cctp::builder()
+        .source_chain(NamedChain::Mainnet)
+        .destination_chain(NamedChain::Arbitrum)
+        .source_provider(provider.clone())
+        .destination_provider(provider)
+        .recipient(Address::ZERO)
+        .api_url_override(api_override)
+        .build();
+
+    let result = bridge
+        .get_attestation(
+            FixedBytes::from([0x12u8; 32]),
+            PollingConfig::default()
+                .with_max_attempts(1)
+                .with_poll_interval_secs(1),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "expected polling to fail on complete status with null attestation"
+    );
+
+    let captured = records.lock().unwrap();
+    assert_field_recorded(
+        &captured,
+        "cctp_rs.process_attestation_response",
+        "error.type",
+        "AttestationDataMissing",
+    );
+    assert_field_recorded(
+        &captured,
+        "cctp_rs.process_attestation_response",
+        "otel.status_code",
+        "ERROR",
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn v2_process_response_span_records_attestation_failed() {
     let (records, _guard) = install_record_subscriber();
 
@@ -302,6 +354,120 @@ async fn v2_attempt_span_records_http_request_failed() {
     assert_field_recorded(
         &captured,
         "cctp_rs.get_attestation",
+        "otel.status_code",
+        "ERROR",
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn v2_process_response_span_records_attestation_data_missing() {
+    let (records, _guard) = install_record_subscriber();
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [
+                {
+                    "status": "complete",
+                    "message": "0xdeadbeef",
+                    "attestation": null
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let provider = dummy_provider();
+    let bridge = CctpV2Bridge::builder()
+        .source_chain(NamedChain::Mainnet)
+        .destination_chain(NamedChain::Linea)
+        .source_provider(provider.clone())
+        .destination_provider(provider)
+        .recipient(Address::ZERO)
+        .api_url_override(api_override)
+        .build();
+
+    let result = bridge
+        .get_attestation(
+            FixedBytes::from([0xabu8; 32]),
+            PollingConfig::fast_transfer()
+                .with_max_attempts(1)
+                .with_poll_interval_secs(1),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "expected polling to fail on complete status with null attestation"
+    );
+
+    let captured = records.lock().unwrap();
+    assert_field_recorded(
+        &captured,
+        "cctp_rs.process_attestation_response",
+        "error.type",
+        "AttestationDataMissing",
+    );
+    assert_field_recorded(
+        &captured,
+        "cctp_rs.process_attestation_response",
+        "otel.status_code",
+        "ERROR",
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn v2_process_response_span_records_message_data_missing() {
+    let (records, _guard) = install_record_subscriber();
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [
+                {
+                    "status": "complete",
+                    "message": null,
+                    "attestation": "0x1234abcd"
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let provider = dummy_provider();
+    let bridge = CctpV2Bridge::builder()
+        .source_chain(NamedChain::Mainnet)
+        .destination_chain(NamedChain::Linea)
+        .source_provider(provider.clone())
+        .destination_provider(provider)
+        .recipient(Address::ZERO)
+        .api_url_override(api_override)
+        .build();
+
+    let result = bridge
+        .get_attestation(
+            FixedBytes::from([0xabu8; 32]),
+            PollingConfig::fast_transfer()
+                .with_max_attempts(1)
+                .with_poll_interval_secs(1),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "expected polling to fail on complete status with null message"
+    );
+
+    let captured = records.lock().unwrap();
+    assert_field_recorded(
+        &captured,
+        "cctp_rs.process_attestation_response",
+        "error.type",
+        "MessageDataMissing",
+    );
+    assert_field_recorded(
+        &captured,
+        "cctp_rs.process_attestation_response",
         "otel.status_code",
         "ERROR",
     );
