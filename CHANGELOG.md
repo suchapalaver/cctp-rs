@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-05-24
+
+### Added
+
+- New `api_url_override: Option<Url>` builder field on `Cctp` and
+  `CctpV2`. When set, `api_url()` returns the override unchanged;
+  when unset, the existing mainnet/testnet selection over
+  `IRIS_API` / `IRIS_API_SANDBOX` is preserved. Lets callers point
+  the attestation polling loop at a custom Iris-compatible endpoint
+  (e.g. a self-hosted mirror or a local mock) without forking the
+  crate. Non-breaking — existing builders compile unchanged.
+
+### Fixed
+
+- Per-attempt and per-response inner spans
+  (`cctp_rs.get_attestation`, `cctp_rs.process_attestation_response`)
+  now carry the `error.type`, `error.message`, `error.context`, and
+  `otel.status_code` fields that `record_error_with_context` writes
+  for `HttpRequestFailed`, `AttestationFailed`,
+  `AttestationDataMissing`, and `MessageDataMissing`. Previous
+  versions omitted these field declarations at span creation, so
+  `tracing::Span::record` silently dropped the writes — TraceQL
+  queries like `{ span.error.type = "AttestationDataMissing" }`
+  returned zero hits even while the SDK was emitting the errors in
+  production. Operators relying on inner-span error attributes for
+  alerting will now see matches.
+
 ## [5.1.2] - 2026-05-23
 
 ### Fixed
