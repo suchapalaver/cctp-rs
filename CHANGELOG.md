@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `TransferMode` enum that names the four valid CCTP v2 burn
+  configurations (`Standard`, `Fast { max_fee }`,
+  `StandardWithHook { hook_data }`,
+  `FastWithHook { max_fee, hook_data }`). Selected via a single
+  `transfer_mode` builder field on `CctpV2Bridge`.
+- `CctpV2Bridge::transfer_mode()` accessor.
+
+### Changed
+
+- **Breaking:** `CctpV2Bridge::builder()` no longer accepts the
+  independent `fast_transfer(bool)`, `hook_data(Bytes)`, and
+  `max_fee(U256)` fields. Use `transfer_mode(TransferMode::…)`
+  instead. The `is_fast_transfer()`, `hook_data()`, `max_fee()`, and
+  `finality_threshold()` accessors are preserved and now derive from
+  the configured mode. Note that `max_fee()` returns
+  `Some(U256::ZERO)` (not `None`) for `TransferMode::Fast { max_fee:
+  U256::ZERO }` and `TransferMode::FastWithHook { max_fee:
+  U256::ZERO, .. }` — the prior shape always returned `None` when
+  the optional `.max_fee(...)` builder method was unset.
+- **Breaking:**
+  `TokenMessengerV2Contract::deposit_for_burn_with_hooks_transaction`
+  now takes `max_fee: U256` and `min_finality_threshold: u32`
+  arguments. The previous signature hardcoded standard finality with
+  zero fee, which excluded the hook + fast-finality burn that
+  Circle's `depositForBurnWithHook` supports natively.
+
+### Fixed
+
+- Fast transfer + hook configurations now actually send a
+  fast-finality burn on-chain. Previous versions silently fell back
+  to the standard-finality hook path while still reporting
+  `FinalityThreshold::Fast` from `finality_threshold()`, so the
+  reported mode and the transmitted `minFinalityThreshold` (and
+  `maxFee`) diverged. The accessor result and the burn now agree by
+  construction. Tracks issue #218.
+
 ## [5.2.0] - 2026-05-24
 
 ### Added

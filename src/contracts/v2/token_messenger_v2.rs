@@ -179,7 +179,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
         )
     }
 
-    /// Create transaction for depositForBurn with hooks
+    /// Create transaction for `depositForBurnWithHook`
     ///
     /// # Arguments
     ///
@@ -188,13 +188,19 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
     /// * `destination_domain` - CCTP domain ID for destination chain
     /// * `token_address` - USDC token contract address
     /// * `amount` - Amount to transfer
-    /// * `hook_data` - Arbitrary bytes to pass to destination chain for programmable actions
+    /// * `max_fee` - Maximum fee willing to pay. Use `U256::ZERO` for standard
+    ///   finality; supply a non-zero cap when pairing hooks with fast finality.
+    /// * `min_finality_threshold` - 1000 (fast) or 2000 (standard). Hooks are
+    ///   supported at both thresholds at the protocol level — pass whichever
+    ///   matches the intended transfer mode.
+    /// * `hook_data` - Arbitrary bytes to pass to destination chain for
+    ///   programmable actions
     ///
     /// # Hooks
     ///
     /// Hook data is opaque to CCTP but can be used by integrators to trigger
     /// actions on the destination chain (e.g., swap, lend, stake).
-    #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn deposit_for_burn_with_hooks_transaction(
         &self,
         from_address: Address,
@@ -202,6 +208,8 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
         destination_domain: DomainId,
         token_address: Address,
         amount: U256,
+        max_fee: U256,
+        min_finality_threshold: u32,
         hook_data: Bytes,
     ) -> TransactionRequest {
         info!(
@@ -210,11 +218,12 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             destination_domain = %destination_domain,
             token_address = %token_address,
             amount = %amount,
+            max_fee = %max_fee,
             hook_data_len = hook_data.len(),
             contract_address = %self.instance.address(),
             version = "v2",
             has_hooks = true,
-            finality_threshold = 2000,
+            finality_threshold = min_finality_threshold,
             event = "deposit_for_burn_hooks_transaction_created"
         );
 
@@ -225,8 +234,8 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
                 recipient.into_word(),
                 token_address,
                 Address::ZERO.into_word(), // destination_caller: 0x0 = anyone
-                U256::ZERO,                // max_fee: 0 for standard transfers
-                2000,                      // min_finality_threshold: 2000 = finalized
+                max_fee,
+                min_finality_threshold,
                 hook_data,
             )
             .from(from_address)

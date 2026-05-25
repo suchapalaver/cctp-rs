@@ -10,12 +10,14 @@ mod bridge_trait;
 mod cctp;
 mod config;
 pub mod multicall;
+mod transfer_mode;
 mod v2;
 
 pub use bridge_trait::CctpBridge;
 pub use cctp::Cctp;
 pub use config::PollingConfig;
 pub use multicall::{batch_token_state, TokenState};
+pub use transfer_mode::TransferMode;
 pub use v2::{CctpV2, MintResult};
 
 use crate::error::{AttestationFailureKind, CctpError};

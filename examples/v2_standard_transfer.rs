@@ -53,7 +53,7 @@ async fn main() -> Result<(), CctpError> {
         .source_provider(eth_provider)
         .destination_provider(linea_provider)
         .recipient(recipient)
-        // No fast_transfer flag = standard transfer
+        // Default transfer mode = TransferMode::Standard
         .build();
 
     println!("   ✅ Bridge created successfully\n");
@@ -164,8 +164,10 @@ async fn main() -> Result<(), CctpError> {
     println!("8️⃣ V2 Standard Transfer vs V1:");
     println!("   ✅ Unified contract addresses across chains");
     println!("   ✅ Explicit finality threshold (2000 = finalized)");
-    println!("   ✅ Support for fast transfers (with fast_transfer flag)");
-    println!("   ✅ Support for programmable hooks (with hook_data)");
+    println!("   ✅ Support for fast transfers (TransferMode::Fast)");
+    println!(
+        "   ✅ Support for programmable hooks (TransferMode::StandardWithHook / FastWithHook)"
+    );
     println!("   ✅ Same security level as v1 (finalized blocks)");
     println!("   ✅ No fees for standard transfers\n");
 

@@ -13,7 +13,7 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_provider::ProviderBuilder;
-use cctp_rs::{CctpV2, CctpV2Bridge, DomainId};
+use cctp_rs::{CctpV2, CctpV2Bridge, DomainId, TransferMode};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -290,8 +290,9 @@ fn validate_bridge_configurations() -> Result<(), Box<dyn std::error::Error>> {
         .source_provider(provider.clone())
         .destination_provider(provider.clone())
         .recipient(Address::ZERO)
-        .fast_transfer(true)
-        .max_fee(U256::from(1000))
+        .transfer_mode(TransferMode::Fast {
+            max_fee: U256::from(1000),
+        })
         .build();
 
     assert!(
@@ -309,8 +310,8 @@ fn validate_bridge_configurations() -> Result<(), Box<dyn std::error::Error>> {
     println!("   ✓ Max fee: 1000 (0.001 USDC)");
     println!("   ✓ Hooks: None\n");
 
-    // Test 3: With Hooks
-    println!("   With Hooks:");
+    // Test 3: Standard + Hooks
+    println!("   Standard + Hooks:");
     let hook_data = Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]);
     let hooks = CctpV2Bridge::builder()
         .source_chain(NamedChain::Mainnet)
@@ -318,12 +319,14 @@ fn validate_bridge_configurations() -> Result<(), Box<dyn std::error::Error>> {
         .source_provider(provider.clone())
         .destination_provider(provider.clone())
         .recipient(Address::ZERO)
-        .hook_data(hook_data.clone())
+        .transfer_mode(TransferMode::StandardWithHook {
+            hook_data: hook_data.clone(),
+        })
         .build();
 
     assert!(
         !hooks.is_fast_transfer(),
-        "Hooks (standard) should not be fast"
+        "StandardWithHook should not be fast"
     );
     assert_eq!(hooks.hook_data(), Some(&hook_data));
     assert_eq!(hooks.finality_threshold().as_u32(), 2000);
@@ -332,17 +335,18 @@ fn validate_bridge_configurations() -> Result<(), Box<dyn std::error::Error>> {
     println!("   ✓ Hooks: Present (4 bytes)");
     println!("   ✓ Hook data: 0xdeadbeef\n");
 
-    // Test 4: Fast + Hooks (priority test)
-    println!("   Fast + Hooks (priority test):");
+    // Test 4: Fast + Hooks
+    println!("   Fast + Hooks:");
     let fast_hooks = CctpV2Bridge::builder()
         .source_chain(NamedChain::Mainnet)
         .destination_chain(NamedChain::Linea)
         .source_provider(provider.clone())
         .destination_provider(provider)
         .recipient(Address::ZERO)
-        .fast_transfer(true)
-        .max_fee(U256::from(1000))
-        .hook_data(hook_data.clone())
+        .transfer_mode(TransferMode::FastWithHook {
+            max_fee: U256::from(1000),
+            hook_data: hook_data.clone(),
+        })
         .build();
 
     assert!(fast_hooks.is_fast_transfer(), "Should have fast_transfer");
@@ -354,12 +358,13 @@ fn validate_bridge_configurations() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(
         fast_hooks.finality_threshold().as_u32(),
         1000,
-        "Fast takes priority"
+        "FastWithHook reports — and sends — fast finality"
     );
+    assert_eq!(fast_hooks.max_fee(), Some(U256::from(1000)));
     println!("   ✓ Finality: 1000 (fast finality with hooks)");
     println!("   ✓ Fast transfer: enabled");
     println!("   ✓ Hooks: Present");
-    println!("   ✓ Priority: Fast finality + hooks both active\n");
+    println!("   ✓ Max fee: 1000 (passed through with hook)\n");
 
     Ok(())
 }

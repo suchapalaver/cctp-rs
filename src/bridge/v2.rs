@@ -19,6 +19,8 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, Instrument};
 use url::Url;
 
+use super::transfer_mode::TransferMode;
+
 /// Result of attempting to mint on the destination chain
 ///
 /// CCTP v2 is permissionless - anyone can relay a message once Circle's attestation
@@ -55,12 +57,12 @@ use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contrac
 /// # Example
 ///
 /// ```rust,no_run
-/// # use cctp_rs::CctpV2Bridge;
+/// # use cctp_rs::{CctpV2Bridge, TransferMode};
 /// # use alloy_chains::NamedChain;
 /// # use alloy_provider::ProviderBuilder;
 /// # use alloy_primitives::{Address, U256, Bytes};
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// // Standard transfer
+/// // Standard transfer (default)
 /// let provider = ProviderBuilder::new().connect("http://localhost:8545").await?;
 /// let bridge = CctpV2Bridge::builder()
 ///     .source_chain(NamedChain::Mainnet)
@@ -78,12 +80,32 @@ use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contrac
 ///     .source_provider(provider2.clone())
 ///     .destination_provider(provider2)
 ///     .recipient("0x742d35Cc6634C0532925a3b844Bc9e7595f8fA0d".parse()?)
-///     .fast_transfer(true)
-///     .max_fee(U256::from(100))
+///     .transfer_mode(TransferMode::FastWithHook {
+///         max_fee: U256::from(100),
+///         hook_data: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
+///     })
 ///     .build();
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Transfer mode selection
+///
+/// The four valid CCTP v2 configurations are expressed via [`TransferMode`]:
+///
+/// | Mode | Finality | Hook | On-chain call |
+/// |---|---|---|---|
+/// | [`Standard`](TransferMode::Standard) | 2000 (finalized) | none | `depositForBurn` |
+/// | [`Fast`](TransferMode::Fast) | 1000 (confirmed) | none | `depositForBurn` |
+/// | [`StandardWithHook`](TransferMode::StandardWithHook) | 2000 | yes | `depositForBurnWithHook` |
+/// | [`FastWithHook`](TransferMode::FastWithHook) | 1000 | yes | `depositForBurnWithHook` |
+///
+/// Earlier versions exposed `fast_transfer`, `hook_data`, and `max_fee` as
+/// independent builder fields. That shape allowed contradictory configs
+/// (e.g. fast + hook) that the bridge silently resolved to standard
+/// finality while still reporting fast — see [issue
+/// 218](https://github.com/semiotic-ai/cctp-rs/issues/218). The enum
+/// removes the precedence question by construction.
 #[derive(Builder, Clone, Debug)]
 pub struct CctpV2<P: Provider<Ethereum> + Clone> {
     source_provider: P,
@@ -92,15 +114,10 @@ pub struct CctpV2<P: Provider<Ethereum> + Clone> {
     destination_chain: NamedChain,
     recipient: Address,
 
-    /// Enable fast transfer (sub-30 second settlement)
+    /// Selects which v2 burn variant the bridge sends. Defaults to
+    /// [`TransferMode::Standard`].
     #[builder(default)]
-    fast_transfer: bool,
-
-    /// Optional hook data for programmable actions on destination chain
-    hook_data: Option<Bytes>,
-
-    /// Maximum fee willing to pay for fast transfer (in USDC atomic units)
-    max_fee: Option<U256>,
+    transfer_mode: TransferMode,
 
     /// Override the Iris API base URL. Primarily intended for pointing the
     /// bridge at a local mock server (e.g. `wiremock`) in tests, or at a
@@ -158,28 +175,38 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         &self.recipient
     }
 
-    /// Returns whether fast transfer is enabled
+    /// Returns the configured transfer mode.
+    pub fn transfer_mode(&self) -> &TransferMode {
+        &self.transfer_mode
+    }
+
+    /// Returns whether fast transfer is enabled (derived from
+    /// [`Self::transfer_mode`]).
     pub fn is_fast_transfer(&self) -> bool {
-        self.fast_transfer
+        self.transfer_mode.is_fast()
     }
 
-    /// Returns the hook data if set
+    /// Returns the hook data if the configured mode carries any.
     pub fn hook_data(&self) -> Option<&Bytes> {
-        self.hook_data.as_ref()
+        self.transfer_mode.hook_data()
     }
 
-    /// Returns the max fee if set
+    /// Returns the fast-transfer fee cap, or `None` when the mode is not a
+    /// fast variant. Standard modes implicitly use a zero `maxFee` on-chain.
     pub fn max_fee(&self) -> Option<U256> {
-        self.max_fee
+        if self.transfer_mode.is_fast() {
+            Some(self.transfer_mode.max_fee())
+        } else {
+            None
+        }
     }
 
-    /// Returns the finality threshold based on configuration
+    /// Returns the finality threshold for the configured mode.
+    ///
+    /// Always agrees with the `min_finality_threshold` the bridge will send
+    /// on-chain — both are derived from the same [`TransferMode`].
     pub fn finality_threshold(&self) -> FinalityThreshold {
-        if self.fast_transfer {
-            FinalityThreshold::Fast
-        } else {
-            FinalityThreshold::Standard
-        }
+        self.transfer_mode.finality_threshold()
     }
 
     /// Gets the `MessageSent` event data from a CCTP v2 bridge transaction
@@ -265,8 +292,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                     message_hash = %hex::encode(message_hash),
                     message_length_bytes = message_sent_event.len(),
                     version = "v2",
-                    fast_transfer = self.fast_transfer,
-                    has_hooks = self.hook_data.is_some(),
+                    fast_transfer = self.transfer_mode.is_fast(),
+                    has_hooks = self.transfer_mode.has_hook(),
                     event = "message_sent_event_extracted"
                 );
 
@@ -366,7 +393,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                 url = %url,
                 tx_hash = %tx_hash,
                 version = "v2",
-                fast_transfer = self.fast_transfer,
+                fast_transfer = self.transfer_mode.is_fast(),
                 finality_threshold = %self.finality_threshold(),
                 event = "attestation_polling_started"
             );
@@ -471,7 +498,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                                     message_length_bytes = message_bytes.len(),
                                     attestation_length_bytes = attestation_bytes.len(),
                                     version = "v2",
-                                    fast_transfer = self.fast_transfer,
+                                    fast_transfer = self.transfer_mode.is_fast(),
                                     event = "attestation_complete"
                                 );
                                 Ok(Some((message_bytes, attestation_bytes)))
@@ -557,36 +584,40 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         let token_messenger =
             TokenMessengerV2Contract::new(token_messenger_address, self.source_provider.clone());
 
-        let tx_request = if let Some(hook_data) = &self.hook_data {
-            // Use depositForBurnWithHook if hooks are configured
-            token_messenger.deposit_for_burn_with_hooks_transaction(
-                from,
-                self.recipient,
-                destination_domain,
-                token_address,
-                amount,
-                hook_data.clone(),
-            )
-        } else if self.fast_transfer {
-            // Use fast transfer variant
-            let max_fee = self.max_fee.unwrap_or(U256::ZERO);
-            token_messenger.deposit_for_burn_fast_transaction(
+        // Wire values come from the same `TransferMode` helpers the accessors
+        // expose, so `finality_threshold()` / `max_fee()` and the on-chain
+        // `minFinalityThreshold` / `maxFee` cannot drift apart — the structural
+        // defense behind the issue #218 fix.
+        let max_fee = self.transfer_mode.max_fee();
+        let min_finality_threshold = self.transfer_mode.finality_threshold().as_u32();
+
+        let tx_request = match self.transfer_mode.hook_data() {
+            Some(hook_data) => token_messenger.deposit_for_burn_with_hooks_transaction(
                 from,
                 self.recipient,
                 destination_domain,
                 token_address,
                 amount,
                 max_fee,
-            )
-        } else {
-            // Standard transfer
-            token_messenger.deposit_for_burn_transaction(
+                min_finality_threshold,
+                hook_data.clone(),
+            ),
+            None if self.transfer_mode.is_fast() => token_messenger
+                .deposit_for_burn_fast_transaction(
+                    from,
+                    self.recipient,
+                    destination_domain,
+                    token_address,
+                    amount,
+                    max_fee,
+                ),
+            None => token_messenger.deposit_for_burn_transaction(
                 from,
                 self.recipient,
                 destination_domain,
                 token_address,
                 amount,
-            )
+            ),
         };
 
         info!(
@@ -594,8 +625,9 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             amount = %amount,
             token_address = %token_address,
             destination_domain = %destination_domain,
-            fast_transfer = self.fast_transfer,
-            has_hooks = self.hook_data.is_some(),
+            fast_transfer = self.transfer_mode.is_fast(),
+            has_hooks = self.transfer_mode.has_hook(),
+            finality_threshold = %self.transfer_mode.finality_threshold(),
             version = "v2",
             event = "burn_transaction_initiated"
         );
@@ -785,7 +817,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
 
         let max_attempts = max_attempts.unwrap_or(60);
         let poll_interval = poll_interval.unwrap_or_else(|| {
-            if self.fast_transfer {
+            if self.transfer_mode.is_fast() {
                 self.destination_chain
                     .fast_transfer_confirmation_time_seconds()
                     .unwrap_or(5)
@@ -799,7 +831,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         info!(
             max_attempts = max_attempts,
             poll_interval_secs = poll_interval,
-            fast_transfer = self.fast_transfer,
+            fast_transfer = self.transfer_mode.is_fast(),
             version = "v2",
             event = "wait_for_receive_started"
         );
@@ -1129,8 +1161,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             token_address = %token_address,
             source_chain = ?self.source_chain,
             destination_chain = ?self.destination_chain,
-            fast_transfer = self.fast_transfer,
-            has_hooks = self.hook_data.is_some(),
+            fast_transfer = self.transfer_mode.is_fast(),
+            has_hooks = self.transfer_mode.has_hook(),
             version = "v2",
             event = "full_transfer_initiated"
         );
@@ -1147,7 +1179,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         // Note: The MessageSent event log contains zeros in the nonce field.
         // Circle fills in the actual nonce before signing, so we must use the message
         // returned by get_attestation (from Circle's API), not from the event log.
-        let polling_config = if self.fast_transfer {
+        let polling_config = if self.transfer_mode.is_fast() {
             PollingConfig::fast_transfer()
         } else {
             PollingConfig::default()
@@ -1254,11 +1286,11 @@ impl<P: Provider<Ethereum> + Clone> CctpBridge for CctpV2<P> {
     }
 
     fn supports_fast_transfer(&self) -> bool {
-        self.fast_transfer
+        self.transfer_mode.is_fast()
     }
 
     fn supports_hooks(&self) -> bool {
-        self.hook_data.is_some()
+        self.transfer_mode.has_hook()
     }
 
     fn finality_threshold(&self) -> Option<FinalityThreshold> {
@@ -1365,7 +1397,9 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .fast_transfer(true)
+            .transfer_mode(TransferMode::Fast {
+                max_fee: U256::ZERO,
+            })
             .build();
 
         assert!(fast.is_fast_transfer());
@@ -1398,7 +1432,9 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .hook_data(hook_data.clone())
+            .transfer_mode(TransferMode::StandardWithHook {
+                hook_data: hook_data.clone(),
+            })
             .build();
 
         assert!(with_hooks.supports_hooks());
@@ -1417,8 +1453,7 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .fast_transfer(true)
-            .max_fee(max_fee)
+            .transfer_mode(TransferMode::Fast { max_fee })
             .build();
 
         assert_eq!(bridge.max_fee(), Some(max_fee));
@@ -1456,9 +1491,10 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .fast_transfer(true)
-            .max_fee(U256::from(500))
-            .hook_data(Bytes::from(vec![1, 2, 3]))
+            .transfer_mode(TransferMode::FastWithHook {
+                max_fee: U256::from(500),
+                hook_data: Bytes::from(vec![1, 2, 3]),
+            })
             .build();
 
         assert_eq!(bridge.source_chain(), &NamedChain::Mainnet);
@@ -1504,8 +1540,9 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .fast_transfer(true)
-            .max_fee(U256::from(1000))
+            .transfer_mode(TransferMode::Fast {
+                max_fee: U256::from(1000),
+            })
             .build();
 
         // Verify configuration for fast transfer
@@ -1529,7 +1566,9 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .hook_data(hook_data.clone())
+            .transfer_mode(TransferMode::StandardWithHook {
+                hook_data: hook_data.clone(),
+            })
             .build();
 
         // Verify configuration for hooks transfer
@@ -1539,27 +1578,34 @@ mod tests {
     }
 
     #[test]
-    fn test_v2_contract_method_selection_priority() {
+    fn test_v2_fast_with_hook_uses_fast_finality_and_fee() {
         let provider =
             ProviderBuilder::new().connect_http("http://localhost:8545".parse().unwrap());
         let hook_data = Bytes::from(vec![1, 2, 3, 4]);
 
-        // Hooks should take priority over fast transfer
+        // FastWithHook combines fast finality with hook data and a fee cap.
+        // Previously the bridge silently fell back to standard finality with
+        // zero fee while still reporting fast — see issue #218.
         let bridge = CctpV2::builder()
             .source_chain(NamedChain::Mainnet)
             .destination_chain(NamedChain::Linea)
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .fast_transfer(true)
-            .max_fee(U256::from(1000))
-            .hook_data(hook_data.clone())
+            .transfer_mode(TransferMode::FastWithHook {
+                max_fee: U256::from(1000),
+                hook_data: hook_data.clone(),
+            })
             .build();
 
-        // Verify hooks take priority
         assert!(bridge.is_fast_transfer());
         assert_eq!(bridge.hook_data(), Some(&hook_data));
         assert_eq!(bridge.finality_threshold(), FinalityThreshold::Fast);
+        assert_eq!(bridge.max_fee(), Some(U256::from(1000)));
+        assert!(matches!(
+            bridge.transfer_mode(),
+            TransferMode::FastWithHook { .. }
+        ));
     }
 
     #[rstest]
@@ -1581,7 +1627,9 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .fast_transfer(true)
+            .transfer_mode(TransferMode::Fast {
+                max_fee: U256::ZERO,
+            })
             .build();
 
         assert!(bridge.supports_fast_transfer());
@@ -1704,7 +1752,9 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .fast_transfer(true)
+            .transfer_mode(TransferMode::Fast {
+                max_fee: U256::ZERO,
+            })
             .build();
 
         assert_eq!(fast.finality_threshold(), FinalityThreshold::Fast);
@@ -1797,17 +1847,30 @@ mod tests {
         let provider =
             ProviderBuilder::new().connect_http("http://localhost:8545".parse().unwrap());
 
-        // Without max_fee specified
-        let no_fee = CctpV2::builder()
+        // Fast with zero max_fee — still reports Some(ZERO) because the mode is fast.
+        // Standard modes report None.
+        let zero_fee = CctpV2::builder()
             .source_chain(NamedChain::Mainnet)
             .destination_chain(NamedChain::Linea)
             .source_provider(provider.clone())
             .destination_provider(provider.clone())
             .recipient(Address::ZERO)
-            .fast_transfer(true)
+            .transfer_mode(TransferMode::Fast {
+                max_fee: U256::ZERO,
+            })
             .build();
 
-        assert_eq!(no_fee.max_fee(), None);
+        assert_eq!(zero_fee.max_fee(), Some(U256::ZERO));
+
+        // Standard modes have no fee
+        let standard = CctpV2::builder()
+            .source_chain(NamedChain::Mainnet)
+            .destination_chain(NamedChain::Linea)
+            .source_provider(provider.clone())
+            .destination_provider(provider.clone())
+            .recipient(Address::ZERO)
+            .build();
+        assert_eq!(standard.max_fee(), None);
 
         // With max_fee specified
         let with_fee = CctpV2::builder()
@@ -1816,8 +1879,9 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .fast_transfer(true)
-            .max_fee(U256::from(500))
+            .transfer_mode(TransferMode::Fast {
+                max_fee: U256::from(500),
+            })
             .build();
 
         assert_eq!(with_fee.max_fee(), Some(U256::from(500)));
@@ -1835,7 +1899,9 @@ mod tests {
             .source_provider(provider.clone())
             .destination_provider(provider)
             .recipient(Address::ZERO)
-            .hook_data(hook_data.clone())
+            .transfer_mode(TransferMode::StandardWithHook {
+                hook_data: hook_data.clone(),
+            })
             .build();
 
         assert_eq!(bridge.hook_data(), Some(&hook_data));
