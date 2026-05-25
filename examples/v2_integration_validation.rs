@@ -397,24 +397,24 @@ fn validate_api_endpoints() -> Result<(), Box<dyn std::error::Error>> {
         mainnet_api.as_str().trim_end_matches('/')
     );
 
-    // Test URL construction with message hash
+    // Test URL construction with transaction hash
     let test_hash = [0xab; 32];
     let url = mainnet_bridge.create_url(test_hash.into())?;
 
     assert!(
-        url.as_str().contains("/v2/attestations/"),
-        "Should use v2 path"
+        url.as_str().contains("/v2/messages/"),
+        "Should use v2 messages path"
     );
     assert!(
-        url.as_str().contains("0xabab"),
-        "Should include hash with 0x prefix"
+        url.as_str().contains("transactionHash=0xabab"),
+        "Should include transaction hash query param with 0x prefix"
     );
     assert!(url
         .as_str()
-        .starts_with("https://iris-api.circle.com/v2/attestations/0x"));
+        .starts_with("https://iris-api.circle.com/v2/messages/"));
 
     println!("   ✓ Full URL format: {url}");
-    println!("   ✓ Path: /v2/attestations/");
+    println!("   ✓ Path: /v2/messages/{{domain}}?transactionHash=…");
     println!("   ✓ Hash format: 0x-prefixed\n");
 
     // Test testnet API
@@ -440,7 +440,16 @@ fn validate_api_endpoints() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let testnet_url = testnet_bridge.create_url(test_hash.into())?;
-    assert!(testnet_url.as_str().contains("iris-api-sandbox"));
+    assert!(
+        testnet_url
+            .as_str()
+            .starts_with("https://iris-api-sandbox.circle.com/v2/messages/"),
+        "Testnet should use sandbox v2 messages path"
+    );
+    assert!(
+        testnet_url.as_str().contains("transactionHash=0xabab"),
+        "Should include transaction hash query param with 0x prefix"
+    );
     println!("   ✓ Uses sandbox environment");
     println!("   ✓ Full URL format: {testnet_url}\n");
 
