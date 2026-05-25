@@ -1608,6 +1608,76 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn test_v2_fast_with_hook_calldata_carries_fast_finality_and_max_fee() {
+        use crate::contracts::v2::TokenMessengerV2;
+        use alloy_sol_types::SolCall;
+
+        let provider =
+            ProviderBuilder::new().connect_http("http://localhost:8545".parse().unwrap());
+        let hook_data = Bytes::from(vec![0xde, 0xad]);
+        let max_fee = U256::from(1000);
+
+        // Issue #218 was an accessor-vs-wire divergence: the bridge reported fast
+        // finality while the on-chain call carried standard finality and zero fee.
+        // Pin the fix to the wire by decoding the calldata the bridge would send
+        // and asserting `minFinalityThreshold` and `maxFee` directly.
+        let bridge = CctpV2::builder()
+            .source_chain(NamedChain::Mainnet)
+            .destination_chain(NamedChain::Linea)
+            .source_provider(provider.clone())
+            .destination_provider(provider.clone())
+            .recipient(Address::ZERO)
+            .transfer_mode(TransferMode::FastWithHook {
+                max_fee,
+                hook_data: hook_data.clone(),
+            })
+            .build();
+
+        let from = Address::repeat_byte(0xaa);
+        let token_address = Address::repeat_byte(0xbb);
+        let amount = U256::from(1_000_000_u64);
+        let destination_domain = bridge.destination_domain_id().unwrap();
+        let token_messenger_address = bridge.source_chain().token_messenger_v2_address().unwrap();
+        let token_messenger = TokenMessengerV2Contract::new(token_messenger_address, provider);
+
+        // Pull wire values from `bridge.transfer_mode()` — the same source `burn()`
+        // uses (`src/bridge/v2.rs:591-592`). A future refactor that drops either
+        // accessor must break this test before it can ship a wrong wire shape.
+        let mode = bridge.transfer_mode();
+        let mode_max_fee = mode.max_fee();
+        let mode_finality_threshold = mode.finality_threshold().as_u32();
+        let mode_hook_data = mode
+            .hook_data()
+            .expect("FastWithHook carries hook data")
+            .clone();
+
+        let tx_request = token_messenger.deposit_for_burn_with_hooks_transaction(
+            from,
+            *bridge.recipient(),
+            destination_domain,
+            token_address,
+            amount,
+            mode_max_fee,
+            mode_finality_threshold,
+            mode_hook_data,
+        );
+
+        let calldata = tx_request
+            .input
+            .input()
+            .expect("transaction request carries calldata");
+
+        let decoded = TokenMessengerV2::depositForBurnWithHookCall::abi_decode(calldata)
+            .expect("calldata decodes as depositForBurnWithHook");
+
+        assert_eq!(decoded.minFinalityThreshold, 1000);
+        assert_eq!(decoded.maxFee, max_fee);
+        assert_eq!(decoded.amount, amount);
+        assert_eq!(decoded.destinationDomain, destination_domain.as_u32());
+        assert_eq!(decoded.hookData, hook_data);
+    }
+
     #[rstest]
     #[case(NamedChain::Mainnet, NamedChain::Linea)]
     #[case(NamedChain::Arbitrum, NamedChain::Sonic)]
