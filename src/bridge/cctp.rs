@@ -243,8 +243,10 @@ impl<P: Provider<Ethereum> + Clone> Cctp<P> {
         message_hash: FixedBytes<32>,
         polling_config: PollingConfig,
     ) -> Result<AttestationBytes> {
+        polling_config.validate()?;
         let max_attempts = polling_config.max_attempts;
         let poll_interval = polling_config.poll_interval_secs;
+        let total_timeout_secs = polling_config.total_timeout_secs();
 
         let span = spans::get_attestation_with_retry(
             &message_hash,
@@ -367,13 +369,10 @@ impl<P: Provider<Ethereum> + Clone> Cctp<P> {
             spans::record_error_with_context(
                 "AttestationTimeout",
                 &format!("Attestation polling timed out after {max_attempts} attempts"),
-                Some(&format!(
-                    "Total duration: {} seconds",
-                    u64::from(max_attempts) * poll_interval
-                )),
+                Some(&format!("Total duration: {total_timeout_secs} seconds")),
             );
             error!(
-                total_duration_secs = u64::from(max_attempts) * poll_interval,
+                total_duration_secs = total_timeout_secs,
                 event = "attestation_timeout"
             );
             Err(CctpError::AttestationTimeout)

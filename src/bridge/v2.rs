@@ -342,8 +342,10 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         tx_hash: TxHash,
         polling_config: PollingConfig,
     ) -> Result<(Vec<u8>, AttestationBytes)> {
+        polling_config.validate()?;
         let max_attempts = polling_config.max_attempts;
         let poll_interval = polling_config.poll_interval_secs;
+        let total_timeout_secs = polling_config.total_timeout_secs();
 
         let span = spans::get_v2_attestation_with_retry(
             tx_hash,
@@ -500,13 +502,10 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             spans::record_error_with_context(
                 "AttestationTimeout",
                 &format!("Attestation polling timed out after {max_attempts} attempts"),
-                Some(&format!(
-                    "Total duration: {} seconds",
-                    u64::from(max_attempts) * poll_interval
-                )),
+                Some(&format!("Total duration: {total_timeout_secs} seconds")),
             );
             error!(
-                total_duration_secs = u64::from(max_attempts) * poll_interval,
+                total_duration_secs = total_timeout_secs,
                 event = "attestation_timeout"
             );
             Err(CctpError::AttestationTimeout)
@@ -743,13 +742,16 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// # Arguments
     ///
     /// * `message` - The canonical message bytes (from [`Self::get_attestation`])
-    /// * `max_attempts` - Maximum polling attempts (default: 60)
-    /// * `poll_interval` - Seconds between polls (default: based on transfer type and chain)
+    /// * `max_attempts` - Maximum polling attempts (default: 60). `Some(0)` is
+    ///   rejected with [`CctpError::InvalidConfig`].
+    /// * `poll_interval` - Seconds between polls (default: based on transfer
+    ///   type and chain). `Some(0)` is rejected with [`CctpError::InvalidConfig`].
     ///
     /// # Returns
     ///
     /// * `Ok(())` when the message has been received
     /// * `Err(CctpError::AttestationTimeout)` if max attempts exceeded
+    /// * `Err(CctpError::InvalidConfig)` if either input is `Some(0)`
     ///
     /// # Example
     ///
@@ -770,6 +772,17 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         max_attempts: Option<u32>,
         poll_interval: Option<u64>,
     ) -> Result<()> {
+        if matches!(max_attempts, Some(0)) {
+            return Err(CctpError::InvalidConfig(
+                "wait_for_receive max_attempts must be greater than 0".to_string(),
+            ));
+        }
+        if matches!(poll_interval, Some(0)) {
+            return Err(CctpError::InvalidConfig(
+                "wait_for_receive poll_interval must be greater than 0".to_string(),
+            ));
+        }
+
         let max_attempts = max_attempts.unwrap_or(60);
         let poll_interval = poll_interval.unwrap_or_else(|| {
             if self.fast_transfer {
