@@ -26,7 +26,7 @@ use alloy_network::EthereumWallet;
 use alloy_primitives::{address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_signer_local::PrivateKeySigner;
-use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, Erc20Contract};
+use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, Erc20Contract, TransferMode};
 use dotenvy::dotenv;
 use tracing::{info_span, Instrument};
 
@@ -255,8 +255,7 @@ async fn main() -> Result<(), CctpError> {
         .source_provider(arbitrum_sepolia_provider)
         .destination_provider(base_sepolia_provider)
         .recipient(wallet_address)
-        .fast_transfer(true) // Enable fast transfers!
-        .max_fee(max_fee) // Optional: set maximum fee willing to pay
+        .transfer_mode(TransferMode::Fast { max_fee }) // <30s settlement, capped fee
         .build();
 
     println!("   ✅ Fast transfer bridge created\n");

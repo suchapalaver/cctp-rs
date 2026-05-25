@@ -26,9 +26,9 @@
 //! ## Quick Start (V2, recommended)
 //!
 //! ```rust,no_run
-//! use cctp_rs::{CctpV2Bridge, CctpError, PollingConfig};
+//! use cctp_rs::{CctpV2Bridge, CctpError, PollingConfig, TransferMode};
 //! use alloy_chains::NamedChain;
-//! use alloy_primitives::FixedBytes;
+//! use alloy_primitives::{FixedBytes, U256};
 //!
 //! # async fn example() -> Result<(), CctpError> {
 //! # use alloy_provider::ProviderBuilder;
@@ -42,7 +42,7 @@
 //!     .source_provider(eth_provider)
 //!     .destination_provider(linea_provider)
 //!     .recipient("0x742d35Cc6634C0532925a3b844Bc9e7595f8fA0d".parse()?)
-//!     .fast_transfer(true)  // Enable sub-30 second settlement
+//!     .transfer_mode(TransferMode::Fast { max_fee: U256::from(100) })  // sub-30 second settlement
 //!     .build();
 //!
 //! // V2 uses transaction hash directly and returns both message and attestation
@@ -118,6 +118,7 @@
 //! - [`Cctp`] and [`CctpV2Bridge`] - Core CCTP bridge implementations for v1 and v2
 //! - [`CctpV1`] and [`CctpV2`] - Traits for chain-specific configurations
 //! - [`PollingConfig`] - Configuration for attestation polling behavior
+//! - [`TransferMode`] - Selects which v2 burn variant (standard / fast / with hook) the bridge sends
 //! - [`ParsedV2Message`] and [`ParsedV2MessageSummary`] - Parse canonical v2 messages into serializable structs
 //! - [`ParseMessageError`] - Error type for canonical v2 message parsing
 //! - [`InvalidDomainId`] and [`InvalidFinalityThreshold`] - Errors returned by `TryFrom<u32>` for [`DomainId`] / [`FinalityThreshold`]
@@ -152,7 +153,7 @@ mod provider;
 // Public API - minimal surface for 1.0.0 stability
 pub use bridge::{
     batch_token_state, Cctp, CctpBridge, CctpV2 as CctpV2Bridge, MintResult, PollingConfig,
-    TokenState,
+    TokenState, TransferMode,
 };
 pub use chain::addresses::{
     CCTP_V2_MESSAGE_TRANSMITTER_MAINNET, CCTP_V2_MESSAGE_TRANSMITTER_TESTNET,
