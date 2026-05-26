@@ -5,9 +5,24 @@ agent-facing file; `CLAUDE.md` points here.
 
 ## What this crate is
 
-A Rust SDK for Circle's Cross-Chain Transfer Protocol (CCTP), bridging USDC
-across 26+ EVM chains. Supports both CCTP v1 (legacy, 7 chains) and v2 (current,
-fast transfers with sub-30s settlement).
+A Rust SDK for Circle's Cross-Chain Transfer Protocol (CCTP) with two
+layers that have different coverage:
+
+- **Bridge SDK** (`CctpV2Bridge`, `Cctp`, `CctpV1` / `CctpV2` traits) —
+  burns USDC and relays attestations end-to-end. Source/destination
+  chains must return `true` from `NamedChain::supports_cctp_v2()`
+  (v2) or `CctpV1::is_supported()` (v1). Current coverage: 10
+  v2-capable chain families (7 v1 chain families plus Linea, Sonic,
+  Sei) with their testnets.
+- **Protocol parser** (`DomainId`, `ParsedV2Message`,
+  `ParsedV2MessageSummary`) — recognizes all 21 CCTP v2 domain IDs
+  Circle has announced, including non-EVM domains (Solana, Starknet
+  Testnet). Parsing is independent of whether the bridge SDK can
+  route to or from a given domain; see the README's "Protocol parser
+  — additional domains" section for the parse-only list.
+
+Supports both CCTP v1 (legacy) and v2 (current, fast transfers with
+sub-30s settlement).
 
 ## When to use what
 

@@ -66,6 +66,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `self.transfer_mode.finality_threshold().as_u32()` call and
   extends the issue #218 structural defense to all four
   `TransferMode` variants. Tracks issue #224.
+- README and AGENTS.md now distinguish the bridge SDK's supported
+  chains (the set where `NamedChain::supports_cctp_v2()` returns
+  `true`) from the broader set of CCTP v2 domain IDs that the
+  protocol parser can decode. The previous "26+ networks" claim
+  conflated protocol parsing reach with bridge SDK reach; the
+  bridge SDK currently routes 10 v2-capable chain families with
+  testnets, while the parser recognizes all 21 announced domains
+  including non-EVM ones. Tracks issue #216.
 
 ### Fixed
 
