@@ -87,6 +87,13 @@ pub enum CctpError {
     #[error("Timeout waiting for attestation")]
     AttestationTimeout,
 
+    /// Polling for destination-chain receipt confirmation exhausted its
+    /// attempt budget. The attestation may already be complete; what
+    /// timed out is observing the message as received on the
+    /// destination chain.
+    #[error("Timeout waiting for destination-chain message receipt")]
+    ReceiveTimeout,
+
     #[error("Invalid URL: {0}")]
     InvalidUrl(#[from] url::ParseError),
 
@@ -173,7 +180,10 @@ impl CctpError {
     ///
     /// Useful for implementing retry logic for transient failures.
     pub fn is_timeout(&self) -> bool {
-        if matches!(self, CctpError::AttestationTimeout) {
+        if matches!(
+            self,
+            CctpError::AttestationTimeout | CctpError::ReceiveTimeout
+        ) {
             return true;
         }
 
@@ -258,8 +268,23 @@ mod tests {
         let err = CctpError::AttestationTimeout;
         assert!(err.is_timeout());
 
+        let err = CctpError::ReceiveTimeout;
+        assert!(err.is_timeout());
+
         let err = CctpError::InvalidConfig("some error".to_string());
         assert!(!err.is_timeout());
+    }
+
+    #[test]
+    fn test_receive_timeout_renders_distinct_message() {
+        assert_eq!(
+            CctpError::ReceiveTimeout.to_string(),
+            "Timeout waiting for destination-chain message receipt",
+        );
+        assert_ne!(
+            CctpError::ReceiveTimeout.to_string(),
+            CctpError::AttestationTimeout.to_string(),
+        );
     }
 
     #[test]

@@ -789,7 +789,10 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// # Returns
     ///
     /// * `Ok(())` when the message has been received
-    /// * `Err(CctpError::AttestationTimeout)` if max attempts exceeded
+    /// * `Err(CctpError::ReceiveTimeout)` if max attempts exceeded.
+    ///   This is distinct from [`CctpError::AttestationTimeout`] — by
+    ///   the time this method runs, attestation has already succeeded;
+    ///   what timed out is observing the destination-chain receipt.
     /// * `Err(CctpError::InvalidConfig)` if either input is `Some(0)`
     ///
     /// # Example
@@ -870,7 +873,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             event = "wait_for_receive_timeout"
         );
 
-        Err(CctpError::AttestationTimeout)
+        Err(CctpError::ReceiveTimeout)
     }
 
     /// Attempt to mint, gracefully handling if already relayed
@@ -2211,6 +2214,103 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    mod wait_for_receive_timeout {
+        //! Regression coverage for #217: when polling exhausts the
+        //! attempt budget, `wait_for_receive` must return the receive-
+        //! specific timeout variant. `AttestationTimeout` would be
+        //! misleading — attestation is already complete by the time the
+        //! caller is waiting on the destination receipt.
+        use super::*;
+        use alloy_json_rpc::{RequestPacket, Response, ResponsePacket, ResponsePayload};
+        use alloy_provider::ProviderBuilder;
+        use alloy_rpc_client::RpcClient;
+        use std::sync::{Arc, Mutex};
+        use std::task::{Context, Poll};
+        use tower::Service;
+
+        /// Tower service that responds to every `eth_call` with an ABI-
+        /// encoded `false`, simulating a destination chain that never
+        /// observes the message as received.
+        #[derive(Clone, Default)]
+        struct AlwaysFalseEthCallTransport {
+            call_count: Arc<Mutex<u32>>,
+        }
+
+        impl Service<RequestPacket> for AlwaysFalseEthCallTransport {
+            type Response = ResponsePacket;
+            type Error = alloy_transport::TransportError;
+            type Future = alloy_transport::TransportFut<'static>;
+
+            fn poll_ready(
+                &mut self,
+                _cx: &mut Context<'_>,
+            ) -> Poll<std::result::Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, req: RequestPacket) -> Self::Future {
+                let call_count = self.call_count.clone();
+                Box::pin(async move {
+                    let RequestPacket::Single(req) = req else {
+                        panic!("wait_for_receive does not issue batch requests");
+                    };
+                    let id = req.id().clone();
+                    assert_eq!(
+                        req.method(),
+                        "eth_call",
+                        "wait_for_receive's polling loop only issues eth_call",
+                    );
+                    *call_count.lock().expect("call-count mutex") += 1;
+                    // `is_message_received` calls `usedNonces(bytes32) returns
+                    // (uint256)` and interprets a non-zero return as "received".
+                    // 32 zero bytes decodes to `U256::ZERO`, which the SDK
+                    // maps to "not received" — exactly the state we want to
+                    // pin so the polling loop runs to exhaustion.
+                    let unused_nonce_json =
+                        "\"0x0000000000000000000000000000000000000000000000000000000000000000\"";
+                    let raw =
+                        serde_json::value::RawValue::from_string(unused_nonce_json.to_string())
+                            .expect("static unused-nonce JSON parses");
+                    Ok(ResponsePacket::Single(Response {
+                        id,
+                        payload: ResponsePayload::Success(raw),
+                    }))
+                })
+            }
+        }
+
+        #[tokio::test(flavor = "current_thread", start_paused = true)]
+        async fn returns_receive_timeout_when_polling_exhausts() {
+            let transport = AlwaysFalseEthCallTransport::default();
+            let call_count = transport.call_count.clone();
+            let provider = ProviderBuilder::new()
+                .disable_recommended_fillers()
+                .connect_client(RpcClient::new(transport, true));
+            let bridge = CctpV2::builder()
+                .source_chain(NamedChain::Mainnet)
+                .destination_chain(NamedChain::Linea)
+                .source_provider(provider.clone())
+                .destination_provider(provider)
+                .recipient(Address::ZERO)
+                .build();
+
+            let err = bridge
+                .wait_for_receive(b"any message bytes", Some(3), Some(1))
+                .await
+                .expect_err("polling against a destination that never reports receipt must error");
+
+            assert!(
+                matches!(err, CctpError::ReceiveTimeout),
+                "wait_for_receive must return ReceiveTimeout, not AttestationTimeout: {err:?}",
+            );
+            assert_eq!(
+                *call_count.lock().expect("call-count mutex"),
+                3,
+                "polling must exhaust the configured attempt budget before timing out",
+            );
         }
     }
 }

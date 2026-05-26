@@ -21,9 +21,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authoritative source of truth for non-EVM domains such as
   `DomainId::Solana` and `DomainId::StarknetTestnet`. Tracks issue
   #219.
+- New `CctpError::ReceiveTimeout` variant, distinct from
+  `CctpError::AttestationTimeout`. Returned by
+  `CctpV2Bridge::wait_for_receive` when polling for destination-chain
+  receipt confirmation exhausts its attempt budget — at that point
+  attestation has already succeeded, so the failure is observing the
+  message as received in time, not waiting on attestation. Both
+  variants continue to satisfy `CctpError::is_timeout()` and therefore
+  `is_transient()`. Tracks issue #217.
 
 ### Changed
 
+- `CctpV2Bridge::wait_for_receive` now returns
+  `CctpError::ReceiveTimeout` instead of `CctpError::AttestationTimeout`
+  when the receive-confirmation polling loop exhausts its attempts.
+  `CctpError` is `#[non_exhaustive]`, so this is not a compile-time
+  break, but downstream code that pattern-matches on
+  `CctpError::AttestationTimeout` to detect a `wait_for_receive`
+  timeout must update its match to cover the new variant (or rely on
+  `is_timeout()` / `is_transient()`, which already include both).
+  Tracks issue #217.
 - **Breaking:** `ParsedV2MessageSummary::sender` and `recipient` are
   now `Option<Address>` instead of `Address`, and `destination_caller`
   is `None` for non-EVM destinations as well as for permissionless
