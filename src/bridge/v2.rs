@@ -591,8 +591,20 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         let max_fee = self.transfer_mode.max_fee();
         let min_finality_threshold = self.transfer_mode.finality_threshold().as_u32();
 
-        let tx_request = match self.transfer_mode.hook_data() {
-            Some(hook_data) => token_messenger.deposit_for_burn_with_hooks_transaction(
+        // Match the enum variants directly: `TransferMode` is `#[non_exhaustive]`
+        // for external callers, but exhaustiveness still applies in-crate, so a
+        // new variant forces a compile error here until the wire shape is
+        // decided.
+        let tx_request = match &self.transfer_mode {
+            TransferMode::Standard => token_messenger.deposit_for_burn_transaction(
+                from,
+                self.recipient,
+                destination_domain,
+                token_address,
+                amount,
+                min_finality_threshold,
+            ),
+            TransferMode::Fast { .. } => token_messenger.deposit_for_burn_fast_transaction(
                 from,
                 self.recipient,
                 destination_domain,
@@ -600,10 +612,10 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                 amount,
                 max_fee,
                 min_finality_threshold,
-                hook_data.clone(),
             ),
-            None if self.transfer_mode.is_fast() => token_messenger
-                .deposit_for_burn_fast_transaction(
+            TransferMode::StandardWithHook { hook_data }
+            | TransferMode::FastWithHook { hook_data, .. } => token_messenger
+                .deposit_for_burn_with_hooks_transaction(
                     from,
                     self.recipient,
                     destination_domain,
@@ -611,15 +623,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                     amount,
                     max_fee,
                     min_finality_threshold,
+                    hook_data.clone(),
                 ),
-            None => token_messenger.deposit_for_burn_transaction(
-                from,
-                self.recipient,
-                destination_domain,
-                token_address,
-                amount,
-                min_finality_threshold,
-            ),
         };
 
         info!(
@@ -1987,11 +1992,11 @@ mod tests {
         //! Issue #229: the existing fast-with-hook wire-shape test
         //! (`test_v2_fast_with_hook_calldata_carries_fast_finality_and_max_fee`)
         //! builds a `TokenMessengerV2Contract` directly and never exercises
-        //! the `match self.transfer_mode.hook_data()` arm inside `burn()`
-        //! itself (`src/bridge/v2.rs:594-621`). That dispatch was the home
-        //! of the issue #218 bug — a future refactor that re-orders the
-        //! arms could silently re-introduce the same defect with every
-        //! accessor-level test still green.
+        //! the `match &self.transfer_mode` dispatch inside `burn()` itself
+        //! (`src/bridge/v2.rs:598-628`). That dispatch was the home of the
+        //! issue #218 bug — a future refactor that rewires an arm to the
+        //! wrong contract method could silently re-introduce the same
+        //! defect with every accessor-level test still green.
         //!
         //! The tests below drive `bridge.burn(amount, from, token).await`
         //! against a capturing in-process JSON-RPC transport, then decode
