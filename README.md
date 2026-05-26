@@ -11,7 +11,7 @@ A production-ready Rust implementation of Circle's Cross-Chain Transfer Protocol
 ## Features
 
 - 🚀 **Type-safe** contract interactions using Alloy
-- 🔄 **Multi-chain support** for 26+ mainnet and testnet networks
+- 🔄 **Bridge SDK** for 10 v2-capable EVM mainnet chains plus 6 USDC testnets; **protocol parser** recognizes all 21 CCTP v2 domain IDs (including non-EVM domains such as Solana and Starknet Testnet)
 - 📦 **Builder pattern** for intuitive API usage
 - ⚡ **CCTP v2 support** with fast transfers (<30s settlement)
 - 🤝 **Relayer-aware** APIs for permissionless v2 relay handling
@@ -21,7 +21,22 @@ A production-ready Rust implementation of Circle's Cross-Chain Transfer Protocol
 
 ## Supported Chains
 
-### CCTP v2 (Current)
+cctp-rs has two layers with different coverage. Read both before
+choosing an integration path.
+
+- **Bridge SDK** — `CctpV2Bridge`, `Cctp`, and the `CctpV1` / `CctpV2`
+  traits on `alloy_chains::NamedChain` can burn USDC and relay
+  attestations end-to-end for the chains listed below. These are the
+  chains where `NamedChain::supports_cctp_v2()` returns `true`.
+- **Protocol parser** — `ParsedV2Message`, `ParsedV2MessageSummary`,
+  and the `DomainId` enum recognize every CCTP v2 domain ID Circle has
+  announced (21 at time of writing), including non-EVM domains.
+  Parsing a domain is independent of whether the bridge SDK can route
+  to or from it.
+
+### Bridge SDK — supported chains
+
+Chains returning `true` from `NamedChain::supports_cctp_v2()`:
 
 #### Mainnet
 
@@ -33,9 +48,28 @@ A production-ready Rust implementation of Circle's Cross-Chain Transfer Protocol
 - Sepolia, Arbitrum Sepolia, Base Sepolia, Optimism Sepolia
 - Avalanche Fuji, Polygon Amoy
 
+### Protocol parser — additional domains
+
+`DomainId` and `ParsedV2MessageSummary` recognize the following CCTP
+v2 domains, but the bridge SDK does **not** currently accept them as
+source or destination — `NamedChain::supports_cctp_v2()` returns
+`false` and the bridge builder will reject them:
+
+- Solana (5, non-EVM), Codex (12), World Chain (14), Monad (15),
+  BNB Smart Chain (17), XDC (18), HyperEVM (19), Ink (21), Plume (22),
+  Starknet Testnet (25, non-EVM), Arc Testnet (26)
+
+Use this list when you need to *inspect* messages crossing these
+domains (for indexing, analytics, or wallet UIs) without routing
+through them. To extend bridge SDK support to one of these domains,
+follow [AGENTS.md → Adding chain support](AGENTS.md#adding-chain-support).
+
 ### CCTP v1 (Legacy)
 
-Also supported for backwards compatibility
+The original v1 chain families (Ethereum, Arbitrum, Base, Optimism,
+Avalanche, Polygon, Unichain) and the six USDC testnets above remain
+supported through `Cctp` and the `CctpV1` trait for backwards
+compatibility. v1 has no Unichain testnet entry.
 
 ## Quick Start
 
