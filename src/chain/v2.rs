@@ -325,16 +325,31 @@ mod tests {
     }
 
     #[rstest]
+    // v1 mainnets that also support v2
     #[case(NamedChain::Mainnet)]
     #[case(NamedChain::Arbitrum)]
     #[case(NamedChain::Base)]
+    #[case(NamedChain::Optimism)]
+    #[case(NamedChain::Avalanche)]
+    #[case(NamedChain::Polygon)]
+    #[case(NamedChain::Unichain)]
+    // v2-only mainnets
     #[case(NamedChain::Linea)]
     #[case(NamedChain::Sonic)]
     #[case(NamedChain::Sei)]
+    // v1 testnets that also support v2
+    #[case(NamedChain::Sepolia)]
+    #[case(NamedChain::ArbitrumSepolia)]
+    #[case(NamedChain::BaseSepolia)]
+    #[case(NamedChain::OptimismSepolia)]
+    #[case(NamedChain::AvalancheFuji)]
+    #[case(NamedChain::PolygonAmoy)]
     fn fast_transfer_fee_is_unknown_until_sourced(#[case] chain: NamedChain) {
         // Per-chain values are not sourced yet, so every supported v2
         // chain must report Unknown — never a placeholder Known(0)
-        // that would look like a confirmed fee to callers.
+        // that would look like a confirmed fee to callers. Exhaustive
+        // over every variant matched by `supports_cctp_v2()` so a
+        // future variant that accidentally returns Err is caught.
         assert_eq!(
             chain.fast_transfer_fee_bps().unwrap(),
             FastTransferFee::Unknown
