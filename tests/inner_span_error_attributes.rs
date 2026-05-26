@@ -23,12 +23,16 @@
 //! and asserts that the expected field landed on the expected span.
 
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 
 use alloy_chains::NamedChain;
+use alloy_json_rpc::{RequestPacket, Response, ResponsePacket, ResponsePayload};
 use alloy_network::Ethereum;
 use alloy_primitives::{Address, FixedBytes};
 use alloy_provider::{Provider, ProviderBuilder};
+use alloy_rpc_client::RpcClient;
 use cctp_rs::{Cctp, CctpV2Bridge, PollingConfig};
+use tower::Service;
 use tracing::field::{Field, Visit};
 use tracing::span::Record;
 use tracing_subscriber::layer::{Context, SubscriberExt};
@@ -468,6 +472,88 @@ async fn v2_process_response_span_records_message_data_missing() {
     assert_field_recorded(
         &captured,
         "cctp_rs.process_attestation_response",
+        "otel.status_code",
+        "ERROR",
+    );
+}
+
+/// Tower service that responds to every `eth_call` with an ABI-encoded
+/// `false`, simulating a destination chain that never observes the
+/// message as received. Lets `wait_for_receive` polling exhaust its
+/// attempt budget so the `ReceiveTimeout` branch fires.
+#[derive(Clone, Default)]
+struct AlwaysFalseEthCallTransport;
+
+impl Service<RequestPacket> for AlwaysFalseEthCallTransport {
+    type Response = ResponsePacket;
+    type Error = alloy_transport::TransportError;
+    type Future = alloy_transport::TransportFut<'static>;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> Poll<std::result::Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: RequestPacket) -> Self::Future {
+        Box::pin(async move {
+            let RequestPacket::Single(req) = req else {
+                panic!("wait_for_receive does not issue batch requests");
+            };
+            let id = req.id().clone();
+            assert_eq!(
+                req.method(),
+                "eth_call",
+                "wait_for_receive's polling loop only issues eth_call",
+            );
+            // 32 zero bytes decode to `U256::ZERO`, which `is_message_received`
+            // interprets as "not received".
+            let unused_nonce_json =
+                "\"0x0000000000000000000000000000000000000000000000000000000000000000\"";
+            let raw = serde_json::value::RawValue::from_string(unused_nonce_json.to_string())
+                .expect("static unused-nonce JSON parses");
+            Ok(ResponsePacket::Single(Response {
+                id,
+                payload: ResponsePayload::Success(raw),
+            }))
+        })
+    }
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn v2_wait_for_receive_span_records_receive_timeout() {
+    let (records, _guard) = install_record_subscriber();
+
+    let provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_client(RpcClient::new(AlwaysFalseEthCallTransport, true));
+    let bridge = CctpV2Bridge::builder()
+        .source_chain(NamedChain::Mainnet)
+        .destination_chain(NamedChain::Linea)
+        .source_provider(provider.clone())
+        .destination_provider(provider)
+        .recipient(Address::ZERO)
+        .build();
+
+    let result = bridge
+        .wait_for_receive(b"any message bytes", Some(3), Some(1))
+        .await;
+    assert!(
+        result.is_err(),
+        "expected wait_for_receive to time out against a destination that never reports receipt"
+    );
+
+    let captured = records.lock().unwrap();
+    assert_field_recorded(
+        &captured,
+        "cctp_rs.wait_for_receive",
+        "error.type",
+        "ReceiveTimeout",
+    );
+    assert_field_recorded(
+        &captured,
+        "cctp_rs.wait_for_receive",
         "otel.status_code",
         "ERROR",
     );

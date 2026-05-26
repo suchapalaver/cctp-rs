@@ -838,42 +838,65 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             }
         });
 
-        info!(
-            max_attempts = max_attempts,
-            poll_interval_secs = poll_interval,
-            fast_transfer = self.transfer_mode.is_fast(),
-            version = "v2",
-            event = "wait_for_receive_started"
+        let message_hash: FixedBytes<32> = alloy_primitives::keccak256(message);
+        let span = spans::wait_for_receive(
+            &message_hash,
+            &self.source_chain,
+            &self.destination_chain,
+            max_attempts,
+            poll_interval,
         );
 
-        for attempt in 1..=max_attempts {
-            if self.is_message_received(message).await? {
-                info!(
-                    attempt = attempt,
-                    version = "v2",
-                    event = "message_received_confirmed"
-                );
-                return Ok(());
-            }
-
-            debug!(
-                attempt = attempt,
+        async move {
+            info!(
                 max_attempts = max_attempts,
+                poll_interval_secs = poll_interval,
+                fast_transfer = self.transfer_mode.is_fast(),
                 version = "v2",
-                event = "message_not_yet_received"
+                event = "wait_for_receive_started"
             );
 
-            sleep(Duration::from_secs(poll_interval)).await;
+            for attempt in 1..=max_attempts {
+                if self.is_message_received(message).await? {
+                    info!(
+                        attempt = attempt,
+                        version = "v2",
+                        event = "message_received_confirmed"
+                    );
+                    return Ok(());
+                }
+
+                debug!(
+                    attempt = attempt,
+                    max_attempts = max_attempts,
+                    version = "v2",
+                    event = "message_not_yet_received"
+                );
+
+                sleep(Duration::from_secs(poll_interval)).await;
+            }
+
+            spans::record_error_with_context(
+                "ReceiveTimeout",
+                &format!(
+                    "wait_for_receive polling timed out after {max_attempts} attempts"
+                ),
+                Some(&format!(
+                    "Poll interval: {poll_interval} seconds; destination chain never reported receipt"
+                )),
+            );
+            error!(
+                max_attempts = max_attempts,
+                poll_interval_secs = poll_interval,
+                version = "v2",
+                error_type = "ReceiveTimeout",
+                event = "wait_for_receive_timeout"
+            );
+
+            Err(CctpError::ReceiveTimeout)
         }
-
-        error!(
-            max_attempts = max_attempts,
-            poll_interval_secs = poll_interval,
-            version = "v2",
-            event = "wait_for_receive_timeout"
-        );
-
-        Err(CctpError::ReceiveTimeout)
+        .instrument(span)
+        .await
     }
 
     /// Attempt to mint, gracefully handling if already relayed
