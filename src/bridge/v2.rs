@@ -1978,4 +1978,232 @@ mod tests {
         assert_eq!(bridge.hook_data().unwrap().len(), 4);
         assert_eq!(bridge.hook_data().unwrap()[0], 0xde);
     }
+
+    mod burn_dispatch_wire {
+        //! End-to-end coverage of `CctpV2::burn`'s dispatch arm.
+        //!
+        //! Issue #229: the existing fast-with-hook wire-shape test
+        //! (`test_v2_fast_with_hook_calldata_carries_fast_finality_and_max_fee`)
+        //! builds a `TokenMessengerV2Contract` directly and never exercises
+        //! the `match self.transfer_mode.hook_data()` arm inside `burn()`
+        //! itself (`src/bridge/v2.rs:594-621`). That dispatch was the home
+        //! of the issue #218 bug — a future refactor that re-orders the
+        //! arms could silently re-introduce the same defect with every
+        //! accessor-level test still green.
+        //!
+        //! The tests below drive `bridge.burn(amount, from, token).await`
+        //! against a capturing in-process JSON-RPC transport, then decode
+        //! the captured `eth_sendTransaction` calldata with the same
+        //! `sol!`-generated call types the contract uses. Every
+        //! `TransferMode` variant is covered, so any rewiring that lands
+        //! the wrong call on the wire — `depositForBurn` vs
+        //! `depositForBurnWithHook`, fast vs standard finality threshold,
+        //! zero vs caller-supplied `max_fee` — has to fail a test here.
+        use super::*;
+        use alloy_json_rpc::{RequestPacket, Response, ResponsePacket, ResponsePayload};
+        use alloy_provider::ProviderBuilder;
+        use alloy_rpc_client::RpcClient;
+        use alloy_rpc_types::TransactionRequest;
+        use alloy_sol_types::SolCall;
+        use rstest::rstest;
+        use std::sync::{Arc, Mutex};
+        use std::task::{Context, Poll};
+        use tower::Service;
+
+        use crate::contracts::v2::TokenMessengerV2;
+
+        /// A tower service that records every JSON-RPC request and answers
+        /// each with a fixed transaction hash. `burn()` only issues a
+        /// single `eth_sendTransaction` once recommended fillers are
+        /// disabled, so the captured queue is exactly what hit the wire.
+        #[derive(Clone, Default)]
+        struct CapturingTransport {
+            requests: Arc<Mutex<Vec<alloy_json_rpc::SerializedRequest>>>,
+        }
+
+        impl Service<RequestPacket> for CapturingTransport {
+            type Response = ResponsePacket;
+            type Error = alloy_transport::TransportError;
+            type Future = alloy_transport::TransportFut<'static>;
+
+            fn poll_ready(
+                &mut self,
+                _cx: &mut Context<'_>,
+            ) -> Poll<std::result::Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, req: RequestPacket) -> Self::Future {
+                let requests = self.requests.clone();
+                Box::pin(async move {
+                    let RequestPacket::Single(req) = req else {
+                        panic!("burn() does not issue batch requests");
+                    };
+                    let id = req.id().clone();
+                    requests.lock().expect("captured-request mutex").push(req);
+                    // Echo back any well-formed tx hash; `burn()` only
+                    // reads it via `pending_tx.tx_hash()` and returns it.
+                    let hash_json =
+                        "\"0x0101010101010101010101010101010101010101010101010101010101010101\"";
+                    let raw = serde_json::value::RawValue::from_string(hash_json.to_string())
+                        .expect("static tx-hash JSON parses");
+                    Ok(ResponsePacket::Single(Response {
+                        id,
+                        payload: ResponsePayload::Success(raw),
+                    }))
+                })
+            }
+        }
+
+        fn build_bridge(
+            transfer_mode: TransferMode,
+        ) -> (
+            CctpV2<alloy_provider::RootProvider<Ethereum>>,
+            Arc<Mutex<Vec<alloy_json_rpc::SerializedRequest>>>,
+        ) {
+            let transport = CapturingTransport::default();
+            let captured = transport.requests.clone();
+            // `disable_recommended_fillers` keeps the chainId / nonce /
+            // gas RPCs from firing, so the only call we observe is the
+            // `eth_sendTransaction` that carries the burn calldata —
+            // exactly what this test wants to pin.
+            let provider = ProviderBuilder::new()
+                .disable_recommended_fillers()
+                .connect_client(RpcClient::new(transport, true));
+            let bridge = CctpV2::builder()
+                .source_chain(NamedChain::Mainnet)
+                .destination_chain(NamedChain::Linea)
+                .source_provider(provider.clone())
+                .destination_provider(provider)
+                .recipient(Address::ZERO)
+                .transfer_mode(transfer_mode)
+                .build();
+            (bridge, captured)
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum ExpectedCall {
+            DepositForBurn,
+            DepositForBurnWithHook,
+        }
+
+        #[rstest]
+        #[case::standard(
+            TransferMode::Standard,
+            ExpectedCall::DepositForBurn,
+            2000_u32,
+            U256::ZERO,
+            None
+        )]
+        #[case::fast(
+            TransferMode::Fast { max_fee: U256::from(1500_u64) },
+            ExpectedCall::DepositForBurn,
+            1000_u32,
+            U256::from(1500_u64),
+            None,
+        )]
+        #[case::standard_with_hook(
+            TransferMode::StandardWithHook { hook_data: Bytes::from_static(&[0xab, 0xcd]) },
+            ExpectedCall::DepositForBurnWithHook,
+            2000_u32,
+            U256::ZERO,
+            Some(Bytes::from_static(&[0xab, 0xcd])),
+        )]
+        #[case::fast_with_hook(
+            TransferMode::FastWithHook {
+                max_fee: U256::from(2500_u64),
+                hook_data: Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]),
+            },
+            ExpectedCall::DepositForBurnWithHook,
+            1000_u32,
+            U256::from(2500_u64),
+            Some(Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef])),
+        )]
+        #[tokio::test]
+        async fn burn_emits_expected_calldata(
+            #[case] transfer_mode: TransferMode,
+            #[case] expected_call: ExpectedCall,
+            #[case] expected_finality_threshold: u32,
+            #[case] expected_max_fee: U256,
+            #[case] expected_hook_data: Option<Bytes>,
+        ) {
+            let (bridge, captured) = build_bridge(transfer_mode);
+            let from = Address::repeat_byte(0xaa);
+            let token = Address::repeat_byte(0xbb);
+            let amount = U256::from(1_000_000_u64);
+            let destination_domain = bridge.destination_domain_id().unwrap().as_u32();
+            let recipient = *bridge.recipient();
+
+            bridge
+                .burn(amount, from, token)
+                .await
+                .expect("burn submits one eth_sendTransaction to the capturing transport");
+
+            let requests = captured.lock().expect("captured-request mutex");
+            assert_eq!(
+                requests.len(),
+                1,
+                "burn() should issue exactly one RPC call when fillers are disabled"
+            );
+            assert_eq!(requests[0].method(), "eth_sendTransaction");
+
+            let params = requests[0]
+                .params()
+                .expect("eth_sendTransaction request carries params");
+            let (tx_request,): (TransactionRequest,) = serde_json::from_str(params.get())
+                .expect("params decode as a single TransactionRequest");
+
+            assert_eq!(
+                tx_request.from,
+                Some(from),
+                "calldata must originate from the address the bridge was asked to burn for"
+            );
+            let calldata = tx_request
+                .input
+                .input()
+                .expect("transaction request carries calldata");
+
+            // `destinationCaller` is hard-coded to `Address::ZERO` so that any
+            // attester can submit `receiveMessage` on the destination chain
+            // (`src/contracts/v2/token_messenger_v2.rs:77,236`). A future
+            // refactor that wires a real caller into the helpers would silently
+            // lock burns to a single relayer — pinning the zero value here
+            // makes that drift fail this test instead of stranding funds.
+            let expected_destination_caller = Address::ZERO.into_word();
+
+            match expected_call {
+                ExpectedCall::DepositForBurn => {
+                    let decoded = TokenMessengerV2::depositForBurnCall::abi_decode(calldata)
+                        .expect("calldata decodes as depositForBurn");
+                    assert_eq!(decoded.amount, amount);
+                    assert_eq!(decoded.destinationDomain, destination_domain);
+                    assert_eq!(decoded.mintRecipient, recipient.into_word());
+                    assert_eq!(decoded.burnToken, token);
+                    assert_eq!(decoded.destinationCaller, expected_destination_caller);
+                    assert_eq!(decoded.maxFee, expected_max_fee);
+                    assert_eq!(decoded.minFinalityThreshold, expected_finality_threshold);
+                    assert!(
+                        expected_hook_data.is_none(),
+                        "no-hook variants must not carry hook data on the wire"
+                    );
+                }
+                ExpectedCall::DepositForBurnWithHook => {
+                    let decoded =
+                        TokenMessengerV2::depositForBurnWithHookCall::abi_decode(calldata)
+                            .expect("calldata decodes as depositForBurnWithHook");
+                    assert_eq!(decoded.amount, amount);
+                    assert_eq!(decoded.destinationDomain, destination_domain);
+                    assert_eq!(decoded.mintRecipient, recipient.into_word());
+                    assert_eq!(decoded.burnToken, token);
+                    assert_eq!(decoded.destinationCaller, expected_destination_caller);
+                    assert_eq!(decoded.maxFee, expected_max_fee);
+                    assert_eq!(decoded.minFinalityThreshold, expected_finality_threshold);
+                    assert_eq!(
+                        decoded.hookData,
+                        expected_hook_data.expect("hook variants carry hook data")
+                    );
+                }
+            }
+        }
+    }
 }
