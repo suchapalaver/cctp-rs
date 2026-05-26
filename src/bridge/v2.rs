@@ -2163,6 +2163,14 @@ mod tests {
                 .input()
                 .expect("transaction request carries calldata");
 
+            // `destinationCaller` is hard-coded to `Address::ZERO` so that any
+            // attester can submit `receiveMessage` on the destination chain
+            // (`src/contracts/v2/token_messenger_v2.rs:77,236`). A future
+            // refactor that wires a real caller into the helpers would silently
+            // lock burns to a single relayer — pinning the zero value here
+            // makes that drift fail this test instead of stranding funds.
+            let expected_destination_caller = Address::ZERO.into_word();
+
             match expected_call {
                 ExpectedCall::DepositForBurn => {
                     let decoded = TokenMessengerV2::depositForBurnCall::abi_decode(calldata)
@@ -2171,6 +2179,7 @@ mod tests {
                     assert_eq!(decoded.destinationDomain, destination_domain);
                     assert_eq!(decoded.mintRecipient, recipient.into_word());
                     assert_eq!(decoded.burnToken, token);
+                    assert_eq!(decoded.destinationCaller, expected_destination_caller);
                     assert_eq!(decoded.maxFee, expected_max_fee);
                     assert_eq!(decoded.minFinalityThreshold, expected_finality_threshold);
                     assert!(
@@ -2186,6 +2195,7 @@ mod tests {
                     assert_eq!(decoded.destinationDomain, destination_domain);
                     assert_eq!(decoded.mintRecipient, recipient.into_word());
                     assert_eq!(decoded.burnToken, token);
+                    assert_eq!(decoded.destinationCaller, expected_destination_caller);
                     assert_eq!(decoded.maxFee, expected_max_fee);
                     assert_eq!(decoded.minFinalityThreshold, expected_finality_threshold);
                     assert_eq!(
