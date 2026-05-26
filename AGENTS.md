@@ -129,6 +129,21 @@ details.
 2. Add the domain ID to `src/protocol/domain_id.rs`.
 3. Implement the trait in `src/chain/config.rs` (v1) or `src/chain/v2.rs` (v2).
 4. Add confirmation times for fast and standard v2 transfers.
+5. Update the prose counts and chain lists in `README.md` and
+   `AGENTS.md` so the docs stay in sync with what the parser and
+   bridge actually cover:
+   - Every new `DomainId` variant bumps the v2 domain ID count
+     quoted in both files ("all 21 CCTP v2 domain IDs").
+   - If `NamedChain::supports_cctp_v2()` returns `true` for the new
+     chain, bump the v2-capable chain family count in this file
+     (currently "10 v2-capable chain families (7 v1 chain families
+     plus …)") and the bridge SDK mainnet/testnet count in the
+     README's "Features" line, then add the chain to the
+     "Mainnet" or "Testnet" list under `Bridge SDK — supported
+     chains`.
+   - If the new domain is parse-only (no `supports_cctp_v2()` entry),
+     add it to the README's `Protocol parser — additional domains`
+     list instead.
 
 ## Security and configuration
 
