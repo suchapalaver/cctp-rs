@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-05-26
+
 ### Added
 
 - New `TransferMode` enum that names the four valid CCTP v2 burn
