@@ -105,17 +105,20 @@ impl TransferMode {
     #[inline]
     #[must_use]
     pub const fn is_fast(&self) -> bool {
-        matches!(self, Self::Fast { .. } | Self::FastWithHook { .. })
+        match self {
+            Self::Fast { .. } | Self::FastWithHook { .. } => true,
+            Self::Standard | Self::StandardWithHook { .. } => false,
+        }
     }
 
     /// Returns `true` when the mode carries hook data.
     #[inline]
     #[must_use]
     pub const fn has_hook(&self) -> bool {
-        matches!(
-            self,
-            Self::StandardWithHook { .. } | Self::FastWithHook { .. }
-        )
+        match self {
+            Self::StandardWithHook { .. } | Self::FastWithHook { .. } => true,
+            Self::Standard | Self::Fast { .. } => false,
+        }
     }
 
     /// Returns the fast-transfer fee cap.
