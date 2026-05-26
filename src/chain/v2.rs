@@ -53,7 +53,12 @@ pub enum FastTransferFee {
 /// - **Fast Transfer**: Chains that support fast transfer (finality threshold 1000)
 /// - **Dynamic Fees**: Some chains charge fees for fast transfer (0-14 bps)
 /// - **v2 Contracts**: Updated contract addresses for `TokenMessengerV2` and `MessageTransmitterV2`
-/// - **Expanded Chains**: Support for 26+ networks vs v1's 7
+/// - **Expanded Chains**: Bridge SDK routes 10 v2-capable chain families
+///   (the 7 v1 families plus Linea, Sonic, Sei) with testnets, versus the
+///   7 v1 chain families. Note that this trait covers bridge SDK reach —
+///   Circle has announced 21 CCTP v2 domain IDs in total, which the
+///   protocol parser (`DomainId`, `ParsedV2Message`) can decode
+///   independently of bridge support.
 ///
 /// # Example
 ///

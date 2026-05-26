@@ -430,7 +430,7 @@ cargo run --example v2_fast_transfer
 
 The `v2_integration_validation` example validates:
 
-- Chain support matrix (26+ chains)
+- Chain support matrix (10 v2-capable mainnet chain families plus 6 testnets)
 - Domain ID mappings against Circle's official values
 - Contract address consistency (unified v2 addresses)
 - Bridge configuration variations (standard, fast, hooks)

@@ -6,8 +6,11 @@
 //! This module contains Alloy-generated contract bindings for interacting with
 //! Circle's Cross-Chain Transfer Protocol smart contracts.
 //!
-//! - v1: Original CCTP contracts (7 chains)
-//! - v2: Enhanced contracts with Fast Transfer, hooks, and 26+ chains
+//! - v1: Original CCTP contracts (7 chain families)
+//! - v2: Enhanced contracts with Fast Transfer, hooks, and 10 v2-capable
+//!   chain families (the v1 set plus Linea, Sonic, Sei). The protocol
+//!   parser handles all 21 announced CCTP v2 domain IDs independently of
+//!   bridge SDK support.
 //!
 //! ## Public API
 //!
