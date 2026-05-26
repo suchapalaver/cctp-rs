@@ -828,6 +828,11 @@ mod tests {
         assert!(summary.permissionless_relay);
         assert!(!summary.has_hooks);
         assert!(!summary.is_fast_transfer);
+
+        let json = serde_json::to_value(&summary).expect("summary should serialize");
+        let round_tripped: ParsedV2MessageSummary =
+            serde_json::from_value(json).expect("summary should round-trip");
+        assert_eq!(round_tripped, summary);
     }
 
     #[test]
@@ -910,6 +915,12 @@ mod tests {
             json["sender_bytes"].as_str(),
             Some(format!("0x{}", hex::encode(solana_sender_word)).as_str())
         );
+
+        let round_tripped: ParsedV2MessageSummary =
+            serde_json::from_value(json).expect("non-EVM summary should round-trip");
+        assert_eq!(round_tripped, summary);
+        assert_eq!(round_tripped.sender, None);
+        assert_eq!(round_tripped.sender_bytes, solana_sender_word);
     }
 
     #[test]
