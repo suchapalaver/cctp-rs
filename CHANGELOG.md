@@ -15,9 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FastWithHook { max_fee, hook_data }`). Selected via a single
   `transfer_mode` builder field on `CctpV2Bridge`.
 - `CctpV2Bridge::transfer_mode()` accessor.
+- `ParsedV2MessageSummary` now carries the canonical 32-byte header
+  words as `sender_bytes`, `recipient_bytes`, and
+  `destination_caller_bytes`. These are always populated and are the
+  authoritative source of truth for non-EVM domains such as
+  `DomainId::Solana` and `DomainId::StarknetTestnet`. Tracks issue
+  #219.
 
 ### Changed
 
+- **Breaking:** `ParsedV2MessageSummary::sender` and `recipient` are
+  now `Option<Address>` instead of `Address`, and `destination_caller`
+  is `None` for non-EVM destinations as well as for permissionless
+  messages. The EVM `Address` projections are populated only when the
+  corresponding `DomainId::is_evm()` is true; consumers that need the
+  raw header word for non-EVM domains should read the new
+  `*_bytes` fields. JSON output omits the EVM fields entirely for
+  non-EVM domains (via `skip_serializing_if`), so it no longer looks
+  precise and EVM-shaped when it is not. Tracks issue #219.
+- **Breaking:** `MessageHeader::sender_address` and
+  `MessageHeader::recipient_address` now return `Option<Address>`
+  (was `Address`), and `MessageHeader::destination_caller_address`
+  returns `None` for non-EVM destinations in addition to the existing
+  permissionless case. The raw `bytes32` header fields remain
+  authoritative for non-EVM domains. Tracks issue #219.
 - **Breaking:** `CctpV2Bridge::builder()` no longer accepts the
   independent `fast_transfer(bool)`, `hook_data(Bytes)`, and
   `max_fee(U256)` fields. Use `transfer_mode(TransferMode::…)`

@@ -199,35 +199,44 @@ impl MessageHeader {
         self.nonce.as_slice().iter().all(|byte| *byte == 0)
     }
 
-    /// Returns the EVM sender address encoded in the 32-byte sender field.
+    /// Returns the sender as an EVM `Address` when the source domain is EVM.
     ///
-    /// This helper assumes the source domain uses the EVM trailing-20-byte
-    /// convention for `bytes32` addresses. For non-EVM domains, the raw
-    /// [`Self::sender`] field is authoritative.
+    /// Returns `None` for non-EVM domains such as [`DomainId::Solana`] or
+    /// [`DomainId::StarknetTestnet`], whose `bytes32` sender words do not use
+    /// the EVM trailing-20-byte convention. For those domains, the raw
+    /// [`Self::sender`] field is the canonical source of truth.
     #[must_use]
-    pub fn sender_address(&self) -> Address {
-        Address::from_slice(&self.sender.as_slice()[12..32])
+    pub fn sender_address(&self) -> Option<Address> {
+        self.source_domain
+            .is_evm()
+            .then(|| Address::from_slice(&self.sender.as_slice()[12..32]))
     }
 
-    /// Returns the EVM recipient address encoded in the 32-byte recipient field.
+    /// Returns the recipient as an EVM `Address` when the destination domain is EVM.
     ///
-    /// This helper assumes the destination domain uses the EVM trailing-20-byte
-    /// convention for `bytes32` addresses. For non-EVM domains, the raw
-    /// [`Self::recipient`] field is authoritative.
+    /// Returns `None` for non-EVM destination domains. For those, the raw
+    /// [`Self::recipient`] field is the canonical source of truth.
     #[must_use]
-    pub fn recipient_address(&self) -> Address {
-        Address::from_slice(&self.recipient.as_slice()[12..32])
+    pub fn recipient_address(&self) -> Option<Address> {
+        self.destination_domain
+            .is_evm()
+            .then(|| Address::from_slice(&self.recipient.as_slice()[12..32]))
     }
 
-    /// Returns the destination caller as an EVM address if the message is not permissionless.
+    /// Returns the destination caller as an EVM `Address` when one is set and
+    /// the destination domain is EVM.
     ///
-    /// This helper assumes the destination domain uses the EVM trailing-20-byte
-    /// convention for `bytes32` addresses. For non-EVM domains, the raw
-    /// [`Self::destination_caller`] field is authoritative.
+    /// Returns `None` when the message is permissionless or the destination
+    /// domain is non-EVM. The raw [`Self::destination_caller`] field is
+    /// authoritative in the non-EVM case.
     #[must_use]
     pub fn destination_caller_address(&self) -> Option<Address> {
-        (!self.is_permissionless())
-            .then(|| Address::from_slice(&self.destination_caller.as_slice()[12..32]))
+        if self.is_permissionless() || !self.destination_domain.is_evm() {
+            return None;
+        }
+        Some(Address::from_slice(
+            &self.destination_caller.as_slice()[12..32],
+        ))
     }
 
     /// Returns true when the message can be relayed by anyone.
@@ -476,9 +485,13 @@ impl ParsedV2Message {
 
     /// Returns a compact summary that is convenient to serialize from tools.
     ///
-    /// Address-like fields in the summary use the SDK's current EVM-oriented
-    /// interpretation of `bytes32` address words. For non-EVM domains, use the
-    /// raw header fields in [`Self::header`] as the canonical source of truth.
+    /// The canonical `bytes32` header fields are exposed as `sender_bytes`,
+    /// `recipient_bytes`, and `destination_caller_bytes` and are always
+    /// populated. The EVM-interpreted `sender`, `recipient`, and
+    /// `destination_caller` fields are populated only when the corresponding
+    /// domain is EVM ([`DomainId::is_evm`]); for non-EVM domains they are
+    /// `None` so consumers do not mistake a misleading trailing-20-byte
+    /// projection for the authoritative value.
     #[must_use]
     pub fn summary(&self) -> ParsedV2MessageSummary {
         let encoded = self.encode();
@@ -494,8 +507,11 @@ impl ParsedV2Message {
             body_version: self.body.version,
             nonce: self.header.nonce,
             has_placeholder_nonce: self.header.has_placeholder_nonce(),
+            sender_bytes: self.header.sender,
             sender: self.header.sender_address(),
+            recipient_bytes: self.header.recipient,
             recipient: self.header.recipient_address(),
+            destination_caller_bytes: self.header.destination_caller,
             destination_caller: self.header.destination_caller_address(),
             permissionless_relay: self.header.is_permissionless(),
             requested_finality: self.header.requested_finality(),
@@ -520,6 +536,16 @@ impl ParsedV2Message {
 /// `DomainId` values serialize as `snake_case` strings. Future crate releases may
 /// add new domain variants, so older versions of the crate may reject summaries
 /// containing unknown domain names.
+///
+/// # Address fields and non-EVM domains
+///
+/// The `*_bytes` fields (`sender_bytes`, `recipient_bytes`,
+/// `destination_caller_bytes`) carry the canonical 32-byte header words and
+/// are always populated. The EVM-shaped fields (`sender`, `recipient`,
+/// `destination_caller`) are populated only when the corresponding domain is
+/// EVM ([`DomainId::is_evm`]); for non-EVM domains such as
+/// [`DomainId::Solana`] or [`DomainId::StarknetTestnet`], they are `None`
+/// because a trailing-20-byte projection would be misleading.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParsedV2MessageSummary {
     pub message_hash: FixedBytes<32>,
@@ -530,8 +556,27 @@ pub struct ParsedV2MessageSummary {
     pub body_version: u32,
     pub nonce: FixedBytes<32>,
     pub has_placeholder_nonce: bool,
-    pub sender: Address,
-    pub recipient: Address,
+    /// Canonical 32-byte sender word from the header. Always populated.
+    pub sender_bytes: FixedBytes<32>,
+    /// EVM sender address, populated only when `source_domain.is_evm()`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender: Option<Address>,
+    /// Canonical 32-byte recipient word from the header. Always populated.
+    pub recipient_bytes: FixedBytes<32>,
+    /// EVM recipient address, populated only when `destination_domain.is_evm()`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipient: Option<Address>,
+    /// Canonical 32-byte destination caller word. Zero for permissionless messages.
+    pub destination_caller_bytes: FixedBytes<32>,
+    /// EVM destination caller address, populated only when the message is not
+    /// permissionless and `destination_domain.is_evm()`.
+    ///
+    /// A `None` here is therefore ambiguous on its own — use
+    /// `permissionless_relay` to disambiguate. A `None` with
+    /// `permissionless_relay == true` means the message is open to any relayer;
+    /// a `None` with `permissionless_relay == false` means a caller is set but
+    /// the destination is non-EVM, and `destination_caller_bytes` carries the
+    /// canonical value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub destination_caller: Option<Address>,
     pub permissionless_relay: bool,
@@ -722,11 +767,11 @@ mod tests {
         assert!(header.is_permissionless());
         assert_eq!(
             header.sender_address(),
-            address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D")
+            Some(address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"))
         );
         assert_eq!(
             header.recipient_address(),
-            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")
+            Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"))
         );
         assert_eq!(header.requested_finality(), Some(FinalityThreshold::Fast));
         assert_eq!(
@@ -783,6 +828,11 @@ mod tests {
         assert!(summary.permissionless_relay);
         assert!(!summary.has_hooks);
         assert!(!summary.is_fast_transfer);
+
+        let json = serde_json::to_value(&summary).expect("summary should serialize");
+        let round_tripped: ParsedV2MessageSummary =
+            serde_json::from_value(json).expect("summary should round-trip");
+        assert_eq!(round_tripped, summary);
     }
 
     #[test]
@@ -796,8 +846,11 @@ mod tests {
             body_version: 1,
             nonce: FixedBytes::from([0x22; 32]),
             has_placeholder_nonce: false,
-            sender: address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
-            recipient: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
+            sender_bytes: address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
+            sender: Some(address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D")),
+            recipient_bytes: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+            recipient: Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")),
+            destination_caller_bytes: FixedBytes::ZERO,
             destination_caller: None,
             permissionless_relay: true,
             requested_finality: Some(FinalityThreshold::Standard),
@@ -818,5 +871,141 @@ mod tests {
         let json = serde_json::to_value(summary).expect("summary should serialize");
         assert!(json.get("destination_caller").is_none());
         assert!(json.get("hook_data").is_none());
+    }
+
+    #[test]
+    fn test_summary_drops_evm_address_for_non_evm_source() {
+        let solana_sender_word = FixedBytes::<32>::from([0xABu8; 32]);
+        let recipient = address!("7F7D081724F0240c64C9E01CDe4626602f9a0192");
+
+        let header = MessageHeader::new(
+            1,
+            DomainId::Solana,
+            DomainId::Base,
+            FixedBytes::from([0x11u8; 32]),
+            solana_sender_word,
+            recipient.into_word(),
+            FixedBytes::ZERO,
+            FinalityThreshold::Standard.as_u32(),
+            FinalityThreshold::Standard.as_u32(),
+        );
+        let body = BurnMessageV2::new(
+            address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF"),
+            recipient,
+            U256::from(1_000_000u64),
+            address!("1234567890abcdef1234567890abcdef12345678"),
+        );
+        let message = ParsedV2Message { header, body };
+
+        assert_eq!(message.header.sender_address(), None);
+        assert_eq!(message.header.recipient_address(), Some(recipient));
+
+        let summary = message.summary();
+        assert_eq!(summary.sender, None);
+        assert_eq!(summary.sender_bytes, solana_sender_word);
+        assert_eq!(summary.recipient, Some(recipient));
+        assert_eq!(summary.recipient_bytes, recipient.into_word());
+
+        let json = serde_json::to_value(&summary).expect("summary should serialize");
+        assert!(
+            json.get("sender").is_none(),
+            "EVM sender field should be omitted for non-EVM source domain"
+        );
+        assert_eq!(
+            json["sender_bytes"].as_str(),
+            Some(format!("0x{}", hex::encode(solana_sender_word)).as_str())
+        );
+
+        let round_tripped: ParsedV2MessageSummary =
+            serde_json::from_value(json).expect("non-EVM summary should round-trip");
+        assert_eq!(round_tripped, summary);
+        assert_eq!(round_tripped.sender, None);
+        assert_eq!(round_tripped.sender_bytes, solana_sender_word);
+    }
+
+    #[test]
+    fn test_summary_drops_evm_address_for_non_evm_destination() {
+        let sender = address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D");
+        let starknet_recipient_word = FixedBytes::<32>::from([0x42u8; 32]);
+        let starknet_caller_word = FixedBytes::<32>::from([0x77u8; 32]);
+
+        let header = MessageHeader::new(
+            1,
+            DomainId::Ethereum,
+            DomainId::StarknetTestnet,
+            FixedBytes::from([0x22u8; 32]),
+            sender.into_word(),
+            starknet_recipient_word,
+            starknet_caller_word,
+            FinalityThreshold::Standard.as_u32(),
+            FinalityThreshold::Standard.as_u32(),
+        );
+        let body = BurnMessageV2::new(
+            address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF"),
+            address!("1111111111111111111111111111111111111111"),
+            U256::from(1_000_000u64),
+            sender,
+        );
+        let message = ParsedV2Message { header, body };
+
+        assert!(!message.header.is_permissionless());
+        assert_eq!(message.header.sender_address(), Some(sender));
+        assert_eq!(message.header.recipient_address(), None);
+        assert_eq!(message.header.destination_caller_address(), None);
+
+        let summary = message.summary();
+        assert_eq!(summary.sender, Some(sender));
+        assert_eq!(summary.recipient, None);
+        assert_eq!(summary.recipient_bytes, starknet_recipient_word);
+        assert_eq!(summary.destination_caller, None);
+        assert_eq!(summary.destination_caller_bytes, starknet_caller_word);
+        assert!(!summary.permissionless_relay);
+
+        let json = serde_json::to_value(&summary).expect("summary should serialize");
+        assert!(
+            json.get("recipient").is_none(),
+            "EVM recipient field should be omitted for non-EVM destination domain"
+        );
+        assert!(
+            json.get("destination_caller").is_none(),
+            "EVM destination_caller field should be omitted for non-EVM destination domain"
+        );
+    }
+
+    #[test]
+    fn test_summary_keeps_caller_bytes_for_non_permissionless_non_evm_destination() {
+        let sender = address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D");
+        let solana_recipient_word = FixedBytes::<32>::from([0x33u8; 32]);
+        let solana_caller_word = FixedBytes::<32>::from([0x44u8; 32]);
+
+        let header = MessageHeader::new(
+            1,
+            DomainId::Ethereum,
+            DomainId::Solana,
+            FixedBytes::from([0x55u8; 32]),
+            sender.into_word(),
+            solana_recipient_word,
+            solana_caller_word,
+            FinalityThreshold::Standard.as_u32(),
+            FinalityThreshold::Standard.as_u32(),
+        );
+        let body = BurnMessageV2::new(
+            address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF"),
+            address!("1111111111111111111111111111111111111111"),
+            U256::from(2_500_000u64),
+            sender,
+        );
+        let message = ParsedV2Message { header, body };
+
+        let summary = message.summary();
+        assert_eq!(summary.recipient, None);
+        assert_eq!(summary.recipient_bytes, solana_recipient_word);
+        assert_eq!(summary.destination_caller, None);
+        assert_eq!(summary.destination_caller_bytes, solana_caller_word);
+        assert!(
+            !summary.permissionless_relay,
+            "non-zero caller word must not be reported as permissionless even \
+             when the destination is non-EVM and destination_caller is None"
+        );
     }
 }
