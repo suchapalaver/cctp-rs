@@ -18,7 +18,7 @@ use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
 use alloy_primitives::{Address, FixedBytes};
 use alloy_provider::{Provider, ProviderBuilder};
-use cctp_rs::{CctpV2Bridge, PollingConfig};
+use cctp_rs::{AttestationFailureKind, CctpError, CctpV2Bridge, PollingConfig};
 use url::Url;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -134,17 +134,24 @@ async fn fails_when_every_message_failed() {
         .await;
 
     let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
-    let result = bridge(api_override)
+    let err = bridge(api_override)
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
             PollingConfig::fast_transfer()
                 .with_max_attempts(1)
                 .with_poll_interval_secs(1),
         )
-        .await;
+        .await
+        .expect_err("an all-failed response must surface as a failure, not succeed");
 
+    // The failure must be the API-reported-failed variant, not a timeout:
+    // with nothing pending or usable, the loop should fail on the spot
+    // rather than burn its attempt budget.
     assert!(
-        result.is_err(),
-        "an all-failed response must surface as an error, not a timeout-after-success"
+        matches!(
+            err,
+            CctpError::AttestationFailed(AttestationFailureKind::ApiReportedFailed)
+        ),
+        "expected AttestationFailed(ApiReportedFailed), got {err:?}"
     );
 }
