@@ -232,6 +232,37 @@ pub fn receive_message(
     )
 }
 
+/// Create span for polling the destination chain until a message is received.
+///
+/// Declares the four error-attribute fields so that
+/// [`record_error_with_context`] writes (notably the `ReceiveTimeout`
+/// variant emitted on polling exhaustion) materialise on this span and
+/// become queryable via `{ span.error.type = "ReceiveTimeout" }` in
+/// Tempo/Jaeger.
+///
+/// Parent: Top-level bridge operation span
+/// Children: `is_message_received` RPC calls (from alloy instrumentation)
+pub fn wait_for_receive(
+    message_hash: &FixedBytes<32>,
+    source_chain: &NamedChain,
+    destination_chain: &NamedChain,
+    max_attempts: u32,
+    poll_interval_secs: u64,
+) -> Span {
+    tracing::info_span!(
+        "cctp_rs.wait_for_receive",
+        message_hash = %message_hash,
+        source_chain = %source_chain,
+        destination_chain = %destination_chain,
+        max_attempts = max_attempts,
+        poll_interval_secs = poll_interval_secs,
+        error.type = tracing::field::Empty,
+        error.message = tracing::field::Empty,
+        error.context = tracing::field::Empty,
+        otel.status_code = "OK",
+    )
+}
+
 /// Create span for HTTP request to Circle API.
 ///
 /// Parent: `get_attestation` or other API operation
