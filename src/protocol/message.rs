@@ -878,6 +878,35 @@ mod tests {
     }
 
     #[test]
+    fn test_burn_message_v2_rejects_last_padding_byte_of_each_field() {
+        // Witness the boundary of the canonical-padding loop: the *last* of
+        // the 12 leading zero bytes (byte 11 of each address word). The
+        // first-byte variants are covered by the per-field tests above; this
+        // pins the iteration bound at 12 (not 11) so a regression that
+        // shortened the slice would surface here.
+        for (offset, field) in [
+            (4, "burn_token"),
+            (36, "mint_recipient"),
+            (100, "message_sender"),
+        ] {
+            let mut bytes = canonical_burn_body_bytes();
+            bytes[offset + 11] = 0xff;
+
+            assert!(
+                BurnMessageV2::decode(&bytes).is_none(),
+                "decode must reject non-canonical {field} word (last padding byte set)"
+            );
+            let err = BurnMessageV2::parse(&bytes).expect_err(&format!(
+                "parse must reject non-canonical {field} word at last padding byte"
+            ));
+            assert!(
+                err.to_string().contains(field),
+                "parse error should name the offending field {field}: {err}"
+            );
+        }
+    }
+
+    #[test]
     fn test_parsed_v2_message_rejects_non_canonical_body() {
         // Real Circle message reused from the round-trip test; valid as-is, then mutated.
         let mut bytes = hex::decode("0000000100000003000000062f3cb13cf4a6103f9e3b256495b08c4e05630fcba639565d199ed420a5f2be010000000000000000000000008fe6b999dc680ccfdd5bf7eb0974218be2542daa0000000000000000000000008fe6b999dc680ccfdd5bf7eb0974218be2542daa0000000000000000000000000000000000000000000000000000000000000000000007d0000007d00000000100000000000000000000000075faf114eafb1bdbe2f0316df893fd58ce46aa4d0000000000000000000000007f7d081724f0240c64c9e01cde4626602f9a019200000000000000000000000000000000000000000000000000000000000f42400000000000000000000000007f7d081724f0240c64c9e01cde4626602f9a0192000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap();
@@ -898,6 +927,16 @@ mod tests {
         assert!(
             err.to_string().contains("burn_token"),
             "parse error should name the offending field: {err}"
+        );
+
+        // ParsedV2MessageSummary::parse is the agent/tool-facing entry point;
+        // it must surface the same per-field rejection.
+        let summary_err = ParsedV2MessageSummary::parse(&bytes).expect_err(
+            "ParsedV2MessageSummary::parse must reject non-canonical body address words",
+        );
+        assert!(
+            summary_err.to_string().contains("burn_token"),
+            "summary parse error should name the offending field: {summary_err}"
         );
     }
 
