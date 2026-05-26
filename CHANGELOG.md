@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message as received in time, not waiting on attestation. Both
   variants continue to satisfy `CctpError::is_timeout()` and therefore
   `is_transient()`. Tracks issue #217.
+- New `cctp_rs.wait_for_receive` OpenTelemetry span emitted around
+  `CctpV2Bridge::wait_for_receive`'s polling loop, plus a public
+  `spans::wait_for_receive` constructor. On polling exhaustion the
+  span records `error.type = "ReceiveTimeout"`, making Tempo/Jaeger
+  queries like `{ span.error.type = "ReceiveTimeout" }` count
+  receive-side timeouts separately from attestation-side ones. The
+  existing `wait_for_receive_timeout` log event also gains an
+  `error_type = "ReceiveTimeout"` field for log-stream parity with
+  `attestation_timeout`. Tracks issue #240.
 
 ### Changed
 
