@@ -13,7 +13,7 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_provider::ProviderBuilder;
-use cctp_rs::{CctpV2, CctpV2Bridge, DomainId, TransferMode};
+use cctp_rs::{CctpV2, CctpV2Bridge, DomainId, FastTransferFee, TransferMode};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -485,11 +485,12 @@ fn validate_fast_transfer_support() -> Result<(), Box<dyn std::error::Error>> {
         print!("   ✓ {:<20} Fast: Yes  ", format!("{chain}"));
 
         match fee_bps {
-            Some(bps) => {
+            FastTransferFee::Known(bps) => {
                 assert!(bps <= 14, "Fee should be 0-14 bps, got {bps}");
                 println!("Fee: {bps} bps");
             }
-            None => println!("Fee: Free (0 bps)"),
+            FastTransferFee::Unknown => println!("Fee: unknown (not sourced)"),
+            _ => println!("Fee: unrecognized FastTransferFee variant"),
         }
     }
 

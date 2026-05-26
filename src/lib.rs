@@ -159,7 +159,7 @@ pub use chain::addresses::{
     CCTP_V2_MESSAGE_TRANSMITTER_MAINNET, CCTP_V2_MESSAGE_TRANSMITTER_TESTNET,
     CCTP_V2_TOKEN_MESSENGER_MAINNET, CCTP_V2_TOKEN_MESSENGER_TESTNET,
 };
-pub use chain::{CctpV1, CctpV2};
+pub use chain::{CctpV1, CctpV2, FastTransferFee};
 pub use contracts::{
     erc20::Erc20Contract,
     message_transmitter::{MessageTransmitter, MessageTransmitterContract},

@@ -100,6 +100,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bridge SDK currently routes 10 v2-capable chain families with
   testnets, while the parser recognizes all 21 announced domains
   including non-EVM ones. Tracks issue #216.
+- **Breaking:** `CctpV2::fast_transfer_fee_bps` now returns
+  `Result<FastTransferFee>` instead of `Result<Option<u32>>`, where
+  `FastTransferFee` is a new public enum with `Known(u32)` and
+  `Unknown` variants. Previous versions returned `Ok(Some(0))` for
+  every v2-capable chain because per-chain fees had not yet been
+  sourced — making unknown external protocol data look like a
+  confirmed zero fee to downstream consumers. Until each chain's
+  fee is sourced against an authoritative Circle reference, every
+  chain now reports `FastTransferFee::Unknown`. Callers handling
+  user funds should fetch the live fee rather than treating
+  `Unknown` as zero. The enum is `#[non_exhaustive]` so future
+  variants (e.g. a sourced-with-provenance form) can be added
+  without another major break, and the trait method carries
+  `#[must_use]` to surface accidental drops. Tracks issue #215.
 
 ### Fixed
 

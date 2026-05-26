@@ -16,6 +16,33 @@ use super::addresses::{
 };
 use crate::{CctpError, DomainId, Result};
 
+/// Fast Transfer fee for a CCTP v2 chain, in basis points.
+///
+/// Circle's documentation states fast transfer fees range from 0 to 14
+/// basis points and are configured per chain. Until a chain's fee has
+/// been confirmed against an authoritative source, this SDK represents
+/// it as [`FastTransferFee::Unknown`] rather than asserting a numeric
+/// value. Callers handling user funds should treat `Unknown` as a
+/// signal to fetch the live fee on-chain or via Circle's APIs before
+/// quoting it as zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FastTransferFee {
+    /// Fee is confirmed at this value in basis points (0-14).
+    ///
+    /// A `Known(0)` is a sourced zero fee, semantically distinct from
+    /// [`FastTransferFee::Unknown`].
+    Known(u32),
+    /// Fee data has not yet been confirmed for this chain.
+    ///
+    /// Callers must not assume zero. Coercing `Unknown` to zero would
+    /// reintroduce the placeholder behavior this enum exists to
+    /// prevent — Circle's published range is 0-14 bps, so a default
+    /// of zero is plausible enough to mask a real fee from downstream
+    /// consumers.
+    Unknown,
+}
+
 /// CCTP v2 chain configuration trait
 ///
 /// Implemented on `alloy_chains::NamedChain` to provide v2-specific
@@ -49,15 +76,21 @@ pub trait CctpV2 {
     /// Fast Transfer enables ~30 second settlement times vs 13-19 minutes.
     fn supports_fast_transfer(&self) -> Result<bool>;
 
-    /// Returns the fast transfer fee in basis points (0-14 bps)
+    /// Reports whether a fast transfer fee has been sourced for this
+    /// chain, and if so its value in basis points.
     ///
-    /// Returns `None` for chains that don't charge fast transfer fees,
-    /// or if the chain doesn't support fast transfer.
+    /// Returns [`FastTransferFee::Unknown`] when the chain's fee has
+    /// not been confirmed against an authoritative source. This is
+    /// the current state for every v2 chain in this SDK — Circle's
+    /// docs name a 0-14 bps range, but per-chain values must be
+    /// sourced before being claimed here. Callers handling user
+    /// funds must not coerce `Unknown` to zero; fetch the live fee
+    /// from Circle or on-chain instead.
     ///
-    /// Fee ranges:
-    /// - 0 bps: Free fast transfer (most chains)
-    /// - 1-14 bps: Small fee for fast settlement
-    fn fast_transfer_fee_bps(&self) -> Result<Option<u32>>;
+    /// Errors if the chain doesn't support CCTP v2.
+    #[must_use = "ignoring the fast transfer fee can mis-quote a transfer; \
+                  Unknown must not be coerced to zero"]
+    fn fast_transfer_fee_bps(&self) -> Result<FastTransferFee>;
 
     /// Returns the `TokenMessengerV2` contract address for this chain
     ///
@@ -140,15 +173,15 @@ impl CctpV2 for NamedChain {
         Ok(true)
     }
 
-    fn fast_transfer_fee_bps(&self) -> Result<Option<u32>> {
+    fn fast_transfer_fee_bps(&self) -> Result<FastTransferFee> {
         if !self.supports_cctp_v2() {
             return Err(CctpError::UnsupportedChain(*self));
         }
 
-        // Most chains have 0 bps fees (free fast transfer!)
-        // Based on Circle's documentation, fees range from 0-14 bps
-        // TODO: Update with actual fee data per chain when available
-        Ok(Some(0))
+        // Per-chain fees have not been sourced against Circle's
+        // published values; until they are, every chain reports
+        // Unknown rather than a placeholder zero.
+        Ok(FastTransferFee::Unknown)
     }
 
     fn token_messenger_v2_address(&self) -> Result<Address> {
@@ -291,14 +324,49 @@ mod tests {
         assert!(NamedChain::Moonbeam.supports_fast_transfer().is_err());
     }
 
-    #[test]
-    fn test_fast_transfer_fees() {
-        // Currently all chains return 0 bps (placeholder)
+    #[rstest]
+    // v1 mainnets that also support v2
+    #[case(NamedChain::Mainnet)]
+    #[case(NamedChain::Arbitrum)]
+    #[case(NamedChain::Base)]
+    #[case(NamedChain::Optimism)]
+    #[case(NamedChain::Avalanche)]
+    #[case(NamedChain::Polygon)]
+    #[case(NamedChain::Unichain)]
+    // v2-only mainnets
+    #[case(NamedChain::Linea)]
+    #[case(NamedChain::Sonic)]
+    #[case(NamedChain::Sei)]
+    // v1 testnets that also support v2
+    #[case(NamedChain::Sepolia)]
+    #[case(NamedChain::ArbitrumSepolia)]
+    #[case(NamedChain::BaseSepolia)]
+    #[case(NamedChain::OptimismSepolia)]
+    #[case(NamedChain::AvalancheFuji)]
+    #[case(NamedChain::PolygonAmoy)]
+    fn fast_transfer_fee_is_unknown_until_sourced(#[case] chain: NamedChain) {
+        // Per-chain values are not sourced yet, so every supported v2
+        // chain must report Unknown — never a placeholder Known(0)
+        // that would look like a confirmed fee to callers. Exhaustive
+        // over every variant matched by `supports_cctp_v2()` so a
+        // future variant that accidentally returns Err is caught.
         assert_eq!(
-            NamedChain::Mainnet.fast_transfer_fee_bps().unwrap(),
-            Some(0)
+            chain.fast_transfer_fee_bps().unwrap(),
+            FastTransferFee::Unknown
         );
-        assert_eq!(NamedChain::Linea.fast_transfer_fee_bps().unwrap(), Some(0));
+    }
+
+    #[test]
+    fn fast_transfer_fee_unknown_is_distinct_from_known_zero() {
+        // Sanity: Known(0) and Unknown are not equal. This is the
+        // invariant issue #215 cared about — a confirmed-zero fee must
+        // not collide with the "we haven't sourced this" state.
+        assert_ne!(FastTransferFee::Known(0), FastTransferFee::Unknown);
+    }
+
+    #[test]
+    fn fast_transfer_fee_errors_for_unsupported_chain() {
+        assert!(NamedChain::Moonbeam.fast_transfer_fee_bps().is_err());
     }
 
     #[test]

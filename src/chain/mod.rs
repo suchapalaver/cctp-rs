@@ -14,4 +14,4 @@ mod config;
 mod v2;
 
 pub use config::CctpV1;
-pub use v2::CctpV2;
+pub use v2::{CctpV2, FastTransferFee};
