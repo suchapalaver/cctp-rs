@@ -20,8 +20,37 @@ fn push_address_word(bytes: &mut Vec<u8>, address: Address) {
     bytes.extend_from_slice(address.as_slice());
 }
 
+/// Decodes a canonical EVM address word.
+///
+/// Returns `None` unless `bytes` is exactly 32 bytes long and the leading 12
+/// bytes are zero (the CCTP `bytes32` padding convention for EVM addresses).
+/// Rejecting non-canonical words preserves the `decode(raw).encode() == raw`
+/// invariant — otherwise stray leading bytes would be silently truncated on
+/// decode and reintroduced as zeros on re-encode.
 fn decode_address_word(bytes: &[u8]) -> Option<Address> {
-    (bytes.len() == 32).then(|| Address::from_slice(&bytes[12..32]))
+    if bytes.len() != 32 {
+        return None;
+    }
+    if bytes[..12].iter().any(|byte| *byte != 0) {
+        return None;
+    }
+    Some(Address::from_slice(&bytes[12..32]))
+}
+
+fn check_canonical_address_word(bytes: &[u8], field: &str) -> Result<(), ParseMessageError> {
+    if bytes.len() != 32 {
+        return Err(ParseMessageError::new(format!(
+            "{field} word requires 32 bytes, got {len}",
+            len = bytes.len()
+        )));
+    }
+    if bytes[..12].iter().any(|byte| *byte != 0) {
+        return Err(ParseMessageError::new(format!(
+            "{field} word has non-zero leading bytes; canonical CCTP v2 address \
+             words must be zero-padded in the first 12 bytes"
+        )));
+    }
+    Ok(())
 }
 
 fn bytes_is_empty(bytes: &Bytes) -> bool {
@@ -401,7 +430,12 @@ impl BurnMessageV2 {
         Bytes::from(bytes)
     }
 
-    /// Decodes a burn message body from bytes.
+    /// Decodes a canonical burn message body from bytes.
+    ///
+    /// Returns `None` for bytes shorter than [`Self::MIN_SIZE`] or whose
+    /// `burn_token`, `mint_recipient`, or `message_sender` `bytes32` words are
+    /// not zero-padded in the leading 12 bytes. For any accepted input,
+    /// `decode(raw).unwrap().encode() == raw`.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < Self::MIN_SIZE {
             return None;
@@ -421,6 +455,11 @@ impl BurnMessageV2 {
     }
 
     /// Parses a burn message body and returns a descriptive error on failure.
+    ///
+    /// Accepts only canonical CCTP v2 burn-message bodies: address words for
+    /// `burn_token`, `mint_recipient`, and `message_sender` must be zero-padded
+    /// in the leading 12 bytes. Non-canonical address words are rejected so
+    /// that `parse(raw).encode() == raw` holds for every accepted input.
     pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
         if bytes.len() < Self::MIN_SIZE {
             return Err(ParseMessageError::new(format!(
@@ -429,6 +468,10 @@ impl BurnMessageV2 {
                 bytes.len()
             )));
         }
+
+        check_canonical_address_word(&bytes[4..36], "burn_token")?;
+        check_canonical_address_word(&bytes[36..68], "mint_recipient")?;
+        check_canonical_address_word(&bytes[100..132], "message_sender")?;
 
         Self::decode(bytes)
             .ok_or_else(|| ParseMessageError::new("failed to decode burn message body"))
@@ -463,14 +506,28 @@ impl ParsedV2Message {
         Bytes::from(bytes)
     }
 
-    /// Decodes a full CCTP v2 message.
+    /// Decodes a canonical CCTP v2 burn-transfer message.
+    ///
+    /// Returns `None` for inputs that are too short, carry an unknown domain
+    /// ID, or contain non-canonical `bytes32` address words in the burn body.
+    /// For any accepted input, `decode(raw).unwrap().encode() == raw` and
+    /// `decode(raw).unwrap().message_hash() == keccak256(raw)`. Use
+    /// [`Self::summary`] to obtain the JSON-friendly, lossy projection used
+    /// in agent and tool responses.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let header = MessageHeader::decode(bytes)?;
         let body = BurnMessageV2::decode(&bytes[MessageHeader::SIZE..])?;
         Some(Self { header, body })
     }
 
-    /// Parses a full CCTP v2 message and returns a descriptive error on failure.
+    /// Parses a canonical CCTP v2 burn-transfer message and returns a
+    /// descriptive error on failure.
+    ///
+    /// Strict parser: every accepted input round-trips byte-for-byte through
+    /// [`Self::encode`] and hashes to `keccak256(raw)` via [`Self::message_hash`].
+    /// Non-canonical address words in the burn body (any `bytes32` word whose
+    /// leading 12 bytes are not zero) are rejected. For a lossy, JSON-friendly
+    /// view of the parsed message, call [`Self::summary`].
     pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
         let header = MessageHeader::parse(bytes)?;
         let body = BurnMessageV2::parse(&bytes[MessageHeader::SIZE..])?;
@@ -747,6 +804,101 @@ mod tests {
         let decoded = BurnMessageV2::decode(&encoded).expect("burn message should decode");
 
         assert_eq!(decoded, message);
+        assert_eq!(
+            decoded.encode(),
+            encoded,
+            "decode then encode must reproduce the canonical bytes"
+        );
+    }
+
+    fn canonical_burn_body_bytes() -> Vec<u8> {
+        BurnMessageV2::new_with_fast_transfer(
+            address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
+            U256::from(1_000_000u64),
+            address!("1234567890abcdef1234567890abcdef12345678"),
+            U256::from(100u64),
+        )
+        .encode()
+        .to_vec()
+    }
+
+    #[test]
+    fn test_burn_message_v2_rejects_non_canonical_burn_token() {
+        let mut bytes = canonical_burn_body_bytes();
+        // burn_token word occupies bytes[4..36]; flip a padding byte.
+        bytes[4] = 0xff;
+
+        assert!(
+            BurnMessageV2::decode(&bytes).is_none(),
+            "decode must reject non-canonical burn_token word"
+        );
+        let err = BurnMessageV2::parse(&bytes)
+            .expect_err("parse must reject non-canonical burn_token word");
+        assert!(
+            err.to_string().contains("burn_token"),
+            "parse error should name the offending field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_burn_message_v2_rejects_non_canonical_mint_recipient() {
+        let mut bytes = canonical_burn_body_bytes();
+        // mint_recipient word occupies bytes[36..68]; flip a padding byte.
+        bytes[36] = 0xff;
+
+        assert!(
+            BurnMessageV2::decode(&bytes).is_none(),
+            "decode must reject non-canonical mint_recipient word"
+        );
+        let err = BurnMessageV2::parse(&bytes)
+            .expect_err("parse must reject non-canonical mint_recipient word");
+        assert!(
+            err.to_string().contains("mint_recipient"),
+            "parse error should name the offending field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_burn_message_v2_rejects_non_canonical_message_sender() {
+        let mut bytes = canonical_burn_body_bytes();
+        // message_sender word occupies bytes[100..132]; flip a padding byte.
+        bytes[100] = 0xff;
+
+        assert!(
+            BurnMessageV2::decode(&bytes).is_none(),
+            "decode must reject non-canonical message_sender word"
+        );
+        let err = BurnMessageV2::parse(&bytes)
+            .expect_err("parse must reject non-canonical message_sender word");
+        assert!(
+            err.to_string().contains("message_sender"),
+            "parse error should name the offending field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_parsed_v2_message_rejects_non_canonical_body() {
+        // Real Circle message reused from the round-trip test; valid as-is, then mutated.
+        let mut bytes = hex::decode("0000000100000003000000062f3cb13cf4a6103f9e3b256495b08c4e05630fcba639565d199ed420a5f2be010000000000000000000000008fe6b999dc680ccfdd5bf7eb0974218be2542daa0000000000000000000000008fe6b999dc680ccfdd5bf7eb0974218be2542daa0000000000000000000000000000000000000000000000000000000000000000000007d0000007d00000000100000000000000000000000075faf114eafb1bdbe2f0316df893fd58ce46aa4d0000000000000000000000007f7d081724f0240c64c9e01cde4626602f9a019200000000000000000000000000000000000000000000000000000000000f42400000000000000000000000007f7d081724f0240c64c9e01cde4626602f9a0192000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap();
+
+        // Sanity-check: the canonical form parses round-trip cleanly today.
+        let canonical = ParsedV2Message::parse(&bytes).expect("canonical message parses");
+        assert_eq!(canonical.encode().as_ref(), bytes.as_slice());
+
+        // Body burn_token word lives at MessageHeader::SIZE + 4; flip a padding byte.
+        bytes[MessageHeader::SIZE + 4] = 0xff;
+
+        assert!(
+            ParsedV2Message::decode(&bytes).is_none(),
+            "ParsedV2Message::decode must reject non-canonical body address words"
+        );
+        let err = ParsedV2Message::parse(&bytes)
+            .expect_err("ParsedV2Message::parse must reject non-canonical body address words");
+        assert!(
+            err.to_string().contains("burn_token"),
+            "parse error should name the offending field: {err}"
+        );
     }
 
     #[test]
