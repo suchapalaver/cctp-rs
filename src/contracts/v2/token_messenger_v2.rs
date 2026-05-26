@@ -84,7 +84,10 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
 
     /// Create the transaction request for the `depositForBurn` function (v2 standard)
     ///
-    /// Standard transfer with 2000 (finalized) threshold and no fees.
+    /// For standard (no-hook, no-fast-fee) transfers. Pass
+    /// `FinalityThreshold::Standard.as_u32()` (2000) for this path; the
+    /// parameter is exposed rather than hardcoded so the same value can be
+    /// derived from a single caller-side source of truth.
     #[allow(dead_code)]
     pub fn deposit_for_burn_transaction(
         &self,
@@ -93,6 +96,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
         destination_domain: DomainId,
         token_address: Address,
         amount: U256,
+        min_finality_threshold: u32,
     ) -> TransactionRequest {
         let span = spans::deposit_for_burn(
             &from_address,
@@ -111,7 +115,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             amount = %amount,
             contract_address = %self.instance.address(),
             version = "v2",
-            finality_threshold = 2000,
+            finality_threshold = min_finality_threshold,
             event = "deposit_for_burn_v2_transaction_created"
         );
 
@@ -121,8 +125,8 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             destination_domain,
             token_address,
             amount,
-            U256::ZERO,    // max_fee: 0 for standard transfers
-            2000,          // min_finality_threshold: 2000 = finalized
+            U256::ZERO, // max_fee: 0 for standard transfers
+            min_finality_threshold,
             Address::ZERO, // destination_caller: 0x0 = anyone
         )
     }
@@ -137,13 +141,17 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
     /// * `token_address` - USDC token contract address
     /// * `amount` - Amount to transfer
     /// * `max_fee` - Maximum fee willing to pay for fast transfer
+    /// * `min_finality_threshold` - Pass `FinalityThreshold::Fast.as_u32()`
+    ///   (1000) for this path. Exposed alongside `max_fee` so both wire values
+    ///   can be derived from a single caller-side source of truth.
     ///
     /// # Fast Transfer
     ///
     /// When `max_fee` >= minimum fast transfer fee for the chain, the transfer
     /// will be attested at the "confirmed" finality level (~30 seconds) instead
-    /// of "finalized" level (~15 minutes). Uses finality threshold 1000.
+    /// of "finalized" level (~15 minutes).
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn deposit_for_burn_fast_transaction(
         &self,
         from_address: Address,
@@ -152,6 +160,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
         token_address: Address,
         amount: U256,
         max_fee: U256,
+        min_finality_threshold: u32,
     ) -> TransactionRequest {
         info!(
             from_address = %from_address,
@@ -163,7 +172,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             contract_address = %self.instance.address(),
             version = "v2",
             transfer_type = "fast",
-            finality_threshold = 1000,
+            finality_threshold = min_finality_threshold,
             event = "deposit_for_burn_fast_transaction_created"
         );
 
@@ -173,8 +182,8 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             destination_domain,
             token_address,
             amount,
-            max_fee,       // max_fee: provided by caller
-            1000,          // min_finality_threshold: 1000 = confirmed (fast)
+            max_fee,
+            min_finality_threshold,
             Address::ZERO, // destination_caller: 0x0 = anyone
         )
     }

@@ -34,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arguments. The previous signature hardcoded standard finality with
   zero fee, which excluded the hook + fast-finality burn that
   Circle's `depositForBurnWithHook` supports natively.
+- **Breaking:** `TokenMessengerV2Contract::deposit_for_burn_transaction`
+  and `deposit_for_burn_fast_transaction` now take an additional
+  `min_finality_threshold: u32` argument. The previous signatures
+  hardcoded `2000` and `1000` internally, so the bridge could only
+  guarantee the wire `minFinalityThreshold` matched
+  `transfer_mode().finality_threshold()` by routing each
+  `TransferMode` to the right helper. Parameterizing both lets
+  `CctpV2::burn` derive every wire value from a single
+  `self.transfer_mode.finality_threshold().as_u32()` call and
+  extends the issue #218 structural defense to all four
+  `TransferMode` variants. Tracks issue #224.
 
 ### Fixed
 

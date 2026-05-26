@@ -610,6 +610,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                     token_address,
                     amount,
                     max_fee,
+                    min_finality_threshold,
                 ),
             None => token_messenger.deposit_for_burn_transaction(
                 from,
@@ -617,6 +618,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                 destination_domain,
                 token_address,
                 amount,
+                min_finality_threshold,
             ),
         };
 
