@@ -4,7 +4,9 @@
 
 use crate::error::{AttestationFailureKind, CctpError, Result};
 use crate::protocol::{AttestationBytes, FinalityThreshold};
-use crate::{spans, AttestationStatus, CctpV2 as CctpV2Trait, DomainId, V2AttestationResponse};
+use crate::{
+    spans, AttestationStatus, CctpV2 as CctpV2Trait, DomainId, V2AttestationResponse, V2Message,
+};
 use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
 use alloy_primitives::{hex, Address, Bytes, FixedBytes, TxHash, U256};
@@ -464,54 +466,53 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                                 }
                             };
 
-                        // V2 returns an array of messages - get the first one
-                        let message = match v2_response.messages.first() {
-                            Some(msg) => msg,
-                            None => {
-                                debug!(event = "no_messages_in_response");
-                                sleep(Duration::from_secs(poll_interval)).await;
-                                return Ok(None);
-                            }
-                        };
-
-                        match message.status {
-                            AttestationStatus::Complete => {
-                                let attestation_bytes = message
-                                    .attestation
-                                    .as_ref()
-                                    .ok_or_else(super::attestation_data_missing)?
-                                    .to_vec();
-
-                                let message_bytes = message
-                                    .message
-                                    .as_ref()
-                                    .ok_or_else(|| {
-                                        spans::record_error_with_context(
-                                            "MessageDataMissing",
-                                            "Attestation status is complete but message field is null",
-                                            Some("This indicates an unexpected API response format"),
-                                        );
-                                        error!(event = "message_data_missing");
-                                        CctpError::AttestationFailed(
-                                            AttestationFailureKind::MessageMissing,
-                                        )
-                                    })?
-                                    .to_vec();
-
+                        // V2 can return several messages for one transaction. Pick
+                        // the right action by scanning the whole array rather than
+                        // trusting the first entry — the first could be pending or
+                        // failed while a sibling carries usable attestation data.
+                        let message_count = v2_response.messages.len();
+                        match select_v2_attestation(&v2_response.messages) {
+                            V2AttestationOutcome::Ready {
+                                message: message_bytes,
+                                attestation: attestation_bytes,
+                            } => {
                                 info!(
                                     message_length_bytes = message_bytes.len(),
                                     attestation_length_bytes = attestation_bytes.len(),
+                                    message_count = message_count,
                                     version = "v2",
                                     fast_transfer = self.transfer_mode.is_fast(),
                                     event = "attestation_complete"
                                 );
                                 Ok(Some((message_bytes, attestation_bytes)))
                             }
-                            AttestationStatus::Failed => {
+                            V2AttestationOutcome::Failed => {
                                 Err(super::attestation_api_reported_failed())
                             }
-                            AttestationStatus::Pending | AttestationStatus::PendingConfirmations => {
-                                debug!(event = "attestation_pending");
+                            V2AttestationOutcome::AttestationMissing => {
+                                Err(super::attestation_data_missing())
+                            }
+                            V2AttestationOutcome::MessageMissing => {
+                                spans::record_error_with_context(
+                                    "MessageDataMissing",
+                                    "Attestation status is complete but message field is null",
+                                    Some("This indicates an unexpected API response format"),
+                                );
+                                error!(event = "message_data_missing");
+                                Err(CctpError::AttestationFailed(
+                                    AttestationFailureKind::MessageMissing,
+                                ))
+                            }
+                            V2AttestationOutcome::Pending => {
+                                debug!(
+                                    message_count = message_count,
+                                    event = "attestation_pending"
+                                );
+                                sleep(Duration::from_secs(poll_interval)).await;
+                                Ok(None)
+                            }
+                            V2AttestationOutcome::Empty => {
+                                debug!(event = "no_messages_in_response");
                                 sleep(Duration::from_secs(poll_interval)).await;
                                 Ok(None)
                             }
@@ -1335,6 +1336,90 @@ impl<P: Provider<Ethereum> + Clone> CctpBridge for CctpV2<P> {
     }
 }
 
+/// The action a single poll of the v2 attestation API should take, derived
+/// from scanning every message Circle returned for the transaction.
+///
+/// A v2 query is keyed by transaction hash, and one transaction can emit
+/// multiple `MessageSent` events, so the response array may hold a mix of
+/// pending, complete, and failed entries. Selecting on the array as a whole
+/// keeps a usable attestation from being missed because it sat behind a
+/// pending or failed sibling.
+#[derive(Debug, PartialEq, Eq)]
+enum V2AttestationOutcome {
+    /// A complete message carrying both message and attestation bytes.
+    Ready {
+        message: Vec<u8>,
+        attestation: AttestationBytes,
+    },
+    /// No usable message yet, but at least one is still pending — keep polling.
+    Pending,
+    /// A `Complete` message was found but its attestation field was null.
+    AttestationMissing,
+    /// A `Complete` message was found but its message field was null.
+    MessageMissing,
+    /// Every message reported failure and none carried usable data.
+    Failed,
+    /// The response held no messages — keep polling.
+    Empty,
+}
+
+/// Chooses what to do with a v2 attestation response's message array.
+///
+/// Precedence, highest first:
+/// 1. Any `Complete` message with both fields present succeeds, even if a
+///    sibling has failed.
+/// 2. A still-pending message means keep polling — a failed sibling does not
+///    end the transaction while another message may yet complete.
+/// 3. A `Complete` message missing its data is surfaced as a malformed
+///    response (attestation checked before message, matching the prior path).
+/// 4. With nothing pending or usable, an all-failed response fails.
+/// 5. An empty array keeps polling.
+fn select_v2_attestation(messages: &[V2Message]) -> V2AttestationOutcome {
+    if let Some((message, attestation)) = messages.iter().find_map(|message| {
+        if message.status != AttestationStatus::Complete {
+            return None;
+        }
+        Some((
+            message.message.as_ref()?.to_vec(),
+            message.attestation.as_ref()?.to_vec(),
+        ))
+    }) {
+        return V2AttestationOutcome::Ready {
+            message,
+            attestation,
+        };
+    }
+
+    if messages.iter().any(|message| {
+        matches!(
+            message.status,
+            AttestationStatus::Pending | AttestationStatus::PendingConfirmations
+        )
+    }) {
+        return V2AttestationOutcome::Pending;
+    }
+
+    if let Some(message) = messages
+        .iter()
+        .find(|message| message.status == AttestationStatus::Complete)
+    {
+        return if message.attestation.is_none() {
+            V2AttestationOutcome::AttestationMissing
+        } else {
+            V2AttestationOutcome::MessageMissing
+        };
+    }
+
+    if messages
+        .iter()
+        .any(|message| message.status == AttestationStatus::Failed)
+    {
+        return V2AttestationOutcome::Failed;
+    }
+
+    V2AttestationOutcome::Empty
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2014,6 +2099,169 @@ mod tests {
         assert_eq!(bridge.hook_data(), Some(&hook_data));
         assert_eq!(bridge.hook_data().unwrap().len(), 4);
         assert_eq!(bridge.hook_data().unwrap()[0], 0xde);
+    }
+
+    mod select_v2_attestation {
+        //! Unit coverage for the multi-message selection in
+        //! [`super::super::select_v2_attestation`] (issue #213).
+        //!
+        //! V2 polling used to read `messages.first()` and act on that one
+        //! entry's status, so a complete attestation sitting behind a
+        //! pending or failed sibling was either ignored or treated as a
+        //! whole-transaction failure. These tests pin the array-wide
+        //! precedence: a usable complete message wins over anything, a
+        //! pending sibling keeps polling alive, and only an all-failed
+        //! response fails.
+        use super::super::{select_v2_attestation, V2AttestationOutcome};
+        use super::*;
+
+        fn message(
+            status: AttestationStatus,
+            message: Option<&[u8]>,
+            attestation: Option<&[u8]>,
+        ) -> V2Message {
+            V2Message {
+                status,
+                message: message.map(Bytes::copy_from_slice),
+                attestation: attestation.map(Bytes::copy_from_slice),
+            }
+        }
+
+        fn complete(msg: &[u8], attestation: &[u8]) -> V2Message {
+            message(AttestationStatus::Complete, Some(msg), Some(attestation))
+        }
+
+        #[test]
+        fn empty_array_keeps_polling() {
+            assert_eq!(select_v2_attestation(&[]), V2AttestationOutcome::Empty);
+        }
+
+        #[test]
+        fn single_complete_message_is_ready() {
+            let messages = vec![complete(&[0xde, 0xad], &[0xbe, 0xef])];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Ready {
+                    message: vec![0xde, 0xad],
+                    attestation: vec![0xbe, 0xef],
+                }
+            );
+        }
+
+        #[test]
+        fn complete_behind_pending_is_selected() {
+            // The defect: the first entry is pending, the usable attestation
+            // sits second. The old `messages.first()` path would have slept
+            // and kept polling forever even though data was already present.
+            let messages = vec![
+                message(AttestationStatus::Pending, None, None),
+                complete(&[0x01, 0x02], &[0x03, 0x04]),
+            ];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Ready {
+                    message: vec![0x01, 0x02],
+                    attestation: vec![0x03, 0x04],
+                }
+            );
+        }
+
+        #[test]
+        fn complete_behind_failed_is_selected() {
+            // The defect's other half: a failed first entry would have failed
+            // the whole transaction even though a sibling completed.
+            let messages = vec![
+                message(AttestationStatus::Failed, None, None),
+                complete(&[0xaa], &[0xbb]),
+            ];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Ready {
+                    message: vec![0xaa],
+                    attestation: vec![0xbb],
+                }
+            );
+        }
+
+        #[test]
+        fn first_complete_message_wins_when_several_are_ready() {
+            let messages = vec![complete(&[0x11], &[0x22]), complete(&[0x33], &[0x44])];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Ready {
+                    message: vec![0x11],
+                    attestation: vec![0x22],
+                }
+            );
+        }
+
+        #[test]
+        fn pending_sibling_outranks_failed_when_none_complete() {
+            // A failed message must not end the transaction while a sibling
+            // is still pending and might yet complete on a later poll.
+            let messages = vec![
+                message(AttestationStatus::Failed, None, None),
+                message(AttestationStatus::PendingConfirmations, None, None),
+            ];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Pending
+            );
+        }
+
+        #[test]
+        fn all_failed_fails() {
+            let messages = vec![
+                message(AttestationStatus::Failed, None, None),
+                message(AttestationStatus::Failed, None, None),
+            ];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Failed
+            );
+        }
+
+        #[test]
+        fn complete_missing_attestation_reports_attestation_missing() {
+            // No pending sibling, so the malformed complete is surfaced rather
+            // than masked — attestation is checked before message.
+            let messages = vec![message(
+                AttestationStatus::Complete,
+                Some(&[0xde, 0xad]),
+                None,
+            )];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::AttestationMissing
+            );
+        }
+
+        #[test]
+        fn complete_missing_message_reports_message_missing() {
+            let messages = vec![message(
+                AttestationStatus::Complete,
+                None,
+                Some(&[0xbe, 0xef]),
+            )];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::MessageMissing
+            );
+        }
+
+        #[test]
+        fn pending_outranks_malformed_complete() {
+            // A complete-but-empty entry alongside a pending one keeps polling:
+            // the pending message may resolve into a usable attestation.
+            let messages = vec![
+                message(AttestationStatus::Complete, None, None),
+                message(AttestationStatus::Pending, None, None),
+            ];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Pending
+            );
+        }
     }
 
     mod burn_dispatch_wire {
