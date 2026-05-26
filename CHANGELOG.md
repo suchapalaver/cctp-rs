@@ -117,6 +117,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking:** `BurnMessageV2::decode`, `BurnMessageV2::parse`,
+  `ParsedV2Message::decode`, and `ParsedV2Message::parse` now reject
+  messages whose `burn_token`, `mint_recipient`, or `message_sender`
+  `bytes32` words are not zero-padded in the leading 12 bytes.
+  Previously such non-canonical inputs decoded successfully with the
+  stray bytes dropped, so `decode(raw).encode() != raw` and
+  `message_hash(decode(raw)) != keccak256(raw)`. The strict parser
+  restores the round-trip and hash invariants for every accepted
+  input. `BurnMessageV2::parse` and `ParsedV2Message::parse` surface
+  a per-field error naming the offending word (`burn_token`,
+  `mint_recipient`, or `message_sender`); `decode` returns `None`.
+  Downstream consumers that previously fed unvalidated bytes to these
+  parsers must now handle the rejection path. Tracks issue #214.
 - Fast transfer + hook configurations now actually send a
   fast-finality burn on-chain. Previous versions silently fell back
   to the standard-finality hook path while still reporting
