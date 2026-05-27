@@ -53,11 +53,11 @@ pub enum FastTransferFee {
 /// - **Fast Transfer**: Chains that support fast transfer (finality threshold 1000)
 /// - **Dynamic Fees**: Some chains charge fees for fast transfer (0-14 bps)
 /// - **v2 Contracts**: Updated contract addresses for `TokenMessengerV2` and `MessageTransmitterV2`
-/// - **Expanded Chains**: Bridge SDK routes 10 v2-capable chain families
-///   (the 7 v1 families plus Linea, Sonic, Sei) with testnets, versus the
-///   7 v1 chain families. Note that this trait covers bridge SDK reach —
-///   Circle has announced 21 CCTP v2 domain IDs in total, which the
-///   protocol parser (`DomainId`, `ParsedV2Message`) can decode
+/// - **Expanded Chains**: Bridge SDK routes 11 v2-capable chain families
+///   (the 7 v1 families plus Linea, Sonic, Sei, HyperEVM) with testnets,
+///   versus the 7 v1 chain families. Note that this trait covers bridge
+///   SDK reach — Circle has announced 21 CCTP v2 domain IDs in total,
+///   which the protocol parser (`DomainId`, `ParsedV2Message`) can decode
 ///   independently of bridge support.
 ///
 /// # Example
@@ -166,6 +166,7 @@ impl CctpV2 for NamedChain {
                 | Self::Linea
                 | Self::Sonic
                 | Self::Sei
+                | Self::Hyperliquid
         )
     }
 
@@ -233,6 +234,7 @@ impl CctpV2 for NamedChain {
             Self::Linea => DomainId::Linea,
             Self::Sonic => DomainId::Sonic,
             Self::Sei => DomainId::Sei,
+            Self::Hyperliquid => DomainId::HyperEvm,
             // This is unreachable due to supports_cctp_v2() check above
             _ => return Err(CctpError::UnsupportedChain(*self)),
         })
@@ -266,6 +268,8 @@ impl CctpV2 for NamedChain {
             Self::Sonic => 5,
             // Sei: ~5 seconds (parallel EVM)
             Self::Sei => 5,
+            // HyperEVM: ~5 seconds (1 block confirmation, high-performance chain)
+            Self::Hyperliquid => 5,
             _ => return Err(CctpError::UnsupportedChain(*self)),
         })
     }
@@ -294,6 +298,8 @@ impl CctpV2 for NamedChain {
             Self::Sonic => 5,
             // Sei: ~5 seconds (parallel EVM, native finality)
             Self::Sei => 5,
+            // HyperEVM: ~5 seconds (1 block confirmation, native finality)
+            Self::Hyperliquid => 5,
             _ => return Err(CctpError::UnsupportedChain(*self)),
         })
     }
@@ -312,6 +318,7 @@ mod tests {
     #[case(NamedChain::Linea, true)]
     #[case(NamedChain::Sonic, true)]
     #[case(NamedChain::Sei, true)]
+    #[case(NamedChain::Hyperliquid, true)]
     #[case(NamedChain::BinanceSmartChain, false)]
     #[case(NamedChain::Moonbeam, false)]
     fn test_v2_chain_support(#[case] chain: NamedChain, #[case] expected: bool) {
@@ -342,6 +349,7 @@ mod tests {
     #[case(NamedChain::Linea)]
     #[case(NamedChain::Sonic)]
     #[case(NamedChain::Sei)]
+    #[case(NamedChain::Hyperliquid)]
     // v1 testnets that also support v2
     #[case(NamedChain::Sepolia)]
     #[case(NamedChain::ArbitrumSepolia)]
@@ -396,6 +404,10 @@ mod tests {
             DomainId::Sonic
         );
         assert_eq!(NamedChain::Sei.cctp_v2_domain_id().unwrap(), DomainId::Sei);
+        assert_eq!(
+            NamedChain::Hyperliquid.cctp_v2_domain_id().unwrap(),
+            DomainId::HyperEvm
+        );
     }
 
     #[test]
@@ -448,6 +460,12 @@ mod tests {
         );
         assert_eq!(
             NamedChain::Sei
+                .fast_transfer_confirmation_time_seconds()
+                .unwrap(),
+            5
+        );
+        assert_eq!(
+            NamedChain::Hyperliquid
                 .fast_transfer_confirmation_time_seconds()
                 .unwrap(),
             5
@@ -506,6 +524,12 @@ mod tests {
         );
         assert_eq!(
             NamedChain::Sei
+                .standard_transfer_confirmation_time_seconds()
+                .unwrap(),
+            5
+        );
+        assert_eq!(
+            NamedChain::Hyperliquid
                 .standard_transfer_confirmation_time_seconds()
                 .unwrap(),
             5

@@ -11,7 +11,7 @@ A production-ready Rust implementation of Circle's Cross-Chain Transfer Protocol
 ## Features
 
 - 🚀 **Type-safe** contract interactions using Alloy
-- 🔄 **Bridge SDK** for 10 v2-capable EVM mainnet chains plus 6 USDC testnets; **protocol parser** recognizes all 21 CCTP v2 domain IDs (including non-EVM domains such as Solana and Starknet Testnet)
+- 🔄 **Bridge SDK** for 11 v2-capable EVM mainnet chains plus 6 USDC testnets; **protocol parser** recognizes all 21 CCTP v2 domain IDs (including non-EVM domains such as Solana and Starknet Testnet)
 - 📦 **Builder pattern** for intuitive API usage
 - ⚡ **CCTP v2 support** with fast transfers (<30s settlement)
 - 🤝 **Relayer-aware** APIs for permissionless v2 relay handling
@@ -41,7 +41,7 @@ Chains returning `true` from `NamedChain::supports_cctp_v2()`:
 #### Mainnet
 
 - Ethereum, Arbitrum, Base, Optimism, Avalanche, Polygon, Unichain
-- Linea, Sonic, Sei (v2-only chains)
+- Linea, Sonic, Sei, HyperEVM (v2-only chains)
 
 #### Testnet
 
@@ -56,7 +56,7 @@ source or destination — `NamedChain::supports_cctp_v2()` returns
 `false` and the bridge builder will reject them:
 
 - Solana (5, non-EVM), Codex (12), World Chain (14), Monad (15),
-  BNB Smart Chain (17), XDC (18), HyperEVM (19), Ink (21), Plume (22),
+  BNB Smart Chain (17), XDC (18), Ink (21), Plume (22),
   Starknet Testnet (25, non-EVM), Arc Testnet (26)
 
 Use this list when you need to *inspect* messages crossing these
@@ -430,7 +430,7 @@ cargo run --example v2_fast_transfer
 
 The `v2_integration_validation` example validates:
 
-- Chain support matrix (10 v2-capable mainnet chain families plus 6 testnets)
+- Chain support matrix (11 v2-capable mainnet chain families plus 6 testnets)
 - Domain ID mappings against Circle's official values
 - Contract address consistency (unified v2 addresses)
 - Bridge configuration variations (standard, fast, hooks)
