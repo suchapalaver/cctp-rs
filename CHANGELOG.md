@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-05-27
+
+### Added
+
+- HyperEVM (Hyperliquid's EVM chain) bridge support via
+  `NamedChain::Hyperliquid`. Domain ID 19, unified V2 contract
+  addresses, and 5-second confirmation times for both fast and
+  standard transfers (native finality). This brings the bridge SDK
+  to 11 v2-capable chain families.
+
 ## [6.0.1] - 2026-05-27
 
 ### Changed

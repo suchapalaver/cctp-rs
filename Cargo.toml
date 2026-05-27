@@ -1,6 +1,6 @@
 [package]
 name = "cctp-rs"
-version = "6.0.1"
+version = "6.1.0"
 edition = "2021"
 authors = ["Joseph Livesey <jlivesey@gmail.com>"]
 categories = ["finance", "api-bindings"]
