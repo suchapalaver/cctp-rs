@@ -3,8 +3,8 @@
 [![Crates.io](https://img.shields.io/crates/v/cctp-rs.svg)](https://crates.io/crates/cctp-rs)
 [![Documentation](https://docs.rs/cctp-rs/badge.svg)](https://docs.rs/cctp-rs)
 [![License](https://img.shields.io/crates/l/cctp-rs.svg)](LICENSE)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/semiotic-ai/cctp-rs/ci.yml?branch=main)](https://github.com/semiotic-ai/cctp-rs/actions)
-[![REUSE status](https://api.reuse.software/badge/github.com/semiotic-ai/cctp-rs)](https://api.reuse.software/info/github.com/semiotic-ai/cctp-rs)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/suchapalaver/cctp-rs/ci.yml?branch=main)](https://github.com/suchapalaver/cctp-rs/actions)
+[![REUSE status](https://api.reuse.software/badge/github.com/suchapalaver/cctp-rs)](https://api.reuse.software/info/github.com/suchapalaver/cctp-rs)
 
 A production-ready Rust implementation of Circle's Cross-Chain Transfer Protocol (CCTP), enabling seamless USDC transfers across blockchain networks.
 
@@ -471,4 +471,4 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 - [CCTP Documentation](https://developers.circle.com/stablecoins/cctp-getting-started)
 - [API Reference](https://docs.rs/cctp-rs)
-- [GitHub Repository](https://github.com/semiotic-ai/cctp-rs)
+- [GitHub Repository](https://github.com/suchapalaver/cctp-rs)

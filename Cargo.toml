@@ -2,14 +2,14 @@
 name = "cctp-rs"
 version = "6.0.0"
 edition = "2021"
-authors = ["Joseph Livesey <joseph@semiotic.ai>"]
+authors = ["Joseph Livesey <jlivesey@gmail.com>"]
 categories = ["finance", "api-bindings"]
 description = "Type-safe Rust SDK for Circle's Cross-Chain Transfer Protocol (CCTP) v1 and v2 — bridge USDC across 10 v2-capable EVM chain families with fast transfer support; protocol parser recognizes all 21 announced CCTP v2 domain IDs."
 homepage = "https://crates.io/crates/cctp-rs"
 keywords = ["cctp", "usdc", "circle", "bridge", "alloy"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/semiotic-ai/cctp-rs"
+repository = "https://github.com/suchapalaver/cctp-rs"
 
 [dependencies]
 alloy-chains = "0.2"
