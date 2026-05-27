@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.1] - 2026-05-27
+
+### Changed
+
+- Repository moved to [suchapalaver/cctp-rs](https://github.com/suchapalaver/cctp-rs) for independent maintenance.
+- Updated author contact email.
+
 ## [6.0.0] - 2026-05-26
 
 ### Added
