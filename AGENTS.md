@@ -11,9 +11,9 @@ layers that have different coverage:
 - **Bridge SDK** (`CctpV2Bridge`, `Cctp`, `CctpV1` / `CctpV2` traits) —
   burns USDC and relays attestations end-to-end. Source/destination
   chains must return `true` from `NamedChain::supports_cctp_v2()`
-  (v2) or `CctpV1::is_supported()` (v1). Current coverage: 10
+  (v2) or `CctpV1::is_supported()` (v1). Current coverage: 11
   v2-capable chain families (7 v1 chain families plus Linea, Sonic,
-  Sei) with their testnets.
+  Sei, HyperEVM) with their testnets.
 - **Protocol parser** (`DomainId`, `ParsedV2Message`,
   `ParsedV2MessageSummary`) — recognizes all 21 CCTP v2 domain IDs
   Circle has announced, including non-EVM domains (Solana, Starknet
@@ -137,7 +137,7 @@ details.
      quoted in both files ("all 21 CCTP v2 domain IDs").
    - If `NamedChain::supports_cctp_v2()` returns `true` for the new
      chain, bump the v2-capable chain family count in this file
-     (currently "10 v2-capable chain families (7 v1 chain families
+     (currently "11 v2-capable chain families (7 v1 chain families
      plus …)") and the bridge SDK mainnet/testnet count in the
      README's "Features" line, then add the chain to the
      "Mainnet" or "Testnet" list under `Bridge SDK — supported

@@ -53,8 +53,8 @@ use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contrac
 ///
 /// - **Fast Transfer**: Sub-30 second settlement times (vs 13-19 minutes in v1)
 /// - **Programmable Hooks**: Execute custom logic post-transfer (swaps, lending, etc.)
-/// - **Expanded Networks**: 10 v2-capable EVM chain families supported
-///   (the 7 v1 chain families plus Linea, Sonic, Sei) with their
+/// - **Expanded Networks**: 11 v2-capable EVM chain families supported
+///   (the 7 v1 chain families plus Linea, Sonic, Sei, HyperEVM) with their
 ///   testnets. The protocol parser recognizes all 21 announced CCTP v2
 ///   domain IDs (including non-EVM domains such as Solana and Starknet
 ///   Testnet) but bridging requires `NamedChain::supports_cctp_v2()`.

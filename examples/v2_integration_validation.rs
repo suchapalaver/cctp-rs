@@ -68,6 +68,7 @@ fn validate_chain_support() -> Result<(), Box<dyn std::error::Error>> {
         NamedChain::Linea,
         NamedChain::Sonic,
         NamedChain::Sei,
+        NamedChain::Hyperliquid,
         // Testnet
         NamedChain::Sepolia,
         NamedChain::BaseSepolia,
@@ -137,6 +138,7 @@ fn validate_domain_ids() -> Result<(), Box<dyn std::error::Error>> {
         (NamedChain::Linea, DomainId::Linea, 11),
         (NamedChain::Sonic, DomainId::Sonic, 13),
         (NamedChain::Sei, DomainId::Sei, 16),
+        (NamedChain::Hyperliquid, DomainId::HyperEvm, 19),
         // Testnet - share domain IDs with mainnet
         (NamedChain::Sepolia, DomainId::Ethereum, 0),
         (NamedChain::AvalancheFuji, DomainId::Avalanche, 1),
@@ -197,6 +199,7 @@ fn validate_contract_addresses() -> Result<(), Box<dyn std::error::Error>> {
         NamedChain::Linea,
         NamedChain::Sonic,
         NamedChain::Sei,
+        NamedChain::Hyperliquid,
     ];
 
     for chain in mainnet_chains {
@@ -472,6 +475,7 @@ fn validate_fast_transfer_support() -> Result<(), Box<dyn std::error::Error>> {
         NamedChain::Polygon,
         NamedChain::Sei,
         NamedChain::Unichain,
+        NamedChain::Hyperliquid,
         NamedChain::Sepolia,
         NamedChain::BaseSepolia,
     ];
