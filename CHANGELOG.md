@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-05-28
+
+### Added
+
+- `UsdcAmount`, a shared six-decimal USDC amount primitive for parsing
+  decimal user input into atomic USDC units without duplicating amount
+  validation in downstream applications.
+- `CctpV2Route`, a validated route primitive for CCTP v2 applications
+  that need to validate source and destination chains before constructing
+  providers or prompting for wallet signatures.
+- `CctpError::InvalidAmount` for typed amount validation failures.
+
 ## [6.1.0] - 2026-05-27
 
 ### Added
