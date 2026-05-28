@@ -119,6 +119,7 @@
 //! - [`CctpV1`] and [`CctpV2`] - Traits for chain-specific configurations
 //! - [`PollingConfig`] - Configuration for attestation polling behavior
 //! - [`TransferMode`] - Selects which v2 burn variant (standard / fast / with hook) the bridge sends
+//! - [`CctpV2Route`] and [`UsdcAmount`] - Shared application primitives for route and amount validation
 //! - [`ParsedV2Message`] and [`ParsedV2MessageSummary`] - Parse canonical v2 messages into serializable structs
 //! - [`ParseMessageError`] - Error type for canonical v2 message parsing
 //! - [`InvalidDomainId`] and [`InvalidFinalityThreshold`] - Errors returned by `TryFrom<u32>` for [`DomainId`] / [`FinalityThreshold`]
@@ -147,6 +148,7 @@ mod bridge;
 mod chain;
 mod contracts;
 mod error;
+mod primitives;
 mod protocol;
 mod provider;
 
@@ -170,6 +172,7 @@ pub use contracts::{
     },
 };
 pub use error::{AttestationFailureKind, CctpError, Result};
+pub use primitives::{CctpV2Route, UsdcAmount};
 pub use protocol::{
     AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId,
     FinalityThreshold, InvalidDomainId, InvalidFinalityThreshold, MessageHeader, ParseMessageError,

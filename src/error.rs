@@ -84,6 +84,9 @@ pub enum CctpError {
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
 
+    #[error("Invalid amount: {0}")]
+    InvalidAmount(String),
+
     #[error("Timeout waiting for attestation")]
     AttestationTimeout,
 
