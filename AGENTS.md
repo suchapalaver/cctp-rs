@@ -67,8 +67,8 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `PollingConfig` | Attestation polling tuning | `src/bridge/config.rs` |
 | `TokenState`, `batch_token_state` | ERC-20 allowance/balance helpers | `src/bridge/` |
 | `CctpV1`, `CctpV2` traits | Chain config on `NamedChain` | `src/chain/config.rs`, `src/chain/v2.rs` |
-| `FastTransferFee` | `Known(u32)` / `Unknown` — fast-transfer fee status per chain | `src/chain/v2.rs` |
-| `FeeBps`, `TransferFee` | Live Iris transfer-fee response types and max-fee helpers | `src/protocol/fees.rs` |
+| `FastTransferFee` | `Known(u32)` / `Unknown` — static per-chain fee metadata; not current route quotes | `src/chain/v2.rs` |
+| `FeeBps`, `TransferFee` | Live Iris route-fee response types and max-fee helpers | `src/protocol/fees.rs` |
 | `CCTP_V2_*_MAINNET/TESTNET` | Unified v2 contract addresses | `src/chain/addresses.rs` |
 | `TokenMessengerContract`, `MessageTransmitterContract` | V1 contract wrappers | `src/contracts/` |
 | `TokenMessengerV2Contract`, `MessageTransmitterV2Contract` | V2 contract wrappers | `src/contracts/v2/` |

@@ -493,11 +493,14 @@ fn validate_fast_transfer_support() -> Result<(), Box<dyn std::error::Error>> {
                 assert!(bps <= 14, "Fee should be 0-14 bps, got {bps}");
                 println!("Fee: {bps} bps");
             }
-            FastTransferFee::Unknown => println!("Fee: unknown (not sourced)"),
+            FastTransferFee::Unknown => {
+                println!("Static fee: unknown (use live route lookup for quotes)")
+            }
             _ => println!("Fee: unrecognized FastTransferFee variant"),
         }
     }
 
+    println!("   Live route fees are fetched with CctpV2Bridge::get_transfer_fees()");
     println!();
     Ok(())
 }

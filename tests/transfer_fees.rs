@@ -2,17 +2,16 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! End-to-end coverage for live CCTP v2 transfer fee lookup (issues #4-#6).
+//! End-to-end coverage for live CCTP v2 transfer fee lookup (issues #4-#7).
 //!
 //! These tests drive the real HTTP/JSON path against a `wiremock` server so the
 //! SDK-level helpers cover URL construction, response decoding, finality
 //! selection, and buffered `maxFee` calculation without hitting Circle Iris.
 //!
-//! The ignored live smoke test is an opt-in drift check against Iris sandbox:
+//! The ignored live smoke tests are opt-in drift checks against Iris:
 //!
 //! ```text
-//! cargo test --test transfer_fees live_sandbox_fee_lookup_smoke_test \
-//!   --all-features -- --ignored --exact --nocapture
+//! cargo test --test transfer_fees live_ --all-features -- --ignored --nocapture
 //! ```
 
 use alloy_chains::NamedChain;
@@ -45,6 +44,17 @@ fn live_sandbox_bridge() -> CctpV2Bridge<impl Provider<Ethereum> + Clone> {
     CctpV2Bridge::builder()
         .source_chain(NamedChain::Sepolia)
         .destination_chain(NamedChain::BaseSepolia)
+        .source_provider(provider.clone())
+        .destination_provider(provider)
+        .recipient(Address::ZERO)
+        .build()
+}
+
+fn live_mainnet_bridge() -> CctpV2Bridge<impl Provider<Ethereum> + Clone> {
+    let provider = dummy_provider();
+    CctpV2Bridge::builder()
+        .source_chain(NamedChain::Mainnet)
+        .destination_chain(NamedChain::Base)
         .source_provider(provider.clone())
         .destination_provider(provider)
         .recipient(Address::ZERO)
@@ -183,5 +193,29 @@ async fn live_sandbox_fee_lookup_smoke_test() {
     assert!(
         fees.iter().any(|fee| fee.finality_threshold == 1000),
         "Iris sandbox route should include a Fast Transfer fee"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn live_mainnet_fee_lookup_smoke_test() {
+    let bridge = live_mainnet_bridge();
+    let url = bridge
+        .create_transfer_fees_url()
+        .expect("mainnet route should construct a fee URL");
+    assert_eq!(
+        url.as_str(),
+        "https://iris-api.circle.com/v2/burn/USDC/fees/0/6"
+    );
+
+    let fees = bridge
+        .get_transfer_fees()
+        .await
+        .expect("Iris mainnet fee response should decode");
+
+    assert!(!fees.is_empty(), "Iris mainnet should return fee entries");
+    assert!(
+        fees.iter().any(|fee| fee.finality_threshold == 1000),
+        "Iris mainnet route should include a Fast Transfer fee"
     );
 }

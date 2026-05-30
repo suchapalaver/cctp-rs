@@ -16,15 +16,16 @@ use super::addresses::{
 };
 use crate::{CctpError, DomainId, Result};
 
-/// Fast Transfer fee for a CCTP v2 chain, in basis points.
+/// Static Fast Transfer fee metadata for a CCTP v2 chain, in basis points.
 ///
-/// Circle's documentation states fast transfer fees range from 0 to 14
-/// basis points and are configured per chain. Until a chain's fee has
-/// been confirmed against an authoritative source, this SDK represents
-/// it as [`FastTransferFee::Unknown`] rather than asserting a numeric
-/// value. Callers handling user funds should treat `Unknown` as a
-/// signal to fetch the live fee on-chain or via Circle's APIs before
-/// quoting it as zero.
+/// This enum is retained for chain-level/static metadata. Current CCTP v2
+/// fees are route-aware and should be fetched with
+/// [`CctpV2Bridge::get_transfer_fees`](crate::CctpV2Bridge::get_transfer_fees)
+/// or
+/// [`CctpV2Bridge::calculate_fast_transfer_max_fee`](crate::CctpV2Bridge::calculate_fast_transfer_max_fee)
+/// before quoting or sending a Fast Transfer. Until a chain's static fee has
+/// been confirmed against an authoritative source, this SDK represents it as
+/// [`FastTransferFee::Unknown`] rather than asserting a numeric value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FastTransferFee {
@@ -81,16 +82,21 @@ pub trait CctpV2 {
     /// Fast Transfer enables ~30 second settlement times vs 13-19 minutes.
     fn supports_fast_transfer(&self) -> Result<bool>;
 
-    /// Reports whether a fast transfer fee has been sourced for this
-    /// chain, and if so its value in basis points.
+    /// Reports whether static fast transfer fee metadata has been sourced for
+    /// this chain, and if so its value in basis points.
     ///
-    /// Returns [`FastTransferFee::Unknown`] when the chain's fee has
-    /// not been confirmed against an authoritative source. This is
-    /// the current state for every v2 chain in this SDK — Circle's
-    /// docs name a 0-14 bps range, but per-chain values must be
-    /// sourced before being claimed here. Callers handling user
-    /// funds must not coerce `Unknown` to zero; fetch the live fee
-    /// from Circle or on-chain instead.
+    /// This helper is not the production path for current route fees. CCTP v2
+    /// fees are route-aware; use
+    /// [`CctpV2Bridge::get_transfer_fees`](crate::CctpV2Bridge::get_transfer_fees),
+    /// [`CctpV2Bridge::get_fast_transfer_fee`](crate::CctpV2Bridge::get_fast_transfer_fee),
+    /// or
+    /// [`CctpV2Bridge::calculate_fast_transfer_max_fee`](crate::CctpV2Bridge::calculate_fast_transfer_max_fee)
+    /// when preparing a `maxFee` for user funds.
+    ///
+    /// Returns [`FastTransferFee::Unknown`] when the chain-level/static fee has
+    /// not been confirmed against an authoritative source. This is the current
+    /// state for every v2 chain in this SDK. Callers handling user funds must
+    /// not coerce `Unknown` to zero.
     ///
     /// Errors if the chain doesn't support CCTP v2.
     #[must_use = "ignoring the fast transfer fee can mis-quote a transfer; \

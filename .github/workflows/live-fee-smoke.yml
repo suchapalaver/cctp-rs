@@ -1,0 +1,32 @@
+name: Live CCTP Fee Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly drift check for Circle Iris fee response shape.
+    - cron: "0 12 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  live-fee-smoke:
+    name: Live Iris Fee Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run live fee smoke tests
+        run: |
+          cargo test --test transfer_fees live_ \
+            --all-features -- --ignored --nocapture

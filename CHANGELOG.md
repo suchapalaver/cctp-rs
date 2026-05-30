@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Live CCTP v2 route-fee lookup through `CctpV2Bridge`:
+  `create_transfer_fees_url`, `get_transfer_fees`,
+  `get_transfer_fee`, `get_fast_transfer_fee`,
+  `get_standard_transfer_fee`, and
+  `calculate_fast_transfer_max_fee`. The lookup calls Circle Iris'
+  `/v2/burn/USDC/fees/{sourceDomain}/{destinationDomain}` endpoint
+  and returns `TransferFee` entries with fractional-basis-point-safe
+  `FeeBps` values. Use `calculate_fast_transfer_max_fee` immediately
+  before constructing `TransferMode::Fast { max_fee }` so the
+  on-chain cap reflects the current route fee plus the caller's
+  selected buffer. Tracks issue #4.
+- Deterministic fee lookup tests for optional `forwardFee` fields,
+  standard-fee selection, HTTP status failures, malformed JSON, and
+  zero/large-value fee math. Tracks issue #5.
+- Ignored no-wallet live Iris fee smoke tests for sandbox and mainnet
+  fee hosts, plus a scheduled/manual `Live CCTP Fee Smoke` workflow.
+  These checks detect Iris response-shape drift without requiring
+  wallets, RPC endpoints, funded accounts, or default PR CI network
+  calls. Tracks issues #6 and #7.
+
+### Changed
+
+- Documentation now points production fee quoting to live route lookup
+  on `CctpV2Bridge`. The chain-level `fast_transfer_fee_bps()` helper
+  remains static metadata and currently reports
+  `FastTransferFee::Unknown` for supported chains; it is not a
+  substitute for route-aware Iris fee lookup when calculating `maxFee`.
+  Tracks issues #8 and #9.
+
 ## [6.2.0] - 2026-05-28
 
 ### Added

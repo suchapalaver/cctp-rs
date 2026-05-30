@@ -180,7 +180,10 @@ async fn bridge_usdc_v2<P: Provider + Clone>(bridge: &CctpV2Bridge<P>) -> Result
 
 Fast transfers require a `maxFee` cap in USDC atomic units. Fees are dynamic and
 route-aware, so fetch the live route fee from Circle Iris before constructing
-your fast-transfer mode.
+your fast-transfer mode. Do not use
+`NamedChain::fast_transfer_fee_bps()` for production quotes; that helper is
+chain-level static metadata and currently reports `FastTransferFee::Unknown`
+until static fee tables are deliberately sourced.
 
 ```rust
 use cctp_rs::{CctpV2Bridge, CctpError, TransferMode};
@@ -198,6 +201,14 @@ async fn fast_mode_with_live_fee<P: Provider + Clone>(
     Ok(TransferMode::Fast { max_fee })
 }
 ```
+
+The live lookup methods are no-wallet, no-RPC HTTP calls against Iris:
+`get_transfer_fees()` returns every route entry,
+`get_fast_transfer_fee()` and `get_standard_transfer_fee()` select a finality
+threshold, and `calculate_fast_transfer_max_fee()` converts the Fast Transfer
+fee into an amount-denominated cap with your selected buffer. Funded transfer
+execution remains separate: after computing `maxFee`, pass it into
+`TransferMode::Fast { max_fee }` before calling burn/transfer helpers.
 
 ### Agent Tooling: Inspect a Canonical V2 Message
 
@@ -462,19 +473,25 @@ The `v2_integration_validation` example validates:
 - Error handling for unsupported chains
 - Cross-chain compatibility
 
-### Live Testnet Testing
+### Live Fee Smoke Testing
 
-For a cheap pre-release drift check against Circle's sandbox Iris fee endpoint
+The `Live CCTP Fee Smoke` GitHub Actions workflow runs weekly and can be
+started manually before a release. It calls only no-wallet Iris fee endpoints,
+not funded transfer flows, and stays out of default PR/push CI.
+
+For a cheap local pre-release drift check against Circle's Iris fee endpoints
 that does not require wallets, RPC endpoints, or funded accounts:
 
 ```bash
-cargo test --test transfer_fees live_sandbox_fee_lookup_smoke_test \
-  --all-features -- --ignored --exact --nocapture
+cargo test --test transfer_fees live_ --all-features -- --ignored --nocapture
 ```
 
-This opt-in test queries the Sepolia → Base Sepolia route
-(`/v2/burn/USDC/fees/0/6`), verifies the response decodes as CCTP v2 transfer
-fees, and checks that Iris returns a Fast Transfer threshold.
+These opt-in tests query both the Sepolia -> Base Sepolia sandbox route and the
+Ethereum -> Base mainnet route (`/v2/burn/USDC/fees/0/6` on each Iris host),
+verify the responses decode as CCTP v2 transfer fees, and check that Iris
+returns a Fast Transfer threshold.
+
+### Live Testnet Testing
 
 For pre-release validation on testnet:
 

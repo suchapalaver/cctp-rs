@@ -234,6 +234,12 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// Fetches all live transfer fee entries for this bridge's source and
     /// destination domain route.
     ///
+    /// This is the authoritative SDK path for current CCTP v2 route fees.
+    /// The chain-level [`CctpV2::fast_transfer_fee_bps`](crate::CctpV2::fast_transfer_fee_bps)
+    /// helper reports static metadata only and currently returns
+    /// [`FastTransferFee::Unknown`](crate::FastTransferFee::Unknown) for every
+    /// supported chain.
+    ///
     /// Circle returns fees in basis points. Use [`Self::get_fast_transfer_fee`]
     /// or [`Self::calculate_fast_transfer_max_fee`] when preparing the `maxFee`
     /// argument for a fast transfer.
@@ -296,6 +302,9 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ///
     /// `amount` is denominated in USDC atomic units. `buffer_percent = 20`
     /// returns a cap 20% above the current protocol fee.
+    /// Use this immediately before constructing a fast-transfer
+    /// [`TransferMode`] so the on-chain `maxFee` reflects the current route fee
+    /// plus your selected buffer.
     ///
     /// # Errors
     ///
