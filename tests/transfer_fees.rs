@@ -2,11 +2,18 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! End-to-end coverage for live CCTP v2 transfer fee lookup (issues #4/#5).
+//! End-to-end coverage for live CCTP v2 transfer fee lookup (issues #4-#6).
 //!
 //! These tests drive the real HTTP/JSON path against a `wiremock` server so the
 //! SDK-level helpers cover URL construction, response decoding, finality
 //! selection, and buffered `maxFee` calculation without hitting Circle Iris.
+//!
+//! The ignored live smoke test is an opt-in drift check against Iris sandbox:
+//!
+//! ```text
+//! cargo test --test transfer_fees live_sandbox_fee_lookup_smoke_test \
+//!   --all-features -- --ignored --exact --nocapture
+//! ```
 
 use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
@@ -30,6 +37,17 @@ fn bridge(api_override: Url) -> CctpV2Bridge<impl Provider<Ethereum> + Clone> {
         .destination_provider(provider)
         .recipient(Address::ZERO)
         .api_url_override(api_override)
+        .build()
+}
+
+fn live_sandbox_bridge() -> CctpV2Bridge<impl Provider<Ethereum> + Clone> {
+    let provider = dummy_provider();
+    CctpV2Bridge::builder()
+        .source_chain(NamedChain::Sepolia)
+        .destination_chain(NamedChain::BaseSepolia)
+        .source_provider(provider.clone())
+        .destination_provider(provider)
+        .recipient(Address::ZERO)
         .build()
 }
 
@@ -142,4 +160,28 @@ async fn malformed_fee_response_returns_json_error() {
         .expect_err("malformed JSON should be surfaced");
 
     assert!(matches!(err, CctpError::Json(_)));
+}
+
+#[tokio::test]
+#[ignore]
+async fn live_sandbox_fee_lookup_smoke_test() {
+    let bridge = live_sandbox_bridge();
+    let url = bridge
+        .create_transfer_fees_url()
+        .expect("testnet route should construct a fee URL");
+    assert_eq!(
+        url.as_str(),
+        "https://iris-api-sandbox.circle.com/v2/burn/USDC/fees/0/6"
+    );
+
+    let fees = bridge
+        .get_transfer_fees()
+        .await
+        .expect("Iris sandbox fee response should decode");
+
+    assert!(!fees.is_empty(), "Iris sandbox should return fee entries");
+    assert!(
+        fees.iter().any(|fee| fee.finality_threshold == 1000),
+        "Iris sandbox route should include a Fast Transfer fee"
+    );
 }

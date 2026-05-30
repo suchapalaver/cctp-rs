@@ -427,7 +427,7 @@ Run the full test suite with:
 cargo test --all-features
 ```
 
-All 155 unit tests validate:
+The default, network-free tests validate:
 
 - Contract method selection logic
 - Domain ID resolution and mapping
@@ -463,6 +463,18 @@ The `v2_integration_validation` example validates:
 - Cross-chain compatibility
 
 ### Live Testnet Testing
+
+For a cheap pre-release drift check against Circle's sandbox Iris fee endpoint
+that does not require wallets, RPC endpoints, or funded accounts:
+
+```bash
+cargo test --test transfer_fees live_sandbox_fee_lookup_smoke_test \
+  --all-features -- --ignored --exact --nocapture
+```
+
+This opt-in test queries the Sepolia → Base Sepolia route
+(`/v2/burn/USDC/fees/0/6`), verifies the response decodes as CCTP v2 transfer
+fees, and checks that Iris returns a Fast Transfer threshold.
 
 For pre-release validation on testnet:
 
