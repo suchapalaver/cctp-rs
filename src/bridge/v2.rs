@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{AttestationFailureKind, CctpError, Result};
-use crate::protocol::{AttestationBytes, FinalityThreshold};
+use crate::protocol::{AttestationBytes, FinalityThreshold, TransferFee};
 use crate::{
     spans, AttestationStatus, CctpV2 as CctpV2Trait, DomainId, V2AttestationResponse, V2Message,
 };
@@ -38,7 +38,7 @@ pub enum MintResult {
 }
 
 use super::bridge_trait::CctpBridge;
-use super::config::{iris_api_url, PollingConfig, MESSAGES_PATH_V2};
+use super::config::{iris_api_url, PollingConfig, MESSAGES_PATH_V2, TRANSFER_FEES_PATH_V2};
 use crate::contracts::erc20::Erc20Contract;
 use crate::contracts::message_transmitter::MessageTransmitter::MessageSent;
 use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contract};
@@ -213,6 +213,109 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// on-chain — both are derived from the same [`TransferMode`].
     pub fn finality_threshold(&self) -> FinalityThreshold {
         self.transfer_mode.finality_threshold()
+    }
+
+    /// Constructs the Iris API v2 URL for live route fee lookup.
+    ///
+    /// The fee API is route-aware:
+    /// `/v2/burn/USDC/fees/{sourceDomainId}/{destDomainId}`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CctpError::UnsupportedChain` when either configured chain has no
+    /// CCTP v2 domain, or `CctpError::InvalidUrl` if URL construction fails.
+    pub fn create_transfer_fees_url(&self) -> Result<Url> {
+        let (source_domain, destination_domain) = self.transfer_fee_domain_ids()?;
+        Ok(self.api_url().join(&format!(
+            "{TRANSFER_FEES_PATH_V2}{source_domain}/{destination_domain}"
+        ))?)
+    }
+
+    /// Fetches all live transfer fee entries for this bridge's source and
+    /// destination domain route.
+    ///
+    /// Circle returns fees in basis points. Use [`Self::get_fast_transfer_fee`]
+    /// or [`Self::calculate_fast_transfer_max_fee`] when preparing the `maxFee`
+    /// argument for a fast transfer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the route is unsupported, the Iris request fails,
+    /// or the JSON response cannot be decoded.
+    pub async fn get_transfer_fees(&self) -> Result<Vec<TransferFee>> {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(CctpError::Network)?;
+        let url = self.create_transfer_fees_url()?;
+
+        info!(
+            url = %url,
+            source_chain = %self.source_chain,
+            destination_chain = %self.destination_chain,
+            event = "transfer_fee_request_started"
+        );
+
+        let response = self.fetch_transfer_fees_response(&client, &url).await?;
+        response.error_for_status_ref()?;
+        let response_text = response.text().await?;
+        let fees: Vec<TransferFee> = serde_json::from_str(&response_text)?;
+
+        info!(
+            fee_count = fees.len(),
+            event = "transfer_fee_request_complete"
+        );
+
+        Ok(fees)
+    }
+
+    /// Fetches the live fee entry for the requested finality threshold.
+    ///
+    /// Returns `Ok(None)` when Iris returns no entry for the threshold.
+    pub async fn get_transfer_fee(
+        &self,
+        finality_threshold: FinalityThreshold,
+    ) -> Result<Option<TransferFee>> {
+        let fees = self.get_transfer_fees().await?;
+        Ok(fees
+            .into_iter()
+            .find(|fee| fee.finality_threshold == finality_threshold.as_u32()))
+    }
+
+    /// Fetches the live Fast Transfer fee for this route, if Iris returns one.
+    pub async fn get_fast_transfer_fee(&self) -> Result<Option<TransferFee>> {
+        self.get_transfer_fee(FinalityThreshold::Fast).await
+    }
+
+    /// Fetches the live Standard Transfer fee for this route, if Iris returns one.
+    pub async fn get_standard_transfer_fee(&self) -> Result<Option<TransferFee>> {
+        self.get_transfer_fee(FinalityThreshold::Standard).await
+    }
+
+    /// Fetches the live fast-transfer fee and calculates a buffered `maxFee`.
+    ///
+    /// `amount` is denominated in USDC atomic units. `buffer_percent = 20`
+    /// returns a cap 20% above the current protocol fee.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::TransferFeeUnavailable`] when Iris does not return a
+    /// Fast Transfer fee for the configured route.
+    pub async fn calculate_fast_transfer_max_fee(
+        &self,
+        amount: U256,
+        buffer_percent: u32,
+    ) -> Result<U256> {
+        let Some(fee) = self.get_fast_transfer_fee().await? else {
+            let (source_domain, destination_domain) = self.transfer_fee_domain_ids()?;
+            return Err(CctpError::TransferFeeUnavailable {
+                source_domain,
+                destination_domain,
+                finality_threshold: FinalityThreshold::Fast.as_u32(),
+            });
+        };
+
+        Ok(fee.max_fee_with_buffer_percent(amount, buffer_percent))
     }
 
     /// Gets the `MessageSent` event data from a CCTP v2 bridge transaction
@@ -1288,6 +1391,13 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         ))?)
     }
 
+    fn transfer_fee_domain_ids(&self) -> Result<(u32, u32)> {
+        Ok((
+            self.source_chain.cctp_v2_domain_id()?.as_u32(),
+            self.destination_chain.cctp_v2_domain_id()?.as_u32(),
+        ))
+    }
+
     /// Fetches the attestation response from the CCTP v2 API
     ///
     /// # Arguments
@@ -1298,6 +1408,16 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     async fn fetch_attestation_response(&self, client: &Client, url: &Url) -> Result<Response> {
         client
             .get(url.as_str())
+            .send()
+            .await
+            .map_err(CctpError::Network)
+    }
+
+    /// Fetches the transfer fee response from the CCTP v2 API
+    async fn fetch_transfer_fees_response(&self, client: &Client, url: &Url) -> Result<Response> {
+        client
+            .get(url.as_str())
+            .header(reqwest::header::ACCEPT, "application/json")
             .send()
             .await
             .map_err(CctpError::Network)
@@ -1492,6 +1612,38 @@ mod tests {
         // Format: /v2/messages/{domain}?transactionHash={txHash}
         // Sepolia domain = 0 (same as mainnet Ethereum)
         insta::assert_snapshot!(url.as_str(), @"https://iris-api-sandbox.circle.com/v2/messages/0?transactionHash=0x1212121212121212121212121212121212121212121212121212121212121212");
+    }
+
+    #[test]
+    fn test_v2_transfer_fees_url_format_mainnet() {
+        let provider =
+            ProviderBuilder::new().connect_http("http://localhost:8545".parse().unwrap());
+        let bridge = CctpV2::builder()
+            .source_chain(NamedChain::Mainnet)
+            .destination_chain(NamedChain::Linea)
+            .source_provider(provider.clone())
+            .destination_provider(provider)
+            .recipient(Address::ZERO)
+            .build();
+
+        let url = bridge.create_transfer_fees_url().unwrap();
+        insta::assert_snapshot!(url.as_str(), @"https://iris-api.circle.com/v2/burn/USDC/fees/0/11");
+    }
+
+    #[test]
+    fn test_v2_transfer_fees_url_format_testnet() {
+        let provider =
+            ProviderBuilder::new().connect_http("http://localhost:8545".parse().unwrap());
+        let bridge = CctpV2::builder()
+            .source_chain(NamedChain::Sepolia)
+            .destination_chain(NamedChain::BaseSepolia)
+            .source_provider(provider.clone())
+            .destination_provider(provider)
+            .recipient(Address::ZERO)
+            .build();
+
+        let url = bridge.create_transfer_fees_url().unwrap();
+        insta::assert_snapshot!(url.as_str(), @"https://iris-api-sandbox.circle.com/v2/burn/USDC/fees/0/6");
     }
 
     #[test]

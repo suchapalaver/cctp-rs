@@ -120,6 +120,7 @@
 //! - [`PollingConfig`] - Configuration for attestation polling behavior
 //! - [`TransferMode`] - Selects which v2 burn variant (standard / fast / with hook) the bridge sends
 //! - [`CctpV2Route`] and [`UsdcAmount`] - Shared application primitives for route and amount validation
+//! - [`FeeBps`] and [`TransferFee`] - Live Iris transfer-fee response types and max-fee helpers
 //! - [`ParsedV2Message`] and [`ParsedV2MessageSummary`] - Parse canonical v2 messages into serializable structs
 //! - [`ParseMessageError`] - Error type for canonical v2 message parsing
 //! - [`InvalidDomainId`] and [`InvalidFinalityThreshold`] - Errors returned by `TryFrom<u32>` for [`DomainId`] / [`FinalityThreshold`]
@@ -174,9 +175,9 @@ pub use contracts::{
 pub use error::{AttestationFailureKind, CctpError, Result};
 pub use primitives::{CctpV2Route, UsdcAmount};
 pub use protocol::{
-    AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId,
+    AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId, FeeBps,
     FinalityThreshold, InvalidDomainId, InvalidFinalityThreshold, MessageHeader, ParseMessageError,
-    ParsedV2Message, ParsedV2MessageSummary, V2AttestationResponse, V2Message,
+    ParsedV2Message, ParsedV2MessageSummary, TransferFee, V2AttestationResponse, V2Message,
 };
 pub use provider::{
     calculate_gas_price_with_buffer, estimate_gas_with_buffer, ProviderConfig,

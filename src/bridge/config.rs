@@ -37,6 +37,12 @@ pub const ATTESTATION_PATH_V1: &str = "/v1/attestations/";
 /// - V2: `/v2/messages/{sourceDomain}?transactionHash={txHash}`
 pub const MESSAGES_PATH_V2: &str = "/v2/messages/";
 
+/// CCTP v2 transfer fees API path
+///
+/// V2 route fees are exposed as:
+/// `/v2/burn/USDC/fees/{sourceDomainId}/{destDomainId}`
+pub const TRANSFER_FEES_PATH_V2: &str = "/v2/burn/USDC/fees/";
+
 /// Configuration for attestation polling behavior.
 ///
 /// Controls how the bridge polls Circle's Iris API for attestation availability.

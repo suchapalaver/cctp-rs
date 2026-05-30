@@ -176,6 +176,29 @@ async fn bridge_usdc_v2<P: Provider + Clone>(bridge: &CctpV2Bridge<P>) -> Result
 }
 ```
 
+### Fast Transfer Fees (V2)
+
+Fast transfers require a `maxFee` cap in USDC atomic units. Fees are dynamic and
+route-aware, so fetch the live route fee from Circle Iris before constructing
+your fast-transfer mode.
+
+```rust
+use cctp_rs::{CctpV2Bridge, CctpError, TransferMode};
+use alloy_primitives::U256;
+use alloy_provider::Provider;
+
+async fn fast_mode_with_live_fee<P: Provider + Clone>(
+    bridge: &CctpV2Bridge<P>,
+) -> Result<TransferMode, CctpError> {
+    let amount = U256::from(10_500_000u64); // 10.5 USDC, 6 decimals
+    let max_fee = bridge
+        .calculate_fast_transfer_max_fee(amount, 20) // 20% buffer
+        .await?;
+
+    Ok(TransferMode::Fast { max_fee })
+}
+```
+
 ### Agent Tooling: Inspect a Canonical V2 Message
 
 Tooling layers usually need structured JSON instead of raw message bytes. `ParsedV2Message`
@@ -215,7 +238,7 @@ The library is organized into several key modules:
 - **`bridge`** - Core CCTP bridge implementation
 - **`chain`** - Chain-specific configurations and support
 - **`attestation`** - Attestation response types from Circle's Iris API
-- **`protocol`** - Serializable protocol types plus canonical v2 message parsing
+- **`protocol`** - Serializable protocol types, live fee response types, and canonical v2 message parsing
 - **`error`** - Comprehensive error types for proper error handling
 - **`contracts`** - Type-safe bindings for TokenMessenger and MessageTransmitter
 

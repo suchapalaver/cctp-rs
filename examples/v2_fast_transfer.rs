@@ -246,8 +246,20 @@ async fn main() -> Result<(), CctpError> {
     // Create bridge with fast transfer enabled
     println!("5️⃣  Setting up CCTP v2 bridge with FAST TRANSFER...");
 
-    // Set max_fee for fast transfer (optional fee cap in USDC atomic units)
-    let max_fee = U256::from(1000); // 0.001 USDC max fee
+    let amount = U256::from(1_000_000); // 1 USDC (6 decimals)
+
+    let fee_quote_bridge = CctpV2Bridge::builder()
+        .source_chain(NamedChain::ArbitrumSepolia)
+        .destination_chain(NamedChain::BaseSepolia)
+        .source_provider(arbitrum_sepolia_provider.clone())
+        .destination_provider(base_sepolia_provider.clone())
+        .recipient(wallet_address)
+        .build();
+
+    // Fetch the live route fee and add a 20% buffer before setting maxFee.
+    let max_fee = fee_quote_bridge
+        .calculate_fast_transfer_max_fee(amount, 20)
+        .await?;
 
     let bridge = CctpV2Bridge::builder()
         .source_chain(NamedChain::ArbitrumSepolia)
@@ -265,7 +277,7 @@ async fn main() -> Result<(), CctpError> {
     println!("   Transfer Type: ⚡ Fast");
     println!("   Finality Threshold: {}", bridge.finality_threshold());
     println!("   Fast Transfer Enabled: {}", bridge.is_fast_transfer());
-    println!("   Max Fee: {max_fee} USDC atomic units (0.001 USDC)");
+    println!("   Max Fee: {max_fee} USDC atomic units (live fee + 20% buffer)");
     println!("   Expected Settlement: <30 seconds\n");
 
     // Validate domain IDs
@@ -297,9 +309,6 @@ async fn main() -> Result<(), CctpError> {
         "Should use sandbox API for testnet"
     );
     println!("   ✅ Using sandbox API\n");
-
-    // Transfer configuration
-    let amount = U256::from(1_000_000); // 1 USDC (6 decimals)
 
     println!("9️⃣  Transfer Details:");
     println!("   Token: USDC (Arbitrum Sepolia)");

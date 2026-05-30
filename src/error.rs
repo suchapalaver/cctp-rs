@@ -87,6 +87,15 @@ pub enum CctpError {
     #[error("Invalid amount: {0}")]
     InvalidAmount(String),
 
+    #[error(
+        "Transfer fee unavailable for route {source_domain}->{destination_domain} at finality threshold {finality_threshold}"
+    )]
+    TransferFeeUnavailable {
+        source_domain: u32,
+        destination_domain: u32,
+        finality_threshold: u32,
+    },
+
     #[error("Timeout waiting for attestation")]
     AttestationTimeout,
 
@@ -287,6 +296,20 @@ mod tests {
         assert_ne!(
             CctpError::ReceiveTimeout.to_string(),
             CctpError::AttestationTimeout.to_string(),
+        );
+    }
+
+    #[test]
+    fn test_transfer_fee_unavailable_renders_route_context() {
+        let err = CctpError::TransferFeeUnavailable {
+            source_domain: 0,
+            destination_domain: 11,
+            finality_threshold: 1000,
+        };
+
+        assert_eq!(
+            err.to_string(),
+            "Transfer fee unavailable for route 0->11 at finality threshold 1000",
         );
     }
 
