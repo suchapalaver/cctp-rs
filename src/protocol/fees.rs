@@ -294,6 +294,27 @@ mod tests {
     }
 
     #[test]
+    fn transfer_fee_deserializes_with_optional_forward_fee_fields() {
+        let json = r#"[
+            {
+                "finalityThreshold": 1000,
+                "minimumFee": 1.3,
+                "forwardFee": {
+                    "relayFee": "123",
+                    "destinationGasOverhead": "456"
+                }
+            }
+        ]"#;
+
+        let fees: Vec<TransferFee> = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            fees,
+            vec![TransferFee::new(1000, FeeBps::from_hundredths(130))]
+        );
+    }
+
+    #[test]
     fn fee_bps_preserves_fractional_basis_points() {
         let fee: FeeBps = serde_json::from_str("1.3").unwrap();
 
@@ -333,6 +354,27 @@ mod tests {
         let fee = FeeBps::from_hundredths(100);
 
         assert_eq!(fee.apply_to_amount(amount), U256::from(1u64));
+    }
+
+    #[test]
+    fn fee_calculation_handles_zero_and_large_values() {
+        let large_usdc_amount = U256::from(1_000_000_000_000u64);
+        let fractional_fee = FeeBps::from_hundredths(130);
+        let zero_fee = FeeBps::from_hundredths(0);
+
+        assert_eq!(fractional_fee.apply_to_amount(U256::ZERO), U256::ZERO);
+        assert_eq!(
+            zero_fee.apply_to_amount_with_buffer_percent(large_usdc_amount, 20),
+            U256::ZERO
+        );
+        assert_eq!(
+            fractional_fee.apply_to_amount(large_usdc_amount),
+            U256::from(130_000_000u64)
+        );
+        assert_eq!(
+            fractional_fee.apply_to_amount_with_buffer_percent(large_usdc_amount, 20),
+            U256::from(156_000_000u64)
+        );
     }
 
     #[test]

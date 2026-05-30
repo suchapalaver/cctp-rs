@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! End-to-end coverage for live CCTP v2 transfer fee lookup (issue #4).
+//! End-to-end coverage for live CCTP v2 transfer fee lookup (issues #4/#5).
 //!
 //! These tests drive the real HTTP/JSON path against a `wiremock` server so the
 //! SDK-level helpers cover URL construction, response decoding, finality
@@ -62,6 +62,14 @@ async fn fetches_route_fees_and_calculates_buffered_fast_max_fee() {
         .expect("fast fee entry should be selected");
     assert_eq!(fast_fee.minimum_fee, FeeBps::from_hundredths(130));
 
+    let standard_fee = bridge
+        .get_standard_transfer_fee()
+        .await
+        .expect("fee response should decode")
+        .expect("standard fee entry should be selected");
+    assert_eq!(standard_fee.minimum_fee, FeeBps::from_hundredths(0));
+    assert!(standard_fee.is_standard_transfer());
+
     let max_fee = bridge
         .calculate_fast_transfer_max_fee(U256::from(10_500_000u64), 20)
         .await
@@ -94,4 +102,44 @@ async fn missing_fast_fee_returns_route_context_for_max_fee_calculation() {
             finality_threshold: 1000,
         }
     ));
+}
+
+#[tokio::test]
+async fn non_success_fee_response_returns_network_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v2/burn/USDC/fees/0/11"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("iris unavailable"))
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let err = bridge(api_override)
+        .get_transfer_fees()
+        .await
+        .expect_err("HTTP status failures should be surfaced");
+
+    assert!(matches!(
+        err,
+        CctpError::Network(ref network_error)
+            if network_error.status().is_some_and(|status| status.as_u16() == 500)
+    ));
+}
+
+#[tokio::test]
+async fn malformed_fee_response_returns_json_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v2/burn/USDC/fees/0/11"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let err = bridge(api_override)
+        .get_transfer_fees()
+        .await
+        .expect_err("malformed JSON should be surfaced");
+
+    assert!(matches!(err, CctpError::Json(_)));
 }
