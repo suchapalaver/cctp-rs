@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.3.0] - 2026-06-08
+
 ### Added
 
 - Live CCTP v2 route-fee lookup through `CctpV2Bridge`:
