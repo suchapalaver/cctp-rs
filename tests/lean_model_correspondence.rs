@@ -439,6 +439,8 @@ fn rejected_messages_fail_to_parse() {
             // The production parser reports unknown domains as a header
             // decode failure without naming the field.
             "unknown_source_domain" | "unknown_destination_domain" => "failed to decode header",
+            "unsupported_header_version" => "unsupported CCTP v2 message header version",
+            "unsupported_body_version" => "unsupported CCTP v2 burn message body version",
             "non_canonical_burn_token" => "burn_token",
             "non_canonical_mint_recipient" => "mint_recipient",
             "non_canonical_message_sender" => "message_sender",

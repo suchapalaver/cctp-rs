@@ -58,6 +58,9 @@ sub-30s settlement).
   always exposes canonical 32-byte `*_bytes` fields. EVM-shaped `Address`
   projections are `None` for non-EVM source or destination domains so tooling
   does not mistake a trailing-20-byte slice for an address.
+- **Parser versions are strict.** Header and burn-body versions must be `1`.
+  Do not decode future CCTP v2 format revisions with today's field offsets;
+  return `ParseMessageError` until the new layout is modeled and tested.
 
 ## Public API map
 

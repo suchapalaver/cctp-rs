@@ -49,9 +49,14 @@ namespace MessageHeader
 /-- Fixed header size in bytes: 4 + 4 + 4 + 32 + 32 + 32 + 32 + 4 + 4. -/
 def size : Nat := 148
 
+/-- The only CCTP v2 message header version this parser understands. -/
+def supportedVersion : Nat := 1
+
 /-- Structural well-formedness: numeric fields fit their wire width and
-`bytes32` fields are exactly 32 bytes. -/
+`bytes32` fields are exactly 32 bytes. Version is fixed to the currently
+supported Circle CCTP v2 wire format. -/
 def WellFormed (h : MessageHeader) : Prop :=
+  h.version = supportedVersion ∧
   h.version < 2 ^ 32 ∧
   h.nonce.length = 32 ∧
   h.sender.length = 32 ∧
@@ -73,26 +78,28 @@ def encode (h : MessageHeader) : List UInt8 :=
   beBytes 4 h.minFinalityThreshold ++
   beBytes 4 h.finalityThresholdExecuted
 
-/-- Decodes an exactly-148-byte header. Domain IDs must be known; all other
-fields are carried as-is. Mirrors `MessageHeader::decode` applied to the
-148-byte prefix of a message. -/
+/-- Decodes an exactly-148-byte header. Domain IDs must be known and the
+header version must be the supported CCTP v2 wire version. Mirrors
+`MessageHeader::decode` applied to the 148-byte prefix of a message. -/
 def decode (bs : List UInt8) : Option MessageHeader :=
   if bs.length = size then
-    match DomainId.fromU32 (natOfBe (slice bs 4 4)),
-          DomainId.fromU32 (natOfBe (slice bs 8 4)) with
-    | some src, some dst =>
-      some {
-        version := natOfBe (slice bs 0 4)
-        sourceDomain := src
-        destinationDomain := dst
-        nonce := slice bs 12 32
-        sender := slice bs 44 32
-        recipient := slice bs 76 32
-        destinationCaller := slice bs 108 32
-        minFinalityThreshold := natOfBe (slice bs 140 4)
-        finalityThresholdExecuted := natOfBe (slice bs 144 4)
-      }
-    | _, _ => none
+    if natOfBe (slice bs 0 4) = supportedVersion then
+      match DomainId.fromU32 (natOfBe (slice bs 4 4)),
+            DomainId.fromU32 (natOfBe (slice bs 8 4)) with
+      | some src, some dst =>
+        some {
+          version := natOfBe (slice bs 0 4)
+          sourceDomain := src
+          destinationDomain := dst
+          nonce := slice bs 12 32
+          sender := slice bs 44 32
+          recipient := slice bs 76 32
+          destinationCaller := slice bs 108 32
+          minFinalityThreshold := natOfBe (slice bs 140 4)
+          finalityThresholdExecuted := natOfBe (slice bs 144 4)
+        }
+      | _, _ => none
+    else none
   else none
 
 /-- True when the nonce is the all-zero placeholder that v2 `MessageSent`
@@ -118,25 +125,34 @@ def attestedFinality (h : MessageHeader) : Option FinalityThreshold :=
 
 theorem length_encode (h : MessageHeader) (wf : h.WellFormed) :
     h.encode.length = size := by
-  obtain ⟨-, hn, hs, hr, hd, -, -⟩ := wf
+  obtain ⟨-, -, hn, hs, hr, hd, -, -⟩ := wf
   simp [encode, size, hn, hs, hr, hd]
 
 /-- Round-trip: every well-formed header decodes from its own encoding. -/
 theorem decode_encode (h : MessageHeader) (wf : h.WellFormed) :
     decode h.encode = some h := by
-  obtain ⟨hv, hn, hs, hr, hd, hm, hf⟩ := wf
-  have hlen : h.encode.length = size := length_encode h ⟨hv, hn, hs, hr, hd, hm, hf⟩
+  obtain ⟨hvs, hv, hn, hs, hr, hd, hm, hf⟩ := wf
+  have hlen : h.encode.length = size := length_encode h ⟨hvs, hv, hn, hs, hr, hd, hm, hf⟩
+  have hstruct :
+      { version := 1, sourceDomain := h.sourceDomain, destinationDomain := h.destinationDomain,
+        nonce := h.nonce, sender := h.sender, recipient := h.recipient,
+        destinationCaller := h.destinationCaller,
+        minFinalityThreshold := h.minFinalityThreshold,
+        finalityThresholdExecuted := h.finalityThresholdExecuted } = h := by
+    cases h
+    simp [supportedVersion] at hvs
+    simp [hvs]
   unfold decode
   rw [hlen, if_pos rfl]
-  simp [encode, slice_append_right, slice_append_left, slice_zero_length,
+  simp [encode, supportedVersion, hvs, slice_append_right, slice_append_left, slice_zero_length,
     hn, hs, hr, hd,
-    natOfBe_beBytes 4 h.version (by simpa using hv),
+    natOfBe_beBytes 4 1 (by omega),
     natOfBe_beBytes 4 h.minFinalityThreshold (by simpa using hm),
     natOfBe_beBytes 4 h.finalityThresholdExecuted (by simpa using hf),
     natOfBe_beBytes 4 h.sourceDomain.toU32 (by simpa using h.sourceDomain.toU32_lt),
     natOfBe_beBytes 4 h.destinationDomain.toU32
       (by simpa using h.destinationDomain.toU32_lt),
-    DomainId.fromU32_toU32]
+    DomainId.fromU32_toU32, hstruct]
 
 /-- Canonicality: an accepted byte string is exactly the encoding of the
 header it decodes to, and that header is well-formed. -/
@@ -147,43 +163,46 @@ theorem encode_of_decode {bs : List UInt8} {h : MessageHeader}
   · rename_i hlen
     have hlen' : bs.length = 148 := hlen
     split at hdec
-    · rename_i src dst hsrc hdst
-      cases hdec
-      have hbe : ∀ start len, start + len ≤ bs.length →
-          beBytes len (natOfBe (slice bs start len)) = slice bs start len := by
-        intro start len hle
-        have hb := beBytes_natOfBe (slice bs start len)
-        rwa [length_slice bs start len hle] at hb
-      have hlt : ∀ start, start + 4 ≤ bs.length →
-          natOfBe (slice bs start 4) < 2 ^ 32 := by
-        intro start hle
-        have hl := natOfBe_lt (slice bs start 4)
-        rw [length_slice bs start 4 hle] at hl
-        simpa using hl
-      constructor
-      · dsimp only [encode]
-        rw [DomainId.toU32_of_fromU32 hsrc, DomainId.toU32_of_fromU32 hdst]
-        rw [hbe 0 4 (by omega), hbe 4 4 (by omega), hbe 8 4 (by omega),
-          hbe 140 4 (by omega), hbe 144 4 (by omega)]
-        simp only [List.append_assoc]
-        conv =>
-          rhs
-          rw [show bs = bs.drop 0 from rfl,
-            drop_eq_slice_append bs 0 4 4 rfl,
-            drop_eq_slice_append bs 4 4 8 rfl,
-            drop_eq_slice_append bs 8 4 12 rfl,
-            drop_eq_slice_append bs 12 32 44 rfl,
-            drop_eq_slice_append bs 44 32 76 rfl,
-            drop_eq_slice_append bs 76 32 108 rfl,
-            drop_eq_slice_append bs 108 32 140 rfl,
-            drop_eq_slice_append bs 140 4 144 rfl,
-            drop_eq_slice_append bs 144 4 148 rfl]
-        rw [List.drop_eq_nil_of_le (by omega)]
-        simp
-      · exact ⟨hlt 0 (by omega), length_slice bs 12 32 (by omega),
-          length_slice bs 44 32 (by omega), length_slice bs 76 32 (by omega),
-          length_slice bs 108 32 (by omega), hlt 140 (by omega),
-          hlt 144 (by omega)⟩
+    · rename_i hversion
+      split at hdec
+      · rename_i src dst hsrc hdst
+        cases hdec
+        have hbe : ∀ start len, start + len ≤ bs.length →
+            beBytes len (natOfBe (slice bs start len)) = slice bs start len := by
+          intro start len hle
+          have hb := beBytes_natOfBe (slice bs start len)
+          rwa [length_slice bs start len hle] at hb
+        have hlt : ∀ start, start + 4 ≤ bs.length →
+            natOfBe (slice bs start 4) < 2 ^ 32 := by
+          intro start hle
+          have hl := natOfBe_lt (slice bs start 4)
+          rw [length_slice bs start 4 hle] at hl
+          simpa using hl
+        constructor
+        · dsimp only [encode]
+          rw [DomainId.toU32_of_fromU32 hsrc, DomainId.toU32_of_fromU32 hdst]
+          rw [hbe 0 4 (by omega), hbe 4 4 (by omega), hbe 8 4 (by omega),
+            hbe 140 4 (by omega), hbe 144 4 (by omega)]
+          simp only [List.append_assoc]
+          conv =>
+            rhs
+            rw [show bs = bs.drop 0 from rfl,
+              drop_eq_slice_append bs 0 4 4 rfl,
+              drop_eq_slice_append bs 4 4 8 rfl,
+              drop_eq_slice_append bs 8 4 12 rfl,
+              drop_eq_slice_append bs 12 32 44 rfl,
+              drop_eq_slice_append bs 44 32 76 rfl,
+              drop_eq_slice_append bs 76 32 108 rfl,
+              drop_eq_slice_append bs 108 32 140 rfl,
+              drop_eq_slice_append bs 140 4 144 rfl,
+              drop_eq_slice_append bs 144 4 148 rfl]
+          rw [List.drop_eq_nil_of_le (by omega)]
+          simp
+        · exact ⟨hversion, hlt 0 (by omega), length_slice bs 12 32 (by omega),
+            length_slice bs 44 32 (by omega), length_slice bs 76 32 (by omega),
+            length_slice bs 108 32 (by omega), hlt 140 (by omega),
+            hlt 144 (by omega)⟩
+      · cases hdec
     · cases hdec
   · cases hdec
 
@@ -210,9 +229,14 @@ namespace BurnBody
 4 + 32 + 32 + 32 + 32 + 32 + 32 + 32. -/
 def minSize : Nat := 228
 
+/-- The only CCTP v2 burn-message body version this parser understands. -/
+def supportedVersion : Nat := 1
+
 /-- Structural well-formedness: numeric fields fit their wire width and
-address-like words are exactly 32 bytes. Hook data is unconstrained. -/
+address-like words are exactly 32 bytes. Hook data is unconstrained. Version
+is fixed to the currently supported Circle CCTP v2 burn-message format. -/
 def WellFormed (b : BurnBody) : Prop :=
+  b.version = supportedVersion ∧
   b.version < 2 ^ 32 ∧
   b.burnToken.length = 32 ∧
   b.mintRecipient.length = 32 ∧
@@ -235,23 +259,25 @@ def encode (b : BurnBody) : List UInt8 :=
   beBytes 32 b.expirationBlock ++
   b.hookData
 
-/-- Decodes a burn-message body: at least 228 bytes, preserving the three
-address-like words raw; everything past byte 228 is hook data. Domain-aware
-EVM padding checks happen at the full-message layer. Mirrors
-`BurnMessageV2::decode`. -/
+/-- Decodes a burn-message body: at least 228 bytes, supported body version,
+preserving the three address-like words raw; everything past byte 228 is hook
+data. Domain-aware EVM padding checks happen at the full-message layer.
+Mirrors `BurnMessageV2::decode`. -/
 def decode (bs : List UInt8) : Option BurnBody :=
   if minSize ≤ bs.length then
-    some {
-      version := natOfBe (slice bs 0 4)
-      burnToken := slice bs 4 32
-      mintRecipient := slice bs 36 32
-      amount := natOfBe (slice bs 68 32)
-      messageSender := slice bs 100 32
-      maxFee := natOfBe (slice bs 132 32)
-      feeExecuted := natOfBe (slice bs 164 32)
-      expirationBlock := natOfBe (slice bs 196 32)
-      hookData := bs.drop minSize
-    }
+    if natOfBe (slice bs 0 4) = supportedVersion then
+      some {
+        version := natOfBe (slice bs 0 4)
+        burnToken := slice bs 4 32
+        mintRecipient := slice bs 36 32
+        amount := natOfBe (slice bs 68 32)
+        messageSender := slice bs 100 32
+        maxFee := natOfBe (slice bs 132 32)
+        feeExecuted := natOfBe (slice bs 164 32)
+        expirationBlock := natOfBe (slice bs 196 32)
+        hookData := bs.drop minSize
+      }
+    else none
   else none
 
 /-- True when the body carries hook data. Mirrors `BurnMessageV2::has_hooks`. -/
@@ -265,25 +291,34 @@ def isFastTransfer (b : BurnBody) : Bool :=
 
 theorem length_encode (b : BurnBody) (wf : b.WellFormed) :
     b.encode.length = minSize + b.hookData.length := by
-  obtain ⟨-, hbt, hmr, -, hms, -, -, -⟩ := wf
+  obtain ⟨-, -, hbt, hmr, -, hms, -, -, -⟩ := wf
   simp [encode, minSize, hbt, hmr, hms]
   omega
 
 /-- Round-trip: every well-formed body decodes from its own encoding. -/
 theorem decode_encode (b : BurnBody) (wf : b.WellFormed) :
     decode b.encode = some b := by
-  obtain ⟨hv, hbt, hmr, ha, hms, hmf, hfe, hex⟩ := wf
+  obtain ⟨hvs, hv, hbt, hmr, ha, hms, hmf, hfe, hex⟩ := wf
   have hlen : b.encode.length = minSize + b.hookData.length :=
-    length_encode b ⟨hv, hbt, hmr, ha, hms, hmf, hfe, hex⟩
+    length_encode b ⟨hvs, hv, hbt, hmr, ha, hms, hmf, hfe, hex⟩
+  have bstruct :
+      { version := 1, burnToken := b.burnToken, mintRecipient := b.mintRecipient,
+        amount := b.amount, messageSender := b.messageSender, maxFee := b.maxFee,
+        feeExecuted := b.feeExecuted, expirationBlock := b.expirationBlock,
+        hookData := b.hookData } = b := by
+    cases b
+    simp [supportedVersion] at hvs
+    simp [hvs]
   unfold decode
   rw [if_pos (by omega)]
-  simp [encode, minSize, slice_append_right, slice_append_left,
+  simp [encode, minSize, supportedVersion, hvs, slice_append_right, slice_append_left,
     drop_append_of_le, hbt, hmr, hms,
-    natOfBe_beBytes 4 b.version (by simpa using hv),
+    natOfBe_beBytes 4 1 (by omega),
     natOfBe_beBytes 32 b.amount (by simpa using ha),
     natOfBe_beBytes 32 b.maxFee (by simpa using hmf),
     natOfBe_beBytes 32 b.feeExecuted (by simpa using hfe),
-    natOfBe_beBytes 32 b.expirationBlock (by simpa using hex)]
+    natOfBe_beBytes 32 b.expirationBlock (by simpa using hex),
+    bstruct]
 
 /-- Canonicality: an accepted byte string is exactly the encoding of the
 body it decodes to, and that body is well-formed. -/
@@ -293,47 +328,50 @@ theorem encode_of_decode {bs : List UInt8} {b : BurnBody}
   split at hdec
   · rename_i hlen
     have hlen' : 228 ≤ bs.length := hlen
-    cases hdec
-    have hbe : ∀ start len, start + len ≤ bs.length →
-        beBytes len (natOfBe (slice bs start len)) = slice bs start len := by
-      intro start len hle
-      have hb := beBytes_natOfBe (slice bs start len)
-      rwa [length_slice bs start len hle] at hb
-    have hlt : ∀ len start, start + len ≤ bs.length →
-        natOfBe (slice bs start len) < 256 ^ len := by
-      intro len start hle
-      have hl := natOfBe_lt (slice bs start len)
-      rwa [length_slice bs start len hle] at hl
-    constructor
-    · dsimp only [encode]
-      rw [hbe 0 4 (by omega), hbe 68 32 (by omega), hbe 132 32 (by omega),
-        hbe 164 32 (by omega), hbe 196 32 (by omega)]
-      simp only [List.append_assoc]
-      conv =>
-        rhs
-        rw [show bs = bs.drop 0 from rfl,
-          drop_eq_slice_append bs 0 4 4 rfl,
-          drop_eq_slice_append bs 4 32 36 rfl,
-          drop_eq_slice_append bs 36 32 68 rfl,
-          drop_eq_slice_append bs 68 32 100 rfl,
-          drop_eq_slice_append bs 100 32 132 rfl,
-          drop_eq_slice_append bs 132 32 164 rfl,
-          drop_eq_slice_append bs 164 32 196 rfl,
-          drop_eq_slice_append bs 196 32 228 rfl]
-      rfl
-    · refine ⟨?_, length_slice bs 4 32 (by omega),
-        length_slice bs 36 32 (by omega), ?_,
-        length_slice bs 100 32 (by omega), ?_, ?_, ?_⟩
-      · have := hlt 4 0 (by omega)
-        simpa using this
-      · have := hlt 32 68 (by omega)
-        simpa using this
-      · have := hlt 32 132 (by omega)
-        simpa using this
-      · have := hlt 32 164 (by omega)
-        simpa using this
-      · have := hlt 32 196 (by omega)
-        simpa using this
+    split at hdec
+    · rename_i hversion
+      cases hdec
+      have hbe : ∀ start len, start + len ≤ bs.length →
+          beBytes len (natOfBe (slice bs start len)) = slice bs start len := by
+        intro start len hle
+        have hb := beBytes_natOfBe (slice bs start len)
+        rwa [length_slice bs start len hle] at hb
+      have hlt : ∀ len start, start + len ≤ bs.length →
+          natOfBe (slice bs start len) < 256 ^ len := by
+        intro len start hle
+        have hl := natOfBe_lt (slice bs start len)
+        rwa [length_slice bs start len hle] at hl
+      constructor
+      · dsimp only [encode]
+        rw [hbe 0 4 (by omega), hbe 68 32 (by omega), hbe 132 32 (by omega),
+          hbe 164 32 (by omega), hbe 196 32 (by omega)]
+        simp only [List.append_assoc]
+        conv =>
+          rhs
+          rw [show bs = bs.drop 0 from rfl,
+            drop_eq_slice_append bs 0 4 4 rfl,
+            drop_eq_slice_append bs 4 32 36 rfl,
+            drop_eq_slice_append bs 36 32 68 rfl,
+            drop_eq_slice_append bs 68 32 100 rfl,
+            drop_eq_slice_append bs 100 32 132 rfl,
+            drop_eq_slice_append bs 132 32 164 rfl,
+            drop_eq_slice_append bs 164 32 196 rfl,
+            drop_eq_slice_append bs 196 32 228 rfl]
+        rfl
+      · refine ⟨hversion, ?_, length_slice bs 4 32 (by omega),
+          length_slice bs 36 32 (by omega), ?_,
+          length_slice bs 100 32 (by omega), ?_, ?_, ?_⟩
+        · have := hlt 4 0 (by omega)
+          simpa using this
+        · have := hlt 32 68 (by omega)
+          simpa using this
+        · have := hlt 32 132 (by omega)
+          simpa using this
+        · have := hlt 32 164 (by omega)
+          simpa using this
+        · have := hlt 32 196 (by omega)
+          simpa using this
+    · cases hdec
   · cases hdec
 
 end BurnBody

@@ -241,6 +241,10 @@ into serializable Rust types.
 Parsing failures return `ParseMessageError`, so this inspection path does not expand the
 existing `CctpError` surface used by bridge operations.
 
+The parser is strict about the current Circle CCTP v2 wire format: both the
+message header and burn body must use version `1`. Future format revisions are
+reported as unsupported instead of being decoded with today's field offsets.
+
 `DomainId` values in serialized summaries use `snake_case` strings. Future releases may
 add new domain variants, so older tooling should treat unknown domain strings as a
 forward-compatibility case.

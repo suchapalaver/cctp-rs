@@ -148,8 +148,8 @@ Mapped to the checklist in issue #11:
 | Fast transfer modes — and only they — request threshold 1000; standard modes send zero `maxFee`; hooks ⇔ `*WithHook` | `TransferMode.finality_wire_value`, `maxFee_eq_zero_of_not_fast`, `hookData_isSome_iff` |
 | Big-endian field encoding round-trips; every byte string is the canonical encoding of its value | `natOfBe_beBytes`, `beBytes_natOfBe` |
 | `bytes32` EVM-address words decode iff canonically zero-padded, and decoding is strict | `decodeAddressWord_encodeAddressWord`, `encodeAddressWord_of_decode` |
-| Full-message parsing requires EVM padding only where the header's source/destination domains are EVM; non-EVM body words are preserved raw | `Message.bodyWordsValid`, `Message.decode_encode`, `Message.encode_of_decode` |
-| Header, burn body, and full message decode∘encode = id on well-formed values | `MessageHeader.decode_encode`, `BurnBody.decode_encode`, `Message.decode_encode` |
+| Full-message parsing requires supported header/body version 1 and EVM padding only where the header's source/destination domains are EVM; non-EVM body words are preserved raw | `MessageHeader.WellFormed`, `BurnBody.WellFormed`, `Message.bodyWordsValid`, `Message.decode_encode`, `Message.encode_of_decode` |
+| Header, burn body, and full message decode∘encode = id on well-formed version-1 values | `MessageHeader.decode_encode`, `BurnBody.decode_encode`, `Message.decode_encode` |
 | Accepted raw bytes re-encode byte-for-byte (strict canonical parser); parser injective on accepted inputs | `MessageHeader.encode_of_decode`, `BurnBody.encode_of_decode`, `Message.encode_of_decode`, `Message.decode_injective` |
 
 **Tested** (Lean-generated fixtures replayed against production Rust, plus
@@ -161,7 +161,7 @@ the existing unit suite):
 | Production `FinalityThreshold::from_u32` matches the model | `finality_threshold_conversion_matches_lean_model` |
 | Production `TransferMode` dispatch matches the model | `transfer_mode_dispatch_matches_lean_model` |
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
-| Production parser rejects the model's reject vectors, naming the offending field | `rejected_messages_fail_to_parse` |
+| Production parser rejects the model's reject vectors, including unsupported header/body versions, naming the offending field or version | `rejected_messages_fail_to_parse` |
 | Real Circle Iris message (Arbitrum→Base) parses identically in model and production | first accept vector |
 | Non-EVM source/destination body words are retained as `bytes32`, with EVM address projections omitted from summaries where misleading | `solana_source_placeholder_nonce` and `starknet_destination_caller_set` vectors; `src/protocol/message.rs` unit tests |
 
@@ -170,7 +170,6 @@ the existing unit suite):
 | Assumption | Notes |
 |---|---|
 | `keccak256` (alloy implementation) is correct | The model does not define hashing; the Rust test checks `message_hash() == keccak256(raw)` using alloy itself. |
-| Header/body `version` fields are carried, not validated | Production parses any `u32` version with the v1 layout; a future Circle format bump could misparse. Pinned by the `max_values_unvalidated_fields` vector; candidate for a stricter parser. |
 | Circle Iris returns the canonical message; the on-chain `MessageSent` event has a zeroed nonce | Modeled only as the `hasPlaceholderNonce` flag; selection of the canonical message lives in `CctpV2Bridge::get_attestation` and is covered by Rust tests. |
 | Route validity, finality timing, fee quotes, relayer behavior, RPC providers | Out of scope for this slice. |
 

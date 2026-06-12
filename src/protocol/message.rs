@@ -15,6 +15,32 @@ use thiserror::Error;
 use super::DomainId;
 use crate::FinalityThreshold;
 
+const CCTP_V2_MESSAGE_VERSION: u32 = 1;
+const CCTP_V2_BURN_BODY_VERSION: u32 = 1;
+
+fn read_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_be_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ])
+}
+
+fn check_supported_version(
+    layer: &str,
+    version: u32,
+    supported: u32,
+) -> Result<(), ParseMessageError> {
+    if version == supported {
+        Ok(())
+    } else {
+        Err(ParseMessageError::new(format!(
+            "unsupported CCTP v2 {layer} version {version}; supported version is {supported}"
+        )))
+    }
+}
+
 fn address_word(address: Address) -> FixedBytes<32> {
     address.into_word()
 }
@@ -139,6 +165,8 @@ pub struct MessageHeader {
 impl MessageHeader {
     /// Size of the message header in bytes
     pub const SIZE: usize = 148;
+    /// The only CCTP v2 message header version this parser understands.
+    pub const SUPPORTED_VERSION: u32 = CCTP_V2_MESSAGE_VERSION;
 
     /// Creates a new message header
     #[allow(clippy::too_many_arguments)]
@@ -203,12 +231,15 @@ impl MessageHeader {
             return None;
         }
 
-        let version = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let version = read_u32(bytes, 0);
+        if version != Self::SUPPORTED_VERSION {
+            return None;
+        }
 
-        let source_domain = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        let source_domain = read_u32(bytes, 4);
         let source_domain = DomainId::from_u32(source_domain)?;
 
-        let destination_domain = u32::from_be_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+        let destination_domain = read_u32(bytes, 8);
         let destination_domain = DomainId::from_u32(destination_domain)?;
 
         let nonce = FixedBytes::from_slice(&bytes[12..44]);
@@ -216,10 +247,8 @@ impl MessageHeader {
         let recipient = FixedBytes::from_slice(&bytes[76..108]);
         let destination_caller = FixedBytes::from_slice(&bytes[108..140]);
 
-        let min_finality_threshold =
-            u32::from_be_bytes([bytes[140], bytes[141], bytes[142], bytes[143]]);
-        let finality_threshold_executed =
-            u32::from_be_bytes([bytes[144], bytes[145], bytes[146], bytes[147]]);
+        let min_finality_threshold = read_u32(bytes, 140);
+        let finality_threshold_executed = read_u32(bytes, 144);
 
         Some(Self {
             version,
@@ -243,6 +272,9 @@ impl MessageHeader {
                 bytes.len()
             )));
         }
+
+        let version = read_u32(bytes, 0);
+        check_supported_version("message header", version, Self::SUPPORTED_VERSION)?;
 
         Self::decode(bytes).ok_or_else(|| ParseMessageError::new("failed to decode header"))
     }
@@ -356,6 +388,8 @@ pub struct BurnMessageV2 {
 impl BurnMessageV2 {
     /// Minimum size of the burn message body in bytes (without hookData)
     pub const MIN_SIZE: usize = 228;
+    /// The only CCTP v2 burn body version this parser understands.
+    pub const SUPPORTED_VERSION: u32 = CCTP_V2_BURN_BODY_VERSION;
 
     /// Creates a new burn message with standard settings (no fast transfer, no hooks)
     pub fn new(
@@ -483,8 +517,13 @@ impl BurnMessageV2 {
             return None;
         }
 
+        let version = read_u32(bytes, 0);
+        if version != Self::SUPPORTED_VERSION {
+            return None;
+        }
+
         Some(Self {
-            version: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+            version,
             burn_token: FixedBytes::from_slice(&bytes[4..36]),
             mint_recipient: FixedBytes::from_slice(&bytes[36..68]),
             amount: U256::from_be_slice(&bytes[68..100]),
@@ -511,6 +550,9 @@ impl BurnMessageV2 {
             )));
         }
 
+        let version = read_u32(bytes, 0);
+        check_supported_version("burn message body", version, Self::SUPPORTED_VERSION)?;
+
         Self::decode(bytes)
             .ok_or_else(|| ParseMessageError::new("failed to decode burn message body"))
     }
@@ -527,6 +569,9 @@ impl BurnMessageV2 {
                 bytes.len()
             )));
         }
+
+        let version = read_u32(bytes, 0);
+        check_supported_version("burn message body", version, Self::SUPPORTED_VERSION)?;
 
         check_word_for_domain(source_domain, &bytes[4..36], "burn_token")?;
         check_word_for_domain(destination_domain, &bytes[36..68], "mint_recipient")?;
@@ -815,9 +860,39 @@ mod tests {
     #[test]
     fn test_message_header_decode_invalid_domain() {
         let mut bytes = vec![0u8; MessageHeader::SIZE];
+        bytes[0..4].copy_from_slice(&MessageHeader::SUPPORTED_VERSION.to_be_bytes());
         // Set invalid source domain ID (999)
         bytes[4..8].copy_from_slice(&999u32.to_be_bytes());
         assert!(MessageHeader::decode(&bytes).is_none());
+    }
+
+    #[test]
+    fn test_message_header_rejects_unsupported_version() {
+        let header = MessageHeader::new(
+            MessageHeader::SUPPORTED_VERSION,
+            DomainId::Ethereum,
+            DomainId::Arbitrum,
+            FixedBytes::from([1u8; 32]),
+            FixedBytes::from([2u8; 32]),
+            FixedBytes::from([3u8; 32]),
+            FixedBytes::ZERO,
+            1000,
+            1000,
+        );
+        let mut encoded = header.encode().to_vec();
+        encoded[0..4].copy_from_slice(&2u32.to_be_bytes());
+
+        assert!(
+            MessageHeader::decode(&encoded).is_none(),
+            "decode must reject unsupported message header versions"
+        );
+        let err = MessageHeader::parse(&encoded)
+            .expect_err("parse must reject unsupported message header versions");
+        assert!(
+            err.to_string()
+                .contains("unsupported CCTP v2 message header version 2"),
+            "parse error should name the unsupported header version: {err}"
+        );
     }
 
     #[test]
@@ -927,6 +1002,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_burn_message_v2_rejects_unsupported_version() {
+        let mut encoded = canonical_burn_body_bytes();
+        encoded[0..4].copy_from_slice(&9u32.to_be_bytes());
+
+        assert!(
+            BurnMessageV2::decode(&encoded).is_none(),
+            "decode must reject unsupported burn body versions"
+        );
+        let err = BurnMessageV2::parse(&encoded)
+            .expect_err("parse must reject unsupported burn body versions");
+        assert!(
+            err.to_string()
+                .contains("unsupported CCTP v2 burn message body version 9"),
+            "parse error should name the unsupported body version: {err}"
+        );
+    }
+
     fn canonical_burn_body_bytes() -> Vec<u8> {
         BurnMessageV2::new_with_fast_transfer(
             address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
@@ -1024,6 +1117,45 @@ mod tests {
         assert!(
             summary_err.to_string().contains("burn_token"),
             "summary parse error should name the offending field: {summary_err}"
+        );
+    }
+
+    #[test]
+    fn test_parsed_v2_message_rejects_unsupported_body_version() {
+        let header = MessageHeader::new(
+            MessageHeader::SUPPORTED_VERSION,
+            DomainId::Ethereum,
+            DomainId::Base,
+            FixedBytes::from([1u8; 32]),
+            address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+            FixedBytes::ZERO,
+            1000,
+            1000,
+        );
+        let mut bytes = header.encode().to_vec();
+        let mut body = canonical_burn_body_bytes();
+        body[0..4].copy_from_slice(&9u32.to_be_bytes());
+        bytes.extend_from_slice(&body);
+
+        assert!(
+            ParsedV2Message::decode(&bytes).is_none(),
+            "full decode must reject unsupported burn body versions"
+        );
+        let err = ParsedV2Message::parse(&bytes)
+            .expect_err("full parse must reject unsupported burn body versions");
+        assert!(
+            err.to_string()
+                .contains("unsupported CCTP v2 burn message body version 9"),
+            "parse error should name the unsupported body version: {err}"
+        );
+        let summary_err = ParsedV2MessageSummary::parse(&bytes)
+            .expect_err("summary parse must reject unsupported burn body versions");
+        assert!(
+            summary_err
+                .to_string()
+                .contains("unsupported CCTP v2 burn message body version 9"),
+            "summary parse error should name the unsupported body version: {summary_err}"
         );
     }
 
