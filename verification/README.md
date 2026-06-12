@@ -227,7 +227,14 @@ The controls that make that safe:
   compiled evaluator instead of the kernel), or `@[implemented_by]` (swaps
   the executable behind a definition, which would let the fixture generator
   diverge from the verified model). `lake build` only warns on `sorry`, so
-  CI greps for all of these and fails hard.
+  CI greps for all of these and fails hard. Two near-misses are *not* on
+  the deny list because the toolchain itself rejects them: Lean 3's
+  `constant` command does not exist in Lean 4 (any use is a syntax error,
+  so `lake build` fails), and its successor `opaque` requires an
+  `Inhabited`/`Nonempty` witness, so `opaque h : False`-style unproven
+  assumptions do not elaborate. Any `.lean` change runs the full
+  `lake build` in CI, so unparseable or non-elaborating declarations
+  cannot land even though the grep does not name them.
 
 ## Maintenance
 
