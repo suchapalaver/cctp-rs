@@ -149,10 +149,30 @@ async fn bridge_usdc_v1<P: Provider + Clone>(bridge: &Cctp<P>) -> Result<(), Cct
 ### Bridging USDC (V2 - Recommended)
 
 ```rust
-use cctp_rs::{CctpV2Bridge, CctpError, PollingConfig};
+use cctp_rs::{CctpV2Bridge, CctpError, CctpV2Route, PollingConfig, TransferMode};
 use alloy_chains::NamedChain;
-use alloy_primitives::{Address, U256};
-use alloy_provider::Provider;
+use alloy_primitives::U256;
+use alloy_provider::{Provider, ProviderBuilder};
+
+async fn route_first_v2_bridge() -> Result<(), Box<dyn std::error::Error>> {
+    let eth_provider = ProviderBuilder::new()
+        .connect("https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY")
+        .await?;
+    let linea_provider = ProviderBuilder::new()
+        .connect("https://linea-mainnet.g.alchemy.com/v2/YOUR_API_KEY")
+        .await?;
+    let route = CctpV2Route::new(NamedChain::Mainnet, NamedChain::Linea)?;
+
+    let bridge = CctpV2Bridge::from_route(route)
+        .source_provider(eth_provider)
+        .destination_provider(linea_provider)
+        .recipient("0xYourRecipientAddress".parse()?)
+        .transfer_mode(TransferMode::Fast { max_fee: U256::from(100) })
+        .build();
+
+    println!("Destination domain: {}", bridge.destination_domain_id()?);
+    Ok(())
+}
 
 async fn bridge_usdc_v2<P: Provider + Clone>(bridge: &CctpV2Bridge<P>) -> Result<(), CctpError> {
     // Step 1: Burn USDC on source chain (get tx hash from your burn transaction)

@@ -26,7 +26,7 @@
 //! ## Quick Start (V2, recommended)
 //!
 //! ```rust,no_run
-//! use cctp_rs::{CctpV2Bridge, CctpError, PollingConfig, TransferMode};
+//! use cctp_rs::{CctpV2Bridge, CctpError, CctpV2Route, PollingConfig, TransferMode};
 //! use alloy_chains::NamedChain;
 //! use alloy_primitives::{FixedBytes, U256};
 //!
@@ -35,10 +35,9 @@
 //! // V2 bridge with fast transfer support
 //! let eth_provider = ProviderBuilder::new().connect("http://localhost:8545").await?;
 //! let linea_provider = ProviderBuilder::new().connect("http://localhost:8546").await?;
+//! let route = CctpV2Route::new(NamedChain::Mainnet, NamedChain::Linea)?;
 //!
-//! let bridge = CctpV2Bridge::builder()
-//!     .source_chain(NamedChain::Mainnet)
-//!     .destination_chain(NamedChain::Linea)
+//! let bridge = CctpV2Bridge::from_route(route)
 //!     .source_provider(eth_provider)
 //!     .destination_provider(linea_provider)
 //!     .recipient("0x742d35Cc6634C0532925a3b844Bc9e7595f8fA0d".parse()?)

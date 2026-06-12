@@ -5,7 +5,8 @@
 use crate::error::{AttestationFailureKind, CctpError, Result};
 use crate::protocol::{AttestationBytes, FinalityThreshold, TransferFee};
 use crate::{
-    spans, AttestationStatus, CctpV2 as CctpV2Trait, DomainId, V2AttestationResponse, V2Message,
+    spans, AttestationStatus, CctpV2 as CctpV2Trait, CctpV2Route, DomainId, V2AttestationResponse,
+    V2Message,
 };
 use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
@@ -13,7 +14,7 @@ use alloy_primitives::{hex, Address, Bytes, FixedBytes, TxHash, U256};
 use alloy_provider::Provider;
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
-use bon::Builder;
+use bon::{bon, Builder};
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -60,19 +61,19 @@ use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contrac
 ///   Testnet) but bridging requires `NamedChain::supports_cctp_v2()`.
 /// - **Unified Addresses**: Same contract addresses across all chains in each environment
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust,no_run
-/// # use cctp_rs::{CctpV2Bridge, TransferMode};
+/// # use cctp_rs::{CctpV2Bridge, CctpV2Route, TransferMode};
 /// # use alloy_chains::NamedChain;
 /// # use alloy_provider::ProviderBuilder;
 /// # use alloy_primitives::{Address, U256, Bytes};
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// // Standard transfer (default)
+/// // Route-first construction keeps source/destination chains tied to
+/// // `CctpV2Route` validation.
 /// let provider = ProviderBuilder::new().connect("http://localhost:8545").await?;
-/// let bridge = CctpV2Bridge::builder()
-///     .source_chain(NamedChain::Mainnet)
-///     .destination_chain(NamedChain::Linea)
+/// let route = CctpV2Route::new(NamedChain::Mainnet, NamedChain::Linea)?;
+/// let bridge = CctpV2Bridge::from_route(route)
 ///     .source_provider(provider.clone())
 ///     .destination_provider(provider)
 ///     .recipient("0x742d35Cc6634C0532925a3b844Bc9e7595f8fA0d".parse()?)
@@ -130,6 +131,36 @@ pub struct CctpV2<P: Provider<Ethereum> + Clone> {
     /// custom Iris-compatible endpoint. When `None`, the URL is selected
     /// from the source chain's mainnet/testnet status.
     api_url_override: Option<Url>,
+}
+
+#[bon]
+impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
+    /// Creates a CCTP v2 bridge builder from a validated route.
+    ///
+    /// This is the route-first alternative to [`CctpV2::builder`]. The
+    /// source and destination chains are populated from [`CctpV2Route`], so
+    /// route validation remains centralized in the route constructor while
+    /// callers can still configure providers, recipient, transfer mode, and
+    /// an optional Iris API URL override.
+    #[builder(finish_fn = build)]
+    pub fn from_route(
+        #[builder(start_fn)] route: CctpV2Route,
+        source_provider: P,
+        destination_provider: P,
+        recipient: Address,
+        #[builder(default)] transfer_mode: TransferMode,
+        api_url_override: Option<Url>,
+    ) -> Self {
+        Self {
+            source_provider,
+            destination_provider,
+            source_chain: route.source_chain(),
+            destination_chain: route.destination_chain(),
+            recipient,
+            transfer_mode,
+            api_url_override,
+        }
+    }
 }
 
 impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
@@ -1786,6 +1817,28 @@ mod tests {
         assert!(bridge.is_fast_transfer());
         assert_eq!(bridge.max_fee(), Some(U256::from(500)));
         assert!(bridge.hook_data().is_some());
+    }
+
+    #[test]
+    fn test_v2_from_route_builder_populates_chains() {
+        let provider =
+            ProviderBuilder::new().connect_http("http://localhost:8545".parse().unwrap());
+        let route = CctpV2Route::new(NamedChain::Mainnet, NamedChain::Linea).unwrap();
+
+        let bridge = CctpV2::from_route(route)
+            .source_provider(provider.clone())
+            .destination_provider(provider)
+            .recipient(Address::ZERO)
+            .transfer_mode(TransferMode::Fast {
+                max_fee: U256::from(500),
+            })
+            .build();
+
+        assert_eq!(bridge.source_chain(), &NamedChain::Mainnet);
+        assert_eq!(bridge.destination_chain(), &NamedChain::Linea);
+        assert_eq!(bridge.recipient(), &Address::ZERO);
+        assert!(bridge.is_fast_transfer());
+        assert_eq!(bridge.max_fee(), Some(U256::from(500)));
     }
 
     // Integration tests for transfer flow logic
