@@ -33,7 +33,7 @@ sub-30s settlement).
 | Submit a burn and let any relayer complete it | `CctpV2Bridge::wait_for_receive` | Cheapest happy path. |
 | Submit a burn and try to self-relay | `CctpV2Bridge::mint_if_needed` | Returns `MintResult::AlreadyRelayed` if a relayer beat you. **Do not use raw `mint`** unless you've checked. |
 | Check if a transfer already completed | `CctpV2Bridge::is_message_received` | Returns `bool`. |
-| Inspect a v2 message as JSON | `ParsedV2MessageSummary::parse` | Returns `ParseMessageError`, not `CctpError`. |
+| Inspect a v2 message as JSON | `ParsedV2MessageSummary::parse` | Returns `ParseMessageError`, not `CctpError`; non-EVM body words stay in `*_bytes` fields. |
 | Drive contracts directly (custom hooks, batch flows) | `TokenMessengerV2Contract` / `MessageTransmitterV2Contract` | Bridge types wrap these. |
 | Look up chain config without a provider | `CctpV1` / `CctpV2` traits on `NamedChain` | Pure functions: domain id, addresses, confirmation times. |
 | Tune attestation polling | `PollingConfig::fast_transfer()` for v2 fast, `PollingConfig::default()` otherwise | Customize via `with_max_attempts`, `with_poll_interval_secs`. |
@@ -54,6 +54,10 @@ sub-30s settlement).
 - **Mainnet vs testnet hit different Iris hosts** (`iris-api.circle.com` vs
   `iris-api-sandbox.circle.com`). Selection is automatic from the chain — but
   if you stub the API in tests, stub both.
+- **Parser address projections are domain-aware.** `ParsedV2MessageSummary`
+  always exposes canonical 32-byte `*_bytes` fields. EVM-shaped `Address`
+  projections are `None` for non-EVM source or destination domains so tooling
+  does not mistake a trailing-20-byte slice for an address.
 
 ## Public API map
 

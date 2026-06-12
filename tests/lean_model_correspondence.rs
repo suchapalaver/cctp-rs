@@ -16,7 +16,7 @@
 //! If a test here fails after a protocol change, update the Lean model and
 //! regenerate the fixtures — see `verification/README.md`.
 
-use alloy_primitives::{keccak256, Address, Bytes, FixedBytes, U256};
+use alloy_primitives::{keccak256, Bytes, FixedBytes, U256};
 use cctp_rs::{DomainId, FinalityThreshold, ParsedV2Message, TransferMode};
 use serde::Deserialize;
 
@@ -332,7 +332,7 @@ fn accepted_messages_parse_to_lean_model_fields() {
                 &body.message_sender,
             ),
         ] {
-            let expected: Address = expected
+            let expected: FixedBytes<32> = expected
                 .parse()
                 .unwrap_or_else(|e| panic!("vector {name}: bad {field} hex: {e}"));
             assert_eq!(actual, expected, "vector {name}: body {field}");

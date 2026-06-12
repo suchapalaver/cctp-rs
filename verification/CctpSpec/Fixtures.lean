@@ -54,8 +54,6 @@ def evmWord (addr20 : List UInt8) : List UInt8 :=
 
 def zeroWord : List UInt8 := List.replicate 32 0
 
-def zeroAddr : List UInt8 := List.replicate 20 0
-
 def repeatByte (b : UInt8) (n : Nat) : List UInt8 := List.replicate n b
 
 /-- Overwrites `patch` into `bs` starting at byte `start`. -/
@@ -69,6 +67,9 @@ def usdcAddr2 : List UInt8 := ofHex "a2d2a41577ce14e20a6c2de999a8ec2bd9fe34af"
 def addrA : List UInt8 := ofHex "8fe6b999dc680ccfdd5bf7eb0974218be2542daa"
 def addrB : List UInt8 := ofHex "7f7d081724f0240c64c9e01cde4626602f9a0192"
 def addrC : List UInt8 := ofHex "1234567890abcdef1234567890abcdef12345678"
+def solanaTokenWord : List UInt8 := repeatByte 0xcd 32
+def solanaSenderWord : List UInt8 := repeatByte 0xef 32
+def starknetRecipientWord : List UInt8 := repeatByte 0x42 32
 
 /-- A real canonical CCTP v2 message (Arbitrum → Base, 1 USDC) captured from
 Circle Iris; also used in the Rust unit tests in `src/protocol/message.rs`. -/
@@ -105,29 +106,29 @@ private def mkBody (version : Nat) (burnToken mintRecipient : List UInt8)
 def fastWithHookMessage : Message :=
   { header := mkHeader 1 .ethereum .linea (repeatByte 0x11 32) (evmWord addrA)
       (evmWord addrB) (evmWord addrC) 1000 1000
-    body := mkBody 1 usdcAddr2 addrB 2500000 addrA 150 25 12345678
+    body := mkBody 1 (evmWord usdcAddr2) (evmWord addrB) 2500000 (evmWord addrA) 150 25 12345678
       (ofHex "deadbeefcafe") }
 
 def solanaSourceMessage : Message :=
   { header := mkHeader 1 .solana .base zeroWord (repeatByte 0xab 32)
       (evmWord addrB) zeroWord 2000 2000
-    body := mkBody 1 usdcAddr2 addrB 1000000 addrC 0 0 0 [] }
+    body := mkBody 1 solanaTokenWord (evmWord addrB) 1000000 solanaSenderWord 0 0 0 [] }
 
 def starknetDestinationMessage : Message :=
   { header := mkHeader 1 .ethereum .starknetTestnet (repeatByte 0x22 32)
       (evmWord addrA) (repeatByte 0x42 32) (repeatByte 0x77 32) 1000 2000
-    body := mkBody 1 usdcAddr2 addrB 1 addrA 0 0 0 [] }
+    body := mkBody 1 (evmWord usdcAddr2) starknetRecipientWord 1 (evmWord addrA) 0 0 0 [] }
 
 def maxValuesMessage : Message :=
   { header := mkHeader 7 .base .avalanche (repeatByte 0xff 32) (evmWord addrC)
       (evmWord addrA) zeroWord 0 1500
-    body := mkBody 9 usdcAddr2 addrA (2 ^ 256 - 1) addrC (2 ^ 256 - 1)
+    body := mkBody 9 (evmWord usdcAddr2) (evmWord addrA) (2 ^ 256 - 1) (evmWord addrC) (2 ^ 256 - 1)
       (2 ^ 256 - 1) (2 ^ 256 - 1) [0x00] }
 
 def minimalMessage : Message :=
   { header := mkHeader 0 .arbitrum .unichain zeroWord zeroWord zeroWord
       zeroWord 2000 2000
-    body := mkBody 0 zeroAddr zeroAddr 0 zeroAddr 0 0 0 [] }
+    body := mkBody 0 zeroWord zeroWord 0 zeroWord 0 0 0 [] }
 
 /-- Nonce and destination caller that are zero in every byte but the last.
 Pins the all-bytes semantics of the placeholder-nonce and permissionless
@@ -138,7 +139,7 @@ def almostZeroWord : List UInt8 := List.replicate 31 0 ++ [0x01]
 def mixedBoundaryWordsMessage : Message :=
   { header := mkHeader 1 .optimism .polygon almostZeroWord (evmWord addrA)
       (evmWord addrB) almostZeroWord 2000 2000
-    body := mkBody 1 usdcAddr addrB 42 addrA 0 0 0 [] }
+    body := mkBody 1 (evmWord usdcAddr) (evmWord addrB) 42 (evmWord addrA) 0 0 0 [] }
 
 def acceptVectors : Except String (List AcceptVector) := do
   let realCircle ←
