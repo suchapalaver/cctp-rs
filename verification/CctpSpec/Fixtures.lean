@@ -120,15 +120,15 @@ def starknetDestinationMessage : Message :=
     body := mkBody 1 (evmWord usdcAddr2) starknetRecipientWord 1 (evmWord addrA) 0 0 0 [] }
 
 def maxValuesMessage : Message :=
-  { header := mkHeader 7 .base .avalanche (repeatByte 0xff 32) (evmWord addrC)
+  { header := mkHeader 1 .base .avalanche (repeatByte 0xff 32) (evmWord addrC)
       (evmWord addrA) zeroWord 0 1500
-    body := mkBody 9 (evmWord usdcAddr2) (evmWord addrA) (2 ^ 256 - 1) (evmWord addrC) (2 ^ 256 - 1)
+    body := mkBody 1 (evmWord usdcAddr2) (evmWord addrA) (2 ^ 256 - 1) (evmWord addrC) (2 ^ 256 - 1)
       (2 ^ 256 - 1) (2 ^ 256 - 1) [0x00] }
 
 def minimalMessage : Message :=
-  { header := mkHeader 0 .arbitrum .unichain zeroWord zeroWord zeroWord
+  { header := mkHeader 1 .arbitrum .unichain zeroWord zeroWord zeroWord
       zeroWord 2000 2000
-    body := mkBody 0 zeroWord zeroWord 0 zeroWord 0 0 0 [] }
+    body := mkBody 1 zeroWord zeroWord 0 zeroWord 0 0 0 [] }
 
 /-- Nonce and destination caller that are zero in every byte but the last.
 Pins the all-bytes semantics of the placeholder-nonce and permissionless
@@ -163,8 +163,8 @@ def acceptVectors : Except String (List AcceptVector) := do
     ⟨"starknet_destination_caller_set",
       "Non-EVM destination domain: raw recipient and caller words, fast requested but standard executed.",
       starknetDestinationMessage⟩,
-    ⟨"max_values_unvalidated_fields",
-      "Maximum uint256 amounts and fees, header/body versions the parser carries without validating, finality values matching no known mode.",
+    ⟨"max_values_numeric_fields",
+      "Maximum uint256 amounts and fees, supported header/body versions, finality values matching no known mode.",
       maxValuesMessage⟩,
     ⟨"minimal_all_zero",
       "Exactly 376 bytes: zero addresses, zero amount, no hook data.",
@@ -193,6 +193,10 @@ def rejectVectors : List RejectVector :=
       "unknown_destination_domain", setSlice minimal (beBytes 4 999) 8⟩,
     ⟨"unknown_destination_domain_20", "Domain 20 is a gap in Circle's table.",
       "unknown_destination_domain", setSlice minimal (beBytes 4 20) 8⟩,
+    ⟨"unsupported_header_version_7", "Header version 7 is not a supported CCTP v2 wire format.",
+      "unsupported_header_version", setSlice minimal (beBytes 4 7) 0⟩,
+    ⟨"unsupported_body_version_9", "Burn body version 9 is not a supported CCTP v2 wire format.",
+      "unsupported_body_version", setSlice minimal (beBytes 4 9) 148⟩,
     ⟨"non_canonical_burn_token_first_pad_byte",
       "First padding byte of the burn_token word set to 0xff.",
       "non_canonical_burn_token", setSlice fwh [0xff] (148 + 4)⟩,
