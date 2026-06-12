@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-06-12
+
+### Added
+
+- Lean 4 protocol verification for CCTP v2 domain IDs, finality
+  thresholds, transfer modes, and canonical message parsing, plus
+  generated correspondence fixtures replayed by the Rust test suite.
+
+### Changed
+
+- **Breaking:** `BurnMessageV2` now preserves `burn_token`,
+  `mint_recipient`, and `message_sender` as canonical `FixedBytes<32>`
+  body words instead of projecting every domain into an EVM `Address`.
+  The EVM constructors still accept `Address`, and the new
+  `*_address()` helpers return `Option<Address>` when a word is
+  canonically EVM-shaped.
+- **Breaking:** `ParsedV2MessageSummary` now always exposes
+  `burn_token_bytes`, `mint_recipient_bytes`, and `message_sender_bytes`
+  for the canonical body words. The EVM projections `burn_token`,
+  `mint_recipient`, and `message_sender` are now `Option<Address>` and
+  are omitted from JSON when the source or destination domain is non-EVM.
+- CCTP v2 message parsing is now strict about supported wire versions:
+  header and burn-body versions must be `1`, and future format revisions
+  return `ParseMessageError` instead of being decoded with today's field
+  offsets.
+- The Lean model and generated Rust fixtures now prove and test
+  domain-aware body-word validation and version-1-only parsing.
+
 ## [6.3.0] - 2026-06-09
 
 ### Added
