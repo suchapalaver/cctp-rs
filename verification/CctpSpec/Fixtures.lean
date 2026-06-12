@@ -129,6 +129,17 @@ def minimalMessage : Message :=
       zeroWord 2000 2000
     body := mkBody 0 zeroAddr zeroAddr 0 zeroAddr 0 0 0 [] }
 
+/-- Nonce and destination caller that are zero in every byte but the last.
+Pins the all-bytes semantics of the placeholder-nonce and permissionless
+flags: a parser that inspected only a prefix of the word would
+misclassify both. -/
+def almostZeroWord : List UInt8 := List.replicate 31 0 ++ [0x01]
+
+def mixedBoundaryWordsMessage : Message :=
+  { header := mkHeader 1 .optimism .polygon almostZeroWord (evmWord addrA)
+      (evmWord addrB) almostZeroWord 2000 2000
+    body := mkBody 1 usdcAddr addrB 42 addrA 0 0 0 [] }
+
 def acceptVectors : Except String (List AcceptVector) := do
   let realCircle ←
     match Message.decode realCircleRaw with
@@ -156,7 +167,10 @@ def acceptVectors : Except String (List AcceptVector) := do
       maxValuesMessage⟩,
     ⟨"minimal_all_zero",
       "Exactly 376 bytes: zero addresses, zero amount, no hook data.",
-      minimalMessage⟩
+      minimalMessage⟩,
+    ⟨"mixed_boundary_words",
+      "Nonce and destination caller zero in all bytes except the last: neither a placeholder nonce nor permissionless, pinning the all-bytes zero check.",
+      mixedBoundaryWordsMessage⟩
   ]
 
 def rejectVectors : List RejectVector :=
