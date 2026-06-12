@@ -273,6 +273,20 @@ The library is organized into several key modules:
 - **`error`** - Comprehensive error types for proper error handling
 - **`contracts`** - Type-safe bindings for TokenMessenger and MessageTransmitter
 
+## Formal Verification
+
+The protocol parser's core invariants — domain ID conversions, finality
+thresholds, transfer-mode dispatch, and the canonical v2 message layout —
+are modeled in Lean 4 with machine-checked round-trip and canonicality
+proofs. The model generates correspondence fixtures that the Rust test
+suite replays against the production parser
+(`tests/lean_model_correspondence.rs`), so the parser cannot silently
+drift from the verified model.
+
+See [`verification/README.md`](verification/README.md) for exactly what is
+proven vs tested vs assumed, how to run the proof checks, and how to update
+the model when protocol parsing changes.
+
 ## Error Handling
 
 cctp-rs provides detailed error types for different failure scenarios:

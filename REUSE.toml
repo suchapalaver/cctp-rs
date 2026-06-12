@@ -35,6 +35,19 @@ path = "flake.lock"
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
 SPDX-License-Identifier = "Apache-2.0"
 
+# Lean verification project: docs, toolchain pin, build config, and
+# generated fixtures (JSON, can't have inline headers)
+[[annotations]]
+path = [
+    "verification/README.md",
+    "verification/lean-toolchain",
+    "verification/lakefile.toml",
+    "verification/lake-manifest.json",
+    "tests/fixtures/**",
+]
+SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
 # Configuration files
 [[annotations]]
 path = [".gitignore", ".env.example", ".github/**", ".cargo/**"]
