@@ -222,9 +222,12 @@ The controls that make that safe:
   correspondence) on every PR touching `verification/`, so an AI-generated
   change cannot weaken the target without a visible diff in model
   definitions, fixtures, or both.
-- **No `sorry`/`admit`** may be committed; `lake build` treats the model
-  as a library with proofs, and a `sorry` is a build warning that review
-  must treat as a failure (CI greps for it).
+- **No proof-surface escape hatches** may be committed: `sorry`/`admit`
+  (holes), `axiom` (assumption without proof), `native_decide` (trusts the
+  compiled evaluator instead of the kernel), or `@[implemented_by]` (swaps
+  the executable behind a definition, which would let the fixture generator
+  diverge from the verified model). `lake build` only warns on `sorry`, so
+  CI greps for all of these and fails hard.
 
 ## Maintenance
 

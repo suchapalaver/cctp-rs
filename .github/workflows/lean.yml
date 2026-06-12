@@ -1,18 +1,13 @@
 name: Lean Verification
 
+# Always runs (no path filter) so "Proofs and fixture freshness" can be a
+# required status check; PRs that don't touch the verification surface take
+# the cheap no-op success path instead of being skipped entirely.
 on:
   push:
     branches: [main]
-    paths:
-      - "verification/**"
-      - "tests/fixtures/lean/**"
-      - ".github/workflows/lean.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "verification/**"
-      - "tests/fixtures/lean/**"
-      - ".github/workflows/lean.yml"
 
 jobs:
   verify:
@@ -20,13 +15,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect verification-relevant changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+              | grep -qE '^(verification/|tests/fixtures/lean/|\.github/workflows/lean\.yml)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "No verification-relevant changes; proof check is a no-op for this PR."
+          fi
+
+      # The model must not weaken its own trust surface: `sorry`/`admit`
+      # leave holes, `axiom` assumes without proof, `native_decide` trusts
+      # the compiled evaluator instead of the kernel, and `implemented_by`
+      # swaps the executable behind a definition (which would let the
+      # fixture generator diverge from the verified model). Cheap, so it
+      # runs even on the no-op path.
+      - name: Forbid proof-surface escape hatches
+        run: |
+          ! grep -rnE '\bsorry\b|\badmit\b|\baxiom\b|\bnative_decide\b|implemented_by' \
+              verification --include='*.lean'
 
       - name: Install elan
+        if: steps.changes.outputs.relevant == 'true'
         run: |
           curl -sSfL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --no-modify-path --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
       - name: Cache Lean toolchain
+        if: steps.changes.outputs.relevant == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.elan
@@ -34,19 +57,15 @@ jobs:
 
       # Re-checks every proof in the model; fails on any type or proof error.
       - name: Check proofs
+        if: steps.changes.outputs.relevant == 'true'
         working-directory: verification
         run: lake build
-
-      # A `sorry` only warns in lake build; treat it as a hard failure so the
-      # proof surface cannot silently shrink.
-      - name: Forbid sorry/admit in the model
-        run: |
-          ! grep -rnE '\bsorry\b|\badmit\b' verification --include='*.lean'
 
       # The committed fixtures must be exactly what the model generates, so
       # the Rust correspondence test (run by the main CI workflow) always
       # tests against the current model's verdicts.
       - name: Check committed fixtures are fresh
+        if: steps.changes.outputs.relevant == 'true'
         working-directory: verification
         run: |
           lake exe gen_vectors > ../tests/fixtures/lean/cctp_v2_vectors.json
