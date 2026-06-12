@@ -1,0 +1,53 @@
+name: Lean Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "verification/**"
+      - "tests/fixtures/lean/**"
+      - ".github/workflows/lean.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "verification/**"
+      - "tests/fixtures/lean/**"
+      - ".github/workflows/lean.yml"
+
+jobs:
+  verify:
+    name: Proofs and fixture freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --no-modify-path --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: elan-${{ runner.os }}-${{ hashFiles('verification/lean-toolchain') }}
+
+      # Re-checks every proof in the model; fails on any type or proof error.
+      - name: Check proofs
+        working-directory: verification
+        run: lake build
+
+      # A `sorry` only warns in lake build; treat it as a hard failure so the
+      # proof surface cannot silently shrink.
+      - name: Forbid sorry/admit in the model
+        run: |
+          ! grep -rnE '\bsorry\b|\badmit\b' verification --include='*.lean'
+
+      # The committed fixtures must be exactly what the model generates, so
+      # the Rust correspondence test (run by the main CI workflow) always
+      # tests against the current model's verdicts.
+      - name: Check committed fixtures are fresh
+        working-directory: verification
+        run: |
+          lake exe gen_vectors > ../tests/fixtures/lean/cctp_v2_vectors.json
+          git diff --exit-code ../tests/fixtures/lean/cctp_v2_vectors.json

@@ -62,6 +62,10 @@
             # For SPDX license compliance
             reuse
 
+            # Lean 4 toolchain manager for verification/ (version pinned
+            # by verification/lean-toolchain)
+            elan
+
             # Other useful tools
             git
           ]);

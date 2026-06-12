@@ -87,7 +87,11 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 for the shared trait). Chain metadata is in `src/chain/`, protocol parsing and
 types in `src/protocol/`, contract wrappers in `src/contracts/`, and shared
 errors in `src/error.rs`. Runnable samples go in `examples/`, contract ABI
-JSON in `abis/`, and CI/release automation in `.github/workflows/`.
+JSON in `abis/`, and CI/release automation in `.github/workflows/`. The Lean 4
+model of the protocol invariants lives in `verification/` (see
+`verification/README.md`); it generates `tests/fixtures/lean/cctp_v2_vectors.json`,
+which `tests/lean_model_correspondence.rs` replays against the production
+parser.
 
 ## Build, test, and development commands
 
@@ -98,6 +102,11 @@ JSON in `abis/`, and CI/release automation in `.github/workflows/`.
 - `cargo fmt --all -- --check` — verifies formatting; `cargo fmt` applies fixes.
 - `cargo build --example v2_integration_validation` — validates a representative v2 example.
 - `pipx run reuse lint` — SPDX/REUSE compliance check.
+- `cd verification && lake build` — re-checks the Lean proofs (toolchain pinned
+  by `verification/lean-toolchain`; install via elan, or nix:
+  `nix shell nixpkgs#lean4 nixpkgs#gcc -c lake build`).
+- `cd verification && lake exe gen_vectors > ../tests/fixtures/lean/cctp_v2_vectors.json`
+  — regenerates the Lean correspondence fixtures (commit the diff).
 
 ## Coding style and naming
 
@@ -146,6 +155,11 @@ details.
    - If the new domain is parse-only (no `supports_cctp_v2()` entry),
      add it to the README's `Protocol parser — additional domains`
      list instead.
+6. Add the domain to the Lean model: new `DomainId` constructor plus
+   `toU32`/`fromU32`/`jsonName` (and `isEvm` if non-EVM) entries in
+   `verification/CctpSpec/Domain.lean`, then `lake build` and regenerate
+   the fixtures. `tests/lean_model_correspondence.rs` fails until the
+   Rust and Lean tables agree — see `verification/README.md`.
 
 ## Security and configuration
 

@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name = "cctp-spec"
+defaultTargets = ["CctpSpec", "gen_vectors"]
+
+[[lean_lib]]
+name = "CctpSpec"
+
+[[lean_exe]]
+name = "gen_vectors"
+root = "Main"
