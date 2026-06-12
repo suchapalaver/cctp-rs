@@ -32,7 +32,9 @@ choosing an integration path.
   and the `DomainId` enum recognize every CCTP v2 domain ID Circle has
   announced (21 at time of writing), including non-EVM domains.
   Parsing a domain is independent of whether the bridge SDK can route
-  to or from it.
+  to or from it. Non-EVM body address words are preserved as raw
+  `bytes32` values; EVM address projections are exposed only when the
+  source or destination domain uses the EVM padding convention.
 
 ### Bridge SDK — supported chains
 
@@ -242,6 +244,11 @@ existing `CctpError` surface used by bridge operations.
 `DomainId` values in serialized summaries use `snake_case` strings. Future releases may
 add new domain variants, so older tooling should treat unknown domain strings as a
 forward-compatibility case.
+
+Header and burn-body address-like fields are exposed in two layers:
+canonical `*_bytes` fields always carry the 32-byte wire value, while EVM
+address fields such as `sender`, `mint_recipient`, and `message_sender` are
+optional and omitted for non-EVM domains.
 
 ```rust
 use cctp_rs::{CctpV2Bridge, ParsedV2MessageSummary, PollingConfig};

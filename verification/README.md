@@ -23,7 +23,7 @@ several independent layers at once. See issue
 | `FinalityThreshold` ↔ `u32` accepts exactly 1000 (fast) and 2000 (standard) | `CctpSpec/Finality.lean` | `src/protocol/finality.rs` |
 | `TransferMode` dispatch: fast variants ⇔ threshold 1000; standard variants send zero `maxFee`; hooks carried exactly by `*WithHook` | `CctpSpec/TransferMode.lean` | `src/bridge/transfer_mode.rs` |
 | Big-endian field codec round-trips; `bytes32` EVM-address words are canonical (12 zero leading bytes) | `CctpSpec/Bytes.lean` | `src/protocol/message.rs` (`decode_address_word`, field codecs) |
-| Canonical v2 message structure: header (148 B), burn body (≥ 228 B), strict parse | `CctpSpec/Message.lean` | `src/protocol/message.rs` (`MessageHeader`, `BurnMessageV2`, `ParsedV2Message`) |
+| Canonical v2 message structure: header (148 B), burn body (≥ 228 B), domain-aware body-word validation | `CctpSpec/Message.lean` | `src/protocol/message.rs` (`MessageHeader`, `BurnMessageV2`, `ParsedV2Message`) |
 
 The two central theorems, proved at header, body, and full-message level:
 
@@ -148,6 +148,7 @@ Mapped to the checklist in issue #11:
 | Fast transfer modes — and only they — request threshold 1000; standard modes send zero `maxFee`; hooks ⇔ `*WithHook` | `TransferMode.finality_wire_value`, `maxFee_eq_zero_of_not_fast`, `hookData_isSome_iff` |
 | Big-endian field encoding round-trips; every byte string is the canonical encoding of its value | `natOfBe_beBytes`, `beBytes_natOfBe` |
 | `bytes32` EVM-address words decode iff canonically zero-padded, and decoding is strict | `decodeAddressWord_encodeAddressWord`, `encodeAddressWord_of_decode` |
+| Full-message parsing requires EVM padding only where the header's source/destination domains are EVM; non-EVM body words are preserved raw | `Message.bodyWordsValid`, `Message.decode_encode`, `Message.encode_of_decode` |
 | Header, burn body, and full message decode∘encode = id on well-formed values | `MessageHeader.decode_encode`, `BurnBody.decode_encode`, `Message.decode_encode` |
 | Accepted raw bytes re-encode byte-for-byte (strict canonical parser); parser injective on accepted inputs | `MessageHeader.encode_of_decode`, `BurnBody.encode_of_decode`, `Message.encode_of_decode`, `Message.decode_injective` |
 
@@ -162,6 +163,7 @@ the existing unit suite):
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
 | Production parser rejects the model's reject vectors, naming the offending field | `rejected_messages_fail_to_parse` |
 | Real Circle Iris message (Arbitrum→Base) parses identically in model and production | first accept vector |
+| Non-EVM source/destination body words are retained as `bytes32`, with EVM address projections omitted from summaries where misleading | `solana_source_placeholder_nonce` and `starknet_destination_caller_set` vectors; `src/protocol/message.rs` unit tests |
 
 **Assumed** (outside the model; documented, not checked here):
 
@@ -169,7 +171,6 @@ the existing unit suite):
 |---|---|
 | `keccak256` (alloy implementation) is correct | The model does not define hashing; the Rust test checks `message_hash() == keccak256(raw)` using alloy itself. |
 | Header/body `version` fields are carried, not validated | Production parses any `u32` version with the v1 layout; a future Circle format bump could misparse. Pinned by the `max_values_unvalidated_fields` vector; candidate for a stricter parser. |
-| Burn-body address words use EVM padding for **all** source domains | Production (and the model mirroring it) rejects bodies whose `burn_token`/`mint_recipient`/`message_sender` words are not EVM-padded. Genuine non-EVM-source burn messages (e.g. Solana, whose words are full 32-byte pubkeys) would be rejected by `ParsedV2Message::parse` today. |
 | Circle Iris returns the canonical message; the on-chain `MessageSent` event has a zeroed nonce | Modeled only as the `hasPlaceholderNonce` flag; selection of the canonical message lives in `CctpV2Bridge::get_attestation` and is covered by Rust tests. |
 | Route validity, finality timing, fee quotes, relayer behavior, RPC providers | Out of scope for this slice. |
 
@@ -269,6 +270,6 @@ here; the correspondence test keeps passing.
 3. **Attestation selection**: state-machine model of
    event-message vs Iris-canonical-message selection (the zero-nonce
    footgun) across `get_attestation`/`mint_if_needed`.
-4. **Non-EVM body addresses**: decide whether the parser should accept
-   full-width `bytes32` body words for non-EVM source domains, then model
-   the chosen behavior (see Assumed table).
+4. **Live non-EVM samples**: add captured Circle Iris fixtures for Solana or
+   Starknet once available, so the modeled raw-word behavior is pinned to
+   real cross-domain traffic in addition to synthetic vectors.

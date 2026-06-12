@@ -15,9 +15,12 @@ use thiserror::Error;
 use super::DomainId;
 use crate::FinalityThreshold;
 
-fn push_address_word(bytes: &mut Vec<u8>, address: Address) {
-    bytes.extend_from_slice(&[0u8; 12]);
-    bytes.extend_from_slice(address.as_slice());
+fn address_word(address: Address) -> FixedBytes<32> {
+    address.into_word()
+}
+
+fn push_word(bytes: &mut Vec<u8>, word: FixedBytes<32>) {
+    bytes.extend_from_slice(word.as_slice());
 }
 
 /// Decodes a canonical EVM address word.
@@ -31,10 +34,14 @@ fn decode_address_word(bytes: &[u8]) -> Option<Address> {
     if bytes.len() != 32 {
         return None;
     }
-    if bytes[..12].iter().any(|byte| *byte != 0) {
+    if !is_canonical_evm_address_word(bytes) {
         return None;
     }
     Some(Address::from_slice(&bytes[12..32]))
+}
+
+fn is_canonical_evm_address_word(bytes: &[u8]) -> bool {
+    bytes.len() == 32 && bytes[..12].iter().all(|byte| *byte == 0)
 }
 
 fn check_canonical_address_word(bytes: &[u8], field: &str) -> Result<(), ParseMessageError> {
@@ -44,13 +51,30 @@ fn check_canonical_address_word(bytes: &[u8], field: &str) -> Result<(), ParseMe
             len = bytes.len()
         )));
     }
-    if bytes[..12].iter().any(|byte| *byte != 0) {
+    if !is_canonical_evm_address_word(bytes) {
         return Err(ParseMessageError::new(format!(
             "{field} word has non-zero leading bytes; canonical CCTP v2 address \
              words must be zero-padded in the first 12 bytes"
         )));
     }
     Ok(())
+}
+
+fn check_word_for_domain(
+    domain: DomainId,
+    bytes: &[u8],
+    field: &str,
+) -> Result<(), ParseMessageError> {
+    if domain.is_evm() {
+        check_canonical_address_word(bytes, field)
+    } else if bytes.len() != 32 {
+        Err(ParseMessageError::new(format!(
+            "{field} word requires 32 bytes, got {len}",
+            len = bytes.len()
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 fn bytes_is_empty(bytes: &Bytes) -> bool {
@@ -311,14 +335,14 @@ impl MessageHeader {
 pub struct BurnMessageV2 {
     /// Message body version
     pub version: u32,
-    /// Address of the token being burned (USDC contract)
-    pub burn_token: Address,
-    /// Address that will receive minted tokens on destination chain
-    pub mint_recipient: Address,
+    /// Canonical 32-byte token word from the source domain.
+    pub burn_token: FixedBytes<32>,
+    /// Canonical 32-byte recipient word for the destination domain.
+    pub mint_recipient: FixedBytes<32>,
     /// Amount of tokens being transferred (in wei/smallest unit)
     pub amount: U256,
-    /// Address of the original message sender
-    pub message_sender: Address,
+    /// Canonical 32-byte sender word from the source domain.
+    pub message_sender: FixedBytes<32>,
     /// Maximum fee the sender is willing to pay (for Fast Transfers)
     pub max_fee: U256,
     /// Actual fee that was charged
@@ -342,10 +366,10 @@ impl BurnMessageV2 {
     ) -> Self {
         Self {
             version: 1,
-            burn_token,
-            mint_recipient,
+            burn_token: address_word(burn_token),
+            mint_recipient: address_word(mint_recipient),
             amount,
-            message_sender,
+            message_sender: address_word(message_sender),
             max_fee: U256::ZERO,
             fee_executed: U256::ZERO,
             expiration_block: U256::ZERO,
@@ -363,10 +387,10 @@ impl BurnMessageV2 {
     ) -> Self {
         Self {
             version: 1,
-            burn_token,
-            mint_recipient,
+            burn_token: address_word(burn_token),
+            mint_recipient: address_word(mint_recipient),
             amount,
-            message_sender,
+            message_sender: address_word(message_sender),
             max_fee,
             fee_executed: U256::ZERO,
             expiration_block: U256::ZERO,
@@ -384,10 +408,10 @@ impl BurnMessageV2 {
     ) -> Self {
         Self {
             version: 1,
-            burn_token,
-            mint_recipient,
+            burn_token: address_word(burn_token),
+            mint_recipient: address_word(mint_recipient),
             amount,
-            message_sender,
+            message_sender: address_word(message_sender),
             max_fee: U256::ZERO,
             fee_executed: U256::ZERO,
             expiration_block: U256::ZERO,
@@ -413,15 +437,33 @@ impl BurnMessageV2 {
         self
     }
 
+    /// Returns `burn_token` as an EVM address when its word is canonically padded.
+    #[must_use]
+    pub fn burn_token_address(&self) -> Option<Address> {
+        decode_address_word(self.burn_token.as_slice())
+    }
+
+    /// Returns `mint_recipient` as an EVM address when its word is canonically padded.
+    #[must_use]
+    pub fn mint_recipient_address(&self) -> Option<Address> {
+        decode_address_word(self.mint_recipient.as_slice())
+    }
+
+    /// Returns `message_sender` as an EVM address when its word is canonically padded.
+    #[must_use]
+    pub fn message_sender_address(&self) -> Option<Address> {
+        decode_address_word(self.message_sender.as_slice())
+    }
+
     /// Encodes the burn message body to bytes.
     pub fn encode(&self) -> Bytes {
         let mut bytes = Vec::with_capacity(Self::MIN_SIZE + self.hook_data.len());
 
         bytes.extend_from_slice(&self.version.to_be_bytes());
-        push_address_word(&mut bytes, self.burn_token);
-        push_address_word(&mut bytes, self.mint_recipient);
+        push_word(&mut bytes, self.burn_token);
+        push_word(&mut bytes, self.mint_recipient);
         bytes.extend_from_slice(&self.amount.to_be_bytes::<32>());
-        push_address_word(&mut bytes, self.message_sender);
+        push_word(&mut bytes, self.message_sender);
         bytes.extend_from_slice(&self.max_fee.to_be_bytes::<32>());
         bytes.extend_from_slice(&self.fee_executed.to_be_bytes::<32>());
         bytes.extend_from_slice(&self.expiration_block.to_be_bytes::<32>());
@@ -430,11 +472,11 @@ impl BurnMessageV2 {
         Bytes::from(bytes)
     }
 
-    /// Decodes a canonical burn message body from bytes.
+    /// Decodes a burn message body from bytes.
     ///
-    /// Returns `None` for bytes shorter than [`Self::MIN_SIZE`] or whose
-    /// `burn_token`, `mint_recipient`, or `message_sender` `bytes32` words are
-    /// not zero-padded in the leading 12 bytes. For any accepted input,
+    /// Returns `None` for bytes shorter than [`Self::MIN_SIZE`]. The three
+    /// address-like fields are preserved as raw 32-byte words because their
+    /// canonical shape is domain-dependent. For any accepted input,
     /// `decode(raw).unwrap().encode() == raw`.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < Self::MIN_SIZE {
@@ -443,10 +485,10 @@ impl BurnMessageV2 {
 
         Some(Self {
             version: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-            burn_token: decode_address_word(&bytes[4..36])?,
-            mint_recipient: decode_address_word(&bytes[36..68])?,
+            burn_token: FixedBytes::from_slice(&bytes[4..36]),
+            mint_recipient: FixedBytes::from_slice(&bytes[36..68]),
             amount: U256::from_be_slice(&bytes[68..100]),
-            message_sender: decode_address_word(&bytes[100..132])?,
+            message_sender: FixedBytes::from_slice(&bytes[100..132]),
             max_fee: U256::from_be_slice(&bytes[132..164]),
             fee_executed: U256::from_be_slice(&bytes[164..196]),
             expiration_block: U256::from_be_slice(&bytes[196..228]),
@@ -456,10 +498,10 @@ impl BurnMessageV2 {
 
     /// Parses a burn message body and returns a descriptive error on failure.
     ///
-    /// Accepts only canonical CCTP v2 burn-message bodies: address words for
-    /// `burn_token`, `mint_recipient`, and `message_sender` must be zero-padded
-    /// in the leading 12 bytes. Non-canonical address words are rejected so
-    /// that `parse(raw).encode() == raw` holds for every accepted input.
+    /// Body-only parsing has no source/destination domain context, so it
+    /// preserves the three address-like fields as raw words. Use
+    /// [`ParsedV2Message::parse`] when domain-aware EVM padding validation is
+    /// required.
     pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
         if bytes.len() < Self::MIN_SIZE {
             return Err(ParseMessageError::new(format!(
@@ -469,12 +511,37 @@ impl BurnMessageV2 {
             )));
         }
 
-        check_canonical_address_word(&bytes[4..36], "burn_token")?;
-        check_canonical_address_word(&bytes[36..68], "mint_recipient")?;
-        check_canonical_address_word(&bytes[100..132], "message_sender")?;
+        Self::decode(bytes)
+            .ok_or_else(|| ParseMessageError::new("failed to decode burn message body"))
+    }
+
+    fn parse_for_domains(
+        bytes: &[u8],
+        source_domain: DomainId,
+        destination_domain: DomainId,
+    ) -> std::result::Result<Self, ParseMessageError> {
+        if bytes.len() < Self::MIN_SIZE {
+            return Err(ParseMessageError::new(format!(
+                "burn message body requires at least {} bytes, got {}",
+                Self::MIN_SIZE,
+                bytes.len()
+            )));
+        }
+
+        check_word_for_domain(source_domain, &bytes[4..36], "burn_token")?;
+        check_word_for_domain(destination_domain, &bytes[36..68], "mint_recipient")?;
+        check_word_for_domain(source_domain, &bytes[100..132], "message_sender")?;
 
         Self::decode(bytes)
             .ok_or_else(|| ParseMessageError::new("failed to decode burn message body"))
+    }
+
+    fn decode_for_domains(
+        bytes: &[u8],
+        source_domain: DomainId,
+        destination_domain: DomainId,
+    ) -> Option<Self> {
+        Self::parse_for_domains(bytes, source_domain, destination_domain).ok()
     }
 
     /// Returns true if this message has hook data
@@ -509,14 +576,19 @@ impl ParsedV2Message {
     /// Decodes a canonical CCTP v2 burn-transfer message.
     ///
     /// Returns `None` for inputs that are too short, carry an unknown domain
-    /// ID, or contain non-canonical `bytes32` address words in the burn body.
-    /// For any accepted input, `decode(raw).unwrap().encode() == raw` and
-    /// `decode(raw).unwrap().message_hash() == keccak256(raw)`. Use
-    /// [`Self::summary`] to obtain the JSON-friendly, lossy projection used
-    /// in agent and tool responses.
+    /// ID, or contain non-canonical EVM `bytes32` address words for the
+    /// message's source or destination domains. Non-EVM-domain body words are
+    /// preserved raw. For any accepted input, `decode(raw).unwrap().encode()
+    /// == raw` and `decode(raw).unwrap().message_hash() == keccak256(raw)`.
+    /// Use [`Self::summary`] to obtain the JSON-friendly projection used in
+    /// agent and tool responses.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let header = MessageHeader::decode(bytes)?;
-        let body = BurnMessageV2::decode(&bytes[MessageHeader::SIZE..])?;
+        let body = BurnMessageV2::decode_for_domains(
+            &bytes[MessageHeader::SIZE..],
+            header.source_domain,
+            header.destination_domain,
+        )?;
         Some(Self { header, body })
     }
 
@@ -525,12 +597,17 @@ impl ParsedV2Message {
     ///
     /// Strict parser: every accepted input round-trips byte-for-byte through
     /// [`Self::encode`] and hashes to `keccak256(raw)` via [`Self::message_hash`].
-    /// Non-canonical address words in the burn body (any `bytes32` word whose
-    /// leading 12 bytes are not zero) are rejected. For a lossy, JSON-friendly
-    /// view of the parsed message, call [`Self::summary`].
+    /// EVM-domain body address words must use the canonical 12-zero-byte
+    /// padding convention; non-EVM-domain body words are preserved as raw
+    /// `bytes32` values. For a JSON-friendly view of the parsed message, call
+    /// [`Self::summary`].
     pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
         let header = MessageHeader::parse(bytes)?;
-        let body = BurnMessageV2::parse(&bytes[MessageHeader::SIZE..])?;
+        let body = BurnMessageV2::parse_for_domains(
+            &bytes[MessageHeader::SIZE..],
+            header.source_domain,
+            header.destination_domain,
+        )?;
         Ok(Self { header, body })
     }
 
@@ -573,10 +650,28 @@ impl ParsedV2Message {
             permissionless_relay: self.header.is_permissionless(),
             requested_finality: self.header.requested_finality(),
             attested_finality: self.header.attested_finality(),
-            burn_token: self.body.burn_token,
-            mint_recipient: self.body.mint_recipient,
+            burn_token_bytes: self.body.burn_token,
+            burn_token: self
+                .header
+                .source_domain
+                .is_evm()
+                .then(|| self.body.burn_token_address())
+                .flatten(),
+            mint_recipient_bytes: self.body.mint_recipient,
+            mint_recipient: self
+                .header
+                .destination_domain
+                .is_evm()
+                .then(|| self.body.mint_recipient_address())
+                .flatten(),
             amount: self.body.amount,
-            message_sender: self.body.message_sender,
+            message_sender_bytes: self.body.message_sender,
+            message_sender: self
+                .header
+                .source_domain
+                .is_evm()
+                .then(|| self.body.message_sender_address())
+                .flatten(),
             max_fee: self.body.max_fee,
             fee_executed: self.body.fee_executed,
             expiration_block: self.body.expiration_block,
@@ -603,6 +698,12 @@ impl ParsedV2Message {
 /// EVM ([`DomainId::is_evm`]); for non-EVM domains such as
 /// [`DomainId::Solana`] or [`DomainId::StarknetTestnet`], they are `None`
 /// because a trailing-20-byte projection would be misleading.
+///
+/// The same pattern applies to burn-body words: `burn_token_bytes`,
+/// `mint_recipient_bytes`, and `message_sender_bytes` always carry the
+/// canonical 32-byte wire values, while the EVM-shaped address projections are
+/// populated only for the source or destination domains where that projection
+/// is meaningful.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParsedV2MessageSummary {
     pub message_hash: FixedBytes<32>,
@@ -641,10 +742,22 @@ pub struct ParsedV2MessageSummary {
     pub requested_finality: Option<FinalityThreshold>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attested_finality: Option<FinalityThreshold>,
-    pub burn_token: Address,
-    pub mint_recipient: Address,
+    /// Canonical 32-byte burn token word from the body. Always populated.
+    pub burn_token_bytes: FixedBytes<32>,
+    /// EVM burn token address, populated only when `source_domain.is_evm()`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub burn_token: Option<Address>,
+    /// Canonical 32-byte mint recipient word from the body. Always populated.
+    pub mint_recipient_bytes: FixedBytes<32>,
+    /// EVM mint recipient address, populated only when `destination_domain.is_evm()`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mint_recipient: Option<Address>,
     pub amount: U256,
-    pub message_sender: Address,
+    /// Canonical 32-byte message sender word from the body. Always populated.
+    pub message_sender_bytes: FixedBytes<32>,
+    /// EVM message sender address, populated only when `source_domain.is_evm()`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_sender: Option<Address>,
     pub max_fee: U256,
     pub fee_executed: U256,
     pub expiration_block: U256,
@@ -717,10 +830,13 @@ mod tests {
         let msg = BurnMessageV2::new(burn_token, mint_recipient, amount, sender);
 
         assert_eq!(msg.version, 1);
-        assert_eq!(msg.burn_token, burn_token);
-        assert_eq!(msg.mint_recipient, mint_recipient);
+        assert_eq!(msg.burn_token, burn_token.into_word());
+        assert_eq!(msg.burn_token_address(), Some(burn_token));
+        assert_eq!(msg.mint_recipient, mint_recipient.into_word());
+        assert_eq!(msg.mint_recipient_address(), Some(mint_recipient));
         assert_eq!(msg.amount, amount);
-        assert_eq!(msg.message_sender, sender);
+        assert_eq!(msg.message_sender, sender.into_word());
+        assert_eq!(msg.message_sender_address(), Some(sender));
         assert_eq!(msg.max_fee, U256::ZERO);
         assert_eq!(msg.fee_executed, U256::ZERO);
         assert_eq!(msg.expiration_block, U256::ZERO);
@@ -824,85 +940,56 @@ mod tests {
     }
 
     #[test]
-    fn test_burn_message_v2_rejects_non_canonical_burn_token() {
+    fn test_burn_message_v2_preserves_raw_body_words_without_domain_context() {
         let mut bytes = canonical_burn_body_bytes();
-        // burn_token word occupies bytes[4..36]; flip a padding byte.
         bytes[4] = 0xff;
+        bytes[36] = 0xee;
+        bytes[100] = 0xdd;
 
-        assert!(
-            BurnMessageV2::decode(&bytes).is_none(),
-            "decode must reject non-canonical burn_token word"
-        );
-        let err = BurnMessageV2::parse(&bytes)
-            .expect_err("parse must reject non-canonical burn_token word");
-        assert!(
-            err.to_string().contains("burn_token"),
-            "parse error should name the offending field: {err}"
-        );
+        let decoded = BurnMessageV2::decode(&bytes)
+            .expect("body-only decode preserves raw words without domain context");
+        assert_eq!(decoded.encode().as_ref(), bytes.as_slice());
+        assert_eq!(decoded.burn_token.as_slice(), &bytes[4..36]);
+        assert_eq!(decoded.mint_recipient.as_slice(), &bytes[36..68]);
+        assert_eq!(decoded.message_sender.as_slice(), &bytes[100..132]);
+        assert_eq!(decoded.burn_token_address(), None);
+        assert_eq!(decoded.mint_recipient_address(), None);
+        assert_eq!(decoded.message_sender_address(), None);
+
+        let parsed = BurnMessageV2::parse(&bytes)
+            .expect("body-only parse preserves raw words without domain context");
+        assert_eq!(parsed, decoded);
     }
 
     #[test]
-    fn test_burn_message_v2_rejects_non_canonical_mint_recipient() {
-        let mut bytes = canonical_burn_body_bytes();
-        // mint_recipient word occupies bytes[36..68]; flip a padding byte.
-        bytes[36] = 0xff;
-
-        assert!(
-            BurnMessageV2::decode(&bytes).is_none(),
-            "decode must reject non-canonical mint_recipient word"
-        );
-        let err = BurnMessageV2::parse(&bytes)
-            .expect_err("parse must reject non-canonical mint_recipient word");
-        assert!(
-            err.to_string().contains("mint_recipient"),
-            "parse error should name the offending field: {err}"
-        );
-    }
-
-    #[test]
-    fn test_burn_message_v2_rejects_non_canonical_message_sender() {
-        let mut bytes = canonical_burn_body_bytes();
-        // message_sender word occupies bytes[100..132]; flip a padding byte.
-        bytes[100] = 0xff;
-
-        assert!(
-            BurnMessageV2::decode(&bytes).is_none(),
-            "decode must reject non-canonical message_sender word"
-        );
-        let err = BurnMessageV2::parse(&bytes)
-            .expect_err("parse must reject non-canonical message_sender word");
-        assert!(
-            err.to_string().contains("message_sender"),
-            "parse error should name the offending field: {err}"
-        );
-    }
-
-    #[test]
-    fn test_burn_message_v2_rejects_last_padding_byte_of_each_field() {
+    fn test_domain_aware_body_parse_rejects_non_canonical_evm_words() {
         // Witness the boundary of the canonical-padding loop: the *last* of
         // the 12 leading zero bytes (byte 11 of each address word). The
-        // first-byte variants are covered by the per-field tests above; this
-        // pins the iteration bound at 12 (not 11) so a regression that
-        // shortened the slice would surface here.
-        for (offset, field) in [
-            (4, "burn_token"),
-            (36, "mint_recipient"),
-            (100, "message_sender"),
+        // first-byte variants are also covered below; this pins the iteration
+        // bound at 12 (not 11) so a regression that shortened the slice would
+        // surface here.
+        for (offset, field, source_domain, destination_domain) in [
+            (4, "burn_token", DomainId::Ethereum, DomainId::Base),
+            (36, "mint_recipient", DomainId::Ethereum, DomainId::Base),
+            (100, "message_sender", DomainId::Ethereum, DomainId::Base),
         ] {
-            let mut bytes = canonical_burn_body_bytes();
-            bytes[offset + 11] = 0xff;
+            for padding_offset in [0, 11] {
+                let mut bytes = canonical_burn_body_bytes();
+                bytes[offset + padding_offset] = 0xff;
 
-            assert!(
-                BurnMessageV2::decode(&bytes).is_none(),
-                "decode must reject non-canonical {field} word (last padding byte set)"
-            );
-            let err = BurnMessageV2::parse(&bytes).expect_err(&format!(
-                "parse must reject non-canonical {field} word at last padding byte"
-            ));
-            assert!(
-                err.to_string().contains(field),
-                "parse error should name the offending field {field}: {err}"
-            );
+                assert!(
+                    BurnMessageV2::decode_for_domains(&bytes, source_domain, destination_domain)
+                        .is_none(),
+                    "domain-aware decode must reject non-canonical {field} word"
+                );
+                let err =
+                    BurnMessageV2::parse_for_domains(&bytes, source_domain, destination_domain)
+                        .expect_err("domain-aware parse must reject non-canonical body words");
+                assert!(
+                    err.to_string().contains(field),
+                    "parse error should name the offending field {field}: {err}"
+                );
+            }
         }
     }
 
@@ -992,16 +1079,28 @@ mod tests {
         );
         assert_eq!(
             parsed.body.burn_token,
-            address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D")
+            address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word()
+        );
+        assert_eq!(
+            parsed.body.burn_token_address(),
+            Some(address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"))
         );
         assert_eq!(
             parsed.body.mint_recipient,
-            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word()
+        );
+        assert_eq!(
+            parsed.body.mint_recipient_address(),
+            Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"))
         );
         assert_eq!(parsed.body.amount, U256::from(1_000_000u64));
         assert_eq!(
             parsed.body.message_sender,
-            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word()
+        );
+        assert_eq!(
+            parsed.body.message_sender_address(),
+            Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"))
         );
         assert_eq!(parsed.body.max_fee, U256::ZERO);
         assert_eq!(parsed.body.fee_executed, U256::ZERO);
@@ -1046,10 +1145,13 @@ mod tests {
             permissionless_relay: true,
             requested_finality: Some(FinalityThreshold::Standard),
             attested_finality: Some(FinalityThreshold::Standard),
-            burn_token: address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
-            mint_recipient: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
+            burn_token_bytes: address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
+            burn_token: Some(address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D")),
+            mint_recipient_bytes: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+            mint_recipient: Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")),
             amount: U256::from(1_000_000u64),
-            message_sender: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
+            message_sender_bytes: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+            message_sender: Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")),
             max_fee: U256::ZERO,
             fee_executed: U256::ZERO,
             expiration_block: U256::ZERO,
@@ -1067,6 +1169,8 @@ mod tests {
     #[test]
     fn test_summary_drops_evm_address_for_non_evm_source() {
         let solana_sender_word = FixedBytes::<32>::from([0xABu8; 32]);
+        let solana_burn_token_word = FixedBytes::<32>::from([0xCDu8; 32]);
+        let solana_message_sender_word = FixedBytes::<32>::from([0xEFu8; 32]);
         let recipient = address!("7F7D081724F0240c64C9E01CDe4626602f9a0192");
 
         let header = MessageHeader::new(
@@ -1080,27 +1184,55 @@ mod tests {
             FinalityThreshold::Standard.as_u32(),
             FinalityThreshold::Standard.as_u32(),
         );
-        let body = BurnMessageV2::new(
-            address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF"),
-            recipient,
-            U256::from(1_000_000u64),
-            address!("1234567890abcdef1234567890abcdef12345678"),
-        );
+        let body = BurnMessageV2 {
+            version: 1,
+            burn_token: solana_burn_token_word,
+            mint_recipient: recipient.into_word(),
+            amount: U256::from(1_000_000u64),
+            message_sender: solana_message_sender_word,
+            max_fee: U256::ZERO,
+            fee_executed: U256::ZERO,
+            expiration_block: U256::ZERO,
+            hook_data: Bytes::new(),
+        };
         let message = ParsedV2Message { header, body };
+        let encoded = message.encode();
+        let parsed = ParsedV2Message::parse(&encoded)
+            .expect("non-EVM source body words must parse and round-trip");
+        assert_eq!(parsed.encode(), encoded);
 
-        assert_eq!(message.header.sender_address(), None);
-        assert_eq!(message.header.recipient_address(), Some(recipient));
+        assert_eq!(parsed.header.sender_address(), None);
+        assert_eq!(parsed.header.recipient_address(), Some(recipient));
+        assert_eq!(parsed.body.burn_token, solana_burn_token_word);
+        assert_eq!(parsed.body.burn_token_address(), None);
+        assert_eq!(parsed.body.message_sender, solana_message_sender_word);
+        assert_eq!(parsed.body.message_sender_address(), None);
+        assert_eq!(parsed.body.mint_recipient_address(), Some(recipient));
 
-        let summary = message.summary();
+        let summary = parsed.summary();
         assert_eq!(summary.sender, None);
         assert_eq!(summary.sender_bytes, solana_sender_word);
         assert_eq!(summary.recipient, Some(recipient));
         assert_eq!(summary.recipient_bytes, recipient.into_word());
+        assert_eq!(summary.burn_token, None);
+        assert_eq!(summary.burn_token_bytes, solana_burn_token_word);
+        assert_eq!(summary.message_sender, None);
+        assert_eq!(summary.message_sender_bytes, solana_message_sender_word);
+        assert_eq!(summary.mint_recipient, Some(recipient));
+        assert_eq!(summary.mint_recipient_bytes, recipient.into_word());
 
         let json = serde_json::to_value(&summary).expect("summary should serialize");
         assert!(
             json.get("sender").is_none(),
             "EVM sender field should be omitted for non-EVM source domain"
+        );
+        assert!(
+            json.get("burn_token").is_none(),
+            "EVM burn_token field should be omitted for non-EVM source domain"
+        );
+        assert!(
+            json.get("message_sender").is_none(),
+            "EVM message_sender field should be omitted for non-EVM source domain"
         );
         assert_eq!(
             json["sender_bytes"].as_str(),
@@ -1112,6 +1244,8 @@ mod tests {
         assert_eq!(round_tripped, summary);
         assert_eq!(round_tripped.sender, None);
         assert_eq!(round_tripped.sender_bytes, solana_sender_word);
+        assert_eq!(round_tripped.burn_token, None);
+        assert_eq!(round_tripped.burn_token_bytes, solana_burn_token_word);
     }
 
     #[test]
@@ -1119,6 +1253,7 @@ mod tests {
         let sender = address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D");
         let starknet_recipient_word = FixedBytes::<32>::from([0x42u8; 32]);
         let starknet_caller_word = FixedBytes::<32>::from([0x77u8; 32]);
+        let starknet_mint_recipient_word = FixedBytes::<32>::from([0x99u8; 32]);
 
         let header = MessageHeader::new(
             1,
@@ -1131,31 +1266,51 @@ mod tests {
             FinalityThreshold::Standard.as_u32(),
             FinalityThreshold::Standard.as_u32(),
         );
-        let body = BurnMessageV2::new(
-            address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF"),
-            address!("1111111111111111111111111111111111111111"),
-            U256::from(1_000_000u64),
-            sender,
-        );
+        let body = BurnMessageV2 {
+            version: 1,
+            burn_token: address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF").into_word(),
+            mint_recipient: starknet_mint_recipient_word,
+            amount: U256::from(1_000_000u64),
+            message_sender: sender.into_word(),
+            max_fee: U256::ZERO,
+            fee_executed: U256::ZERO,
+            expiration_block: U256::ZERO,
+            hook_data: Bytes::new(),
+        };
         let message = ParsedV2Message { header, body };
+        let parsed = ParsedV2Message::parse(&message.encode())
+            .expect("non-EVM destination mint recipient words must parse");
 
-        assert!(!message.header.is_permissionless());
-        assert_eq!(message.header.sender_address(), Some(sender));
-        assert_eq!(message.header.recipient_address(), None);
-        assert_eq!(message.header.destination_caller_address(), None);
+        assert!(!parsed.header.is_permissionless());
+        assert_eq!(parsed.header.sender_address(), Some(sender));
+        assert_eq!(parsed.header.recipient_address(), None);
+        assert_eq!(parsed.header.destination_caller_address(), None);
+        assert_eq!(parsed.body.mint_recipient, starknet_mint_recipient_word);
+        assert_eq!(parsed.body.mint_recipient_address(), None);
 
-        let summary = message.summary();
+        let summary = parsed.summary();
         assert_eq!(summary.sender, Some(sender));
         assert_eq!(summary.recipient, None);
         assert_eq!(summary.recipient_bytes, starknet_recipient_word);
         assert_eq!(summary.destination_caller, None);
         assert_eq!(summary.destination_caller_bytes, starknet_caller_word);
         assert!(!summary.permissionless_relay);
+        assert_eq!(
+            summary.burn_token,
+            Some(address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF"))
+        );
+        assert_eq!(summary.mint_recipient, None);
+        assert_eq!(summary.mint_recipient_bytes, starknet_mint_recipient_word);
+        assert_eq!(summary.message_sender, Some(sender));
 
         let json = serde_json::to_value(&summary).expect("summary should serialize");
         assert!(
             json.get("recipient").is_none(),
             "EVM recipient field should be omitted for non-EVM destination domain"
+        );
+        assert!(
+            json.get("mint_recipient").is_none(),
+            "EVM mint_recipient field should be omitted for non-EVM destination domain"
         );
         assert!(
             json.get("destination_caller").is_none(),

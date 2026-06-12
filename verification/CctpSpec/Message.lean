@@ -190,8 +190,8 @@ theorem encode_of_decode {bs : List UInt8} {h : MessageHeader}
 end MessageHeader
 
 /-- CCTP v2 burn-message body. Field-for-field mirror of `BurnMessageV2` in
-`src/protocol/message.rs`; EVM addresses are 20-byte strings (their wire
-form adds the canonical 12-byte zero padding), amounts are `uint256`. -/
+`src/protocol/message.rs`; address-like fields are raw 32-byte words because
+their EVM projection is domain-dependent, amounts are `uint256`. -/
 structure BurnBody where
   version : Nat
   burnToken : List UInt8
@@ -211,13 +211,13 @@ namespace BurnBody
 def minSize : Nat := 228
 
 /-- Structural well-formedness: numeric fields fit their wire width and
-addresses are exactly 20 bytes. Hook data is unconstrained. -/
+address-like words are exactly 32 bytes. Hook data is unconstrained. -/
 def WellFormed (b : BurnBody) : Prop :=
   b.version < 2 ^ 32 ∧
-  b.burnToken.length = 20 ∧
-  b.mintRecipient.length = 20 ∧
+  b.burnToken.length = 32 ∧
+  b.mintRecipient.length = 32 ∧
   b.amount < 2 ^ 256 ∧
-  b.messageSender.length = 20 ∧
+  b.messageSender.length = 32 ∧
   b.maxFee < 2 ^ 256 ∧
   b.feeExecuted < 2 ^ 256 ∧
   b.expirationBlock < 2 ^ 256
@@ -226,37 +226,32 @@ def WellFormed (b : BurnBody) : Prop :=
 `BurnMessageV2::encode`. -/
 def encode (b : BurnBody) : List UInt8 :=
   beBytes 4 b.version ++
-  encodeAddressWord b.burnToken ++
-  encodeAddressWord b.mintRecipient ++
+  b.burnToken ++
+  b.mintRecipient ++
   beBytes 32 b.amount ++
-  encodeAddressWord b.messageSender ++
+  b.messageSender ++
   beBytes 32 b.maxFee ++
   beBytes 32 b.feeExecuted ++
   beBytes 32 b.expirationBlock ++
   b.hookData
 
-/-- Decodes a canonical burn-message body: at least 228 bytes, with the
-three address words zero-padded in their leading 12 bytes; everything past
-byte 228 is hook data. Mirrors `BurnMessageV2::decode` /
-`BurnMessageV2::parse`. -/
+/-- Decodes a burn-message body: at least 228 bytes, preserving the three
+address-like words raw; everything past byte 228 is hook data. Domain-aware
+EVM padding checks happen at the full-message layer. Mirrors
+`BurnMessageV2::decode`. -/
 def decode (bs : List UInt8) : Option BurnBody :=
   if minSize ≤ bs.length then
-    match decodeAddressWord (slice bs 4 32),
-          decodeAddressWord (slice bs 36 32),
-          decodeAddressWord (slice bs 100 32) with
-    | some bt, some mr, some ms =>
-      some {
-        version := natOfBe (slice bs 0 4)
-        burnToken := bt
-        mintRecipient := mr
-        amount := natOfBe (slice bs 68 32)
-        messageSender := ms
-        maxFee := natOfBe (slice bs 132 32)
-        feeExecuted := natOfBe (slice bs 164 32)
-        expirationBlock := natOfBe (slice bs 196 32)
-        hookData := bs.drop minSize
-      }
-    | _, _, _ => none
+    some {
+      version := natOfBe (slice bs 0 4)
+      burnToken := slice bs 4 32
+      mintRecipient := slice bs 36 32
+      amount := natOfBe (slice bs 68 32)
+      messageSender := slice bs 100 32
+      maxFee := natOfBe (slice bs 132 32)
+      feeExecuted := natOfBe (slice bs 164 32)
+      expirationBlock := natOfBe (slice bs 196 32)
+      hookData := bs.drop minSize
+    }
   else none
 
 /-- True when the body carries hook data. Mirrors `BurnMessageV2::has_hooks`. -/
@@ -271,28 +266,19 @@ def isFastTransfer (b : BurnBody) : Bool :=
 theorem length_encode (b : BurnBody) (wf : b.WellFormed) :
     b.encode.length = minSize + b.hookData.length := by
   obtain ⟨-, hbt, hmr, -, hms, -, -, -⟩ := wf
-  simp [encode, minSize, encodeAddressWord, addressPadding, hbt, hmr, hms]
+  simp [encode, minSize, hbt, hmr, hms]
   omega
 
 /-- Round-trip: every well-formed body decodes from its own encoding. -/
 theorem decode_encode (b : BurnBody) (wf : b.WellFormed) :
     decode b.encode = some b := by
   obtain ⟨hv, hbt, hmr, ha, hms, hmf, hfe, hex⟩ := wf
-  have hwbt : (encodeAddressWord b.burnToken).length = 32 := by
-    simp [encodeAddressWord, addressPadding, hbt]
-  have hwmr : (encodeAddressWord b.mintRecipient).length = 32 := by
-    simp [encodeAddressWord, addressPadding, hmr]
-  have hwms : (encodeAddressWord b.messageSender).length = 32 := by
-    simp [encodeAddressWord, addressPadding, hms]
   have hlen : b.encode.length = minSize + b.hookData.length :=
     length_encode b ⟨hv, hbt, hmr, ha, hms, hmf, hfe, hex⟩
   unfold decode
   rw [if_pos (by omega)]
   simp [encode, minSize, slice_append_right, slice_append_left,
-    drop_append_of_le, hwbt, hwmr, hwms,
-    decodeAddressWord_encodeAddressWord b.burnToken hbt,
-    decodeAddressWord_encodeAddressWord b.mintRecipient hmr,
-    decodeAddressWord_encodeAddressWord b.messageSender hms,
+    drop_append_of_le, hbt, hmr, hms,
     natOfBe_beBytes 4 b.version (by simpa using hv),
     natOfBe_beBytes 32 b.amount (by simpa using ha),
     natOfBe_beBytes 32 b.maxFee (by simpa using hmf),
@@ -307,52 +293,47 @@ theorem encode_of_decode {bs : List UInt8} {b : BurnBody}
   split at hdec
   · rename_i hlen
     have hlen' : 228 ≤ bs.length := hlen
-    split at hdec
-    · rename_i bt mr ms hbt hmr hms
-      cases hdec
-      obtain ⟨hbtw, hbtl⟩ := encodeAddressWord_of_decode hbt
-      obtain ⟨hmrw, hmrl⟩ := encodeAddressWord_of_decode hmr
-      obtain ⟨hmsw, hmsl⟩ := encodeAddressWord_of_decode hms
-      have hbe : ∀ start len, start + len ≤ bs.length →
-          beBytes len (natOfBe (slice bs start len)) = slice bs start len := by
-        intro start len hle
-        have hb := beBytes_natOfBe (slice bs start len)
-        rwa [length_slice bs start len hle] at hb
-      have hlt : ∀ len start, start + len ≤ bs.length →
-          natOfBe (slice bs start len) < 256 ^ len := by
-        intro len start hle
-        have hl := natOfBe_lt (slice bs start len)
-        rwa [length_slice bs start len hle] at hl
-      constructor
-      · dsimp only [encode]
-        rw [hbtw, hmrw, hmsw]
-        rw [hbe 0 4 (by omega), hbe 68 32 (by omega), hbe 132 32 (by omega),
-          hbe 164 32 (by omega), hbe 196 32 (by omega)]
-        simp only [List.append_assoc]
-        conv =>
-          rhs
-          rw [show bs = bs.drop 0 from rfl,
-            drop_eq_slice_append bs 0 4 4 rfl,
-            drop_eq_slice_append bs 4 32 36 rfl,
-            drop_eq_slice_append bs 36 32 68 rfl,
-            drop_eq_slice_append bs 68 32 100 rfl,
-            drop_eq_slice_append bs 100 32 132 rfl,
-            drop_eq_slice_append bs 132 32 164 rfl,
-            drop_eq_slice_append bs 164 32 196 rfl,
-            drop_eq_slice_append bs 196 32 228 rfl]
-        rfl
-      · refine ⟨?_, hbtl, hmrl, ?_, hmsl, ?_, ?_, ?_⟩
-        · have := hlt 4 0 (by omega)
-          simpa using this
-        · have := hlt 32 68 (by omega)
-          simpa using this
-        · have := hlt 32 132 (by omega)
-          simpa using this
-        · have := hlt 32 164 (by omega)
-          simpa using this
-        · have := hlt 32 196 (by omega)
-          simpa using this
-    · cases hdec
+    cases hdec
+    have hbe : ∀ start len, start + len ≤ bs.length →
+        beBytes len (natOfBe (slice bs start len)) = slice bs start len := by
+      intro start len hle
+      have hb := beBytes_natOfBe (slice bs start len)
+      rwa [length_slice bs start len hle] at hb
+    have hlt : ∀ len start, start + len ≤ bs.length →
+        natOfBe (slice bs start len) < 256 ^ len := by
+      intro len start hle
+      have hl := natOfBe_lt (slice bs start len)
+      rwa [length_slice bs start len hle] at hl
+    constructor
+    · dsimp only [encode]
+      rw [hbe 0 4 (by omega), hbe 68 32 (by omega), hbe 132 32 (by omega),
+        hbe 164 32 (by omega), hbe 196 32 (by omega)]
+      simp only [List.append_assoc]
+      conv =>
+        rhs
+        rw [show bs = bs.drop 0 from rfl,
+          drop_eq_slice_append bs 0 4 4 rfl,
+          drop_eq_slice_append bs 4 32 36 rfl,
+          drop_eq_slice_append bs 36 32 68 rfl,
+          drop_eq_slice_append bs 68 32 100 rfl,
+          drop_eq_slice_append bs 100 32 132 rfl,
+          drop_eq_slice_append bs 132 32 164 rfl,
+          drop_eq_slice_append bs 164 32 196 rfl,
+          drop_eq_slice_append bs 196 32 228 rfl]
+      rfl
+    · refine ⟨?_, length_slice bs 4 32 (by omega),
+        length_slice bs 36 32 (by omega), ?_,
+        length_slice bs 100 32 (by omega), ?_, ?_, ?_⟩
+      · have := hlt 4 0 (by omega)
+        simpa using this
+      · have := hlt 32 68 (by omega)
+        simpa using this
+      · have := hlt 32 132 (by omega)
+        simpa using this
+      · have := hlt 32 164 (by omega)
+        simpa using this
+      · have := hlt 32 196 (by omega)
+        simpa using this
   · cases hdec
 
 end BurnBody
@@ -369,30 +350,45 @@ namespace Message
 /-- Minimum total message size: 148-byte header + 228-byte body. -/
 def minSize : Nat := MessageHeader.size + BurnBody.minSize
 
+/-- Domain-aware validity for a body word. EVM domains require the 12-byte
+zero-padding convention; non-EVM domains preserve the raw 32-byte word. -/
+def addressWordValidForDomain (d : DomainId) (w : List UInt8) : Bool :=
+  !d.isEvm || w.take 12 == addressPadding
+
+/-- The three body words whose EVM-ness is determined by the header domains:
+`burnToken` and `messageSender` are source-domain words, while
+`mintRecipient` is a destination-domain word. -/
+def bodyWordsValid (h : MessageHeader) (b : BurnBody) : Bool :=
+  addressWordValidForDomain h.sourceDomain b.burnToken &&
+  addressWordValidForDomain h.destinationDomain b.mintRecipient &&
+  addressWordValidForDomain h.sourceDomain b.messageSender
+
 def WellFormed (m : Message) : Prop :=
-  m.header.WellFormed ∧ m.body.WellFormed
+  m.header.WellFormed ∧ m.body.WellFormed ∧ bodyWordsValid m.header m.body = true
 
 /-- Encodes the full message. Mirrors `ParsedV2Message::encode`. -/
 def encode (m : Message) : List UInt8 :=
   m.header.encode ++ m.body.encode
 
 /-- Decodes a canonical CCTP v2 burn-transfer message: a valid header on the
-first 148 bytes and a canonical burn body on the rest. Mirrors
+first 148 bytes, a structurally valid burn body on the rest, and EVM padding
+only where the header's source/destination domains require it. Mirrors
 `ParsedV2Message::decode` / `ParsedV2Message::parse`. -/
 def decode (bs : List UInt8) : Option Message :=
   match MessageHeader.decode (bs.take MessageHeader.size),
         BurnBody.decode (bs.drop MessageHeader.size) with
-  | some h, some b => some ⟨h, b⟩
+  | some h, some b => if bodyWordsValid h b then some ⟨h, b⟩ else none
   | _, _ => none
 
 /-- Round-trip: every well-formed message decodes from its own encoding. -/
 theorem decode_encode (m : Message) (wf : m.WellFormed) :
     decode m.encode = some m := by
-  obtain ⟨hh, hb⟩ := wf
+  obtain ⟨hh, hb, hw⟩ := wf
   have hlen := MessageHeader.length_encode m.header hh
   simp only [decode, encode]
   rw [List.take_left' hlen, List.drop_left' hlen,
     MessageHeader.decode_encode m.header hh, BurnBody.decode_encode m.body hb]
+  simp [hw]
 
 /-- Canonicality: an accepted byte string is exactly the encoding of the
 message it decodes to. Distinct raw inputs never alias to one parsed value,
@@ -402,11 +398,14 @@ theorem encode_of_decode {bs : List UInt8} {m : Message}
   unfold decode at hdec
   split at hdec
   case h_1 h b hh hb =>
-    cases hdec
-    obtain ⟨hhenc, hhwf⟩ := MessageHeader.encode_of_decode hh
-    obtain ⟨hbenc, hbwf⟩ := BurnBody.encode_of_decode hb
-    refine ⟨?_, hhwf, hbwf⟩
-    rw [encode, hhenc, hbenc, List.take_append_drop]
+    split at hdec
+    · rename_i hvalid
+      cases hdec
+      obtain ⟨hhenc, hhwf⟩ := MessageHeader.encode_of_decode hh
+      obtain ⟨hbenc, hbwf⟩ := BurnBody.encode_of_decode hb
+      refine ⟨?_, hhwf, hbwf, hvalid⟩
+      rw [encode, hhenc, hbenc, List.take_append_drop]
+    · cases hdec
   case h_2 => exact absurd hdec (by simp)
 
 /-- Strictness corollary: the parser is injective on accepted inputs — two
