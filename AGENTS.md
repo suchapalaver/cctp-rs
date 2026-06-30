@@ -116,6 +116,12 @@ parser.
   `nix shell nixpkgs#lean4 nixpkgs#gcc -c lake build`).
 - `cd verification && lake exe gen_vectors > ../tests/fixtures/lean/cctp_v2_vectors.json`
   — regenerates the Lean correspondence fixtures (commit the diff).
+- The `Fresh Dependencies` workflow is separate from locked CI. It runs on a
+  schedule or manually, performs `cargo update` only in the ephemeral runner
+  workspace, and checks the newest dependency graph allowed by `Cargo.toml`
+  with `cargo check`, `cargo audit`, and `cargo deny`. Treat failures there as
+  dependency-drift signals, not as evidence that the committed `Cargo.lock` CI
+  path is broken.
 
 ## Coding style and naming
 

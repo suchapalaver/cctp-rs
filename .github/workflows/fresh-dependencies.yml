@@ -1,0 +1,52 @@
+name: Fresh Dependencies
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly check that the crate still works with the newest dependency
+    # versions allowed by Cargo.toml.
+    - cron: "0 12 * * 2"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-resolution:
+    name: Fresh Dependency Resolution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Resolve latest allowed dependencies
+        run: |
+          cargo update
+          git diff -- Cargo.lock
+
+      - name: Check fresh dependency graph
+        run: cargo check --all-targets --all-features
+
+      - name: Audit fresh dependency graph
+        run: cargo audit
+
+      - name: Deny policy check on fresh dependency graph
+        run: cargo deny check
