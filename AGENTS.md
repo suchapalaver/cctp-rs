@@ -108,7 +108,9 @@ parser.
 - `cargo clippy --all-targets --all-features -- -D warnings` — matches the CI lint gate.
 - `cargo fmt --all -- --check` — verifies formatting; `cargo fmt` applies fixes.
 - `cargo build --example v2_integration_validation` — validates a representative v2 example.
-- `pipx run reuse lint` — SPDX/REUSE compliance check.
+- `pipx run reuse lint` — SPDX/REUSE compliance check. If the tool cannot
+  import an encoding detector in the local environment, use
+  `pipx run --spec 'reuse[charset-normalizer]' reuse lint`.
 - `cd verification && lake build` — re-checks the Lean proofs (toolchain pinned
   by `verification/lean-toolchain`; install via elan, or nix:
   `nix shell nixpkgs#lean4 nixpkgs#gcc -c lake build`).
@@ -123,6 +125,27 @@ for constants. Prefer explicit error types like `Result<T, CctpError>` over
 generic wrappers, and document public APIs with `///`. New Rust source files
 should preserve the SPDX header pattern; markdown and config files are covered
 by `REUSE.toml` annotations instead.
+
+## REUSE and provenance
+
+This repository is independently maintained from an upstream codebase. Treat
+REUSE metadata as provenance, not just a lint target:
+
+- Keep inherited `SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.` notices on
+  inherited files. Do not replace upstream copyright notices just because the
+  upstream project is archived or this repository is maintained separately.
+- For new files, use the current copyright holder in the SPDX header or
+  `REUSE.toml` annotation. For materially modified inherited files, add an
+  additional `SPDX-FileCopyrightText` line for the new contribution holder
+  while preserving the inherited line.
+- For files covered by broad `REUSE.toml` annotations, split or add annotations
+  when provenance differs instead of making every generated or documentation
+  file appear to share the same origin.
+- Keep `Apache-2.0` unless there is an explicit relicensing decision. Agents
+  may only update licensing metadata to describe existing provenance; do not
+  relicense inherited work.
+- Run the REUSE check after changing headers, `REUSE.toml`, license files, or
+  generated assets that need annotation coverage.
 
 ## Testing
 
