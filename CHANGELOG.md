@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.1] - 2026-07-03
+
+### Changed
+
+- Added a scheduled/manual `Fresh Dependencies` workflow that runs
+  `cargo update` in the ephemeral CI workspace, then checks the newest
+  dependency graph allowed by `Cargo.toml` with `cargo check`,
+  `cargo audit`, and `cargo deny`.
+- Clarified REUSE provenance guidance for independently maintained
+  fork-era changes.
+
+### Fixed
+
+- Refreshed `Cargo.lock` to the latest compatible dependency graph, including
+  `quinn-proto` `0.11.15+`, so the repository and published source snapshot no
+  longer trip the locked `RUSTSEC-2026-0185` advisory.
+
 ## [7.0.0] - 2026-06-12
 
 ### Added
