@@ -13,9 +13,10 @@
 //!
 //! Environment variables (set these in .env file):
 //! - `TESTNET_PRIVATE_KEY`: Your wallet private key (must start with 0x)
-//! - `TESTNET_API_KEY`: Alchemy API key (used for all testnet RPCs)
-//! - `BASE_SEPOLIA_RPC_URL`: (optional) Override Base Sepolia RPC
-//! - `ARBITRUM_SEPOLIA_RPC_URL`: (optional) Override Arbitrum Sepolia RPC
+//! - `TESTNET_API_KEY`: Alchemy API key used when RPC URL overrides are not set
+//! - `BASE_SEPOLIA_RPC_URL`: (optional) Full Base Sepolia RPC URL override
+//! - `ARBITRUM_SEPOLIA_RPC_URL`: (optional) Full Arbitrum Sepolia RPC URL override
+//! - `EXECUTE_TRANSFER=true`: Required to submit approval, burn, and mint transactions
 //!
 //! Run with: `cargo run --example v2_fast_transfer`
 
@@ -26,9 +27,10 @@ use alloy_network::EthereumWallet;
 use alloy_primitives::{address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_signer_local::PrivateKeySigner;
-use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, Erc20Contract, TransferMode};
+use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, Erc20Contract, MintResult, TransferMode};
 use dotenvy::dotenv;
 use tracing::{info_span, Instrument};
+use url::Url;
 
 /// Format ETH balance (18 decimals) for display
 fn format_eth_balance(balance: U256) -> String {
@@ -40,6 +42,26 @@ fn format_eth_balance(balance: U256) -> String {
 fn format_usdc_balance(balance: U256) -> String {
     let usdc = balance.to::<u128>() as f64 / 1e6;
     format!("{usdc:.6}")
+}
+
+fn testnet_rpc_url(env_var: &str, alchemy_host: &str) -> Result<String, CctpError> {
+    match std::env::var(env_var) {
+        Ok(url) => Ok(url),
+        Err(_) => {
+            let api_key = std::env::var("TESTNET_API_KEY").map_err(|_| {
+                CctpError::InvalidConfig(format!(
+                    "TESTNET_API_KEY must be set when {env_var} is not provided"
+                ))
+            })?;
+            Ok(format!("https://{alchemy_host}.g.alchemy.com/v2/{api_key}"))
+        }
+    }
+}
+
+fn parse_rpc_url(env_var: &str, rpc_url: &str) -> Result<Url, CctpError> {
+    rpc_url.parse().map_err(|err| {
+        CctpError::InvalidConfig(format!("{env_var} must be a valid HTTP RPC URL: {err}"))
+    })
 }
 
 #[tokio::main]
@@ -59,9 +81,6 @@ async fn main() -> Result<(), CctpError> {
     let private_key_str =
         std::env::var("TESTNET_PRIVATE_KEY").expect("TESTNET_PRIVATE_KEY must be set in .env file");
 
-    let api_key =
-        std::env::var("TESTNET_API_KEY").expect("TESTNET_API_KEY must be set in .env file");
-
     // Parse private key and get wallet address
     let signer: PrivateKeySigner = private_key_str
         .parse()
@@ -69,10 +88,8 @@ async fn main() -> Result<(), CctpError> {
     let wallet_address = signer.address();
 
     // Construct RPC URLs
-    let base_sepolia_rpc = std::env::var("BASE_SEPOLIA_RPC_URL")
-        .unwrap_or_else(|_| format!("https://base-sepolia.g.alchemy.com/v2/{api_key}"));
-    let arbitrum_sepolia_rpc = std::env::var("ARBITRUM_SEPOLIA_RPC_URL")
-        .unwrap_or_else(|_| format!("https://arbitrum-sepolia.g.alchemy.com/v2/{api_key}"));
+    let base_sepolia_rpc = testnet_rpc_url("BASE_SEPOLIA_RPC_URL", "base-sepolia")?;
+    let arbitrum_sepolia_rpc = testnet_rpc_url("ARBITRUM_SEPOLIA_RPC_URL", "arb-sepolia")?;
 
     println!("📍 Configuration:");
     println!("   Wallet: {wallet_address}");
@@ -88,15 +105,17 @@ async fn main() -> Result<(), CctpError> {
     // Create providers with wallet for signing transactions
     println!("1️⃣  Creating blockchain providers...");
 
-    let arb_sepolia_full_rpc_url = format!("{arbitrum_sepolia_rpc}{api_key}");
-    let arbitrum_sepolia_provider = ProviderBuilder::new()
-        .wallet(wallet.clone())
-        .connect_http(arb_sepolia_full_rpc_url.parse().unwrap());
+    let arbitrum_sepolia_provider =
+        ProviderBuilder::new()
+            .wallet(wallet.clone())
+            .connect_http(parse_rpc_url(
+                "ARBITRUM_SEPOLIA_RPC_URL",
+                &arbitrum_sepolia_rpc,
+            )?);
 
-    let base_sepolia_full_rpc_url = format!("{base_sepolia_rpc}{api_key}");
     let base_sepolia_provider = ProviderBuilder::new()
         .wallet(wallet)
-        .connect_http(base_sepolia_full_rpc_url.parse().unwrap());
+        .connect_http(parse_rpc_url("BASE_SEPOLIA_RPC_URL", &base_sepolia_rpc)?);
 
     println!("   ✅ Providers created (with wallet signer)\n");
 
@@ -381,16 +400,27 @@ async fn main() -> Result<(), CctpError> {
     println!("\n1️⃣3️⃣ Mint Phase:");
     println!("   Minting 1 USDC on Base Sepolia...");
 
-    let mint_tx = bridge.mint(message, attestation, wallet_address).await?;
-    println!("   ✅ Mint TX: {mint_tx}");
-    println!("   View on BaseScan: https://base-sepolia.blockscout.com/tx/{mint_tx}");
+    let mint_result = bridge
+        .mint_if_needed(message, attestation, wallet_address)
+        .await?;
+    let mint_summary = match mint_result {
+        MintResult::Minted(mint_tx) => {
+            println!("   ✅ Mint TX: {mint_tx}");
+            println!("   View on BaseScan: https://base-sepolia.blockscout.com/tx/{mint_tx}");
+            mint_tx.to_string()
+        }
+        MintResult::AlreadyRelayed => {
+            println!("   ✅ Already relayed by a third party");
+            "already relayed".to_string()
+        }
+    };
 
     println!("\n🎉 Fast Transfer Complete!");
     println!("   Your 1 USDC has been bridged from Arbitrum Sepolia to Base Sepolia.");
     println!("   ⚡ Settlement time: <30 seconds (fast transfer mode)");
     println!("\n   Summary:");
     println!("   - Burn TX: {burn_tx}");
-    println!("   - Mint TX: {mint_tx}");
+    println!("   - Mint result: {mint_summary}");
     println!("   - Transfer Mode: Fast (finality level 1000)");
     println!("\n✅ CCTP v2 Fast Transfer Validation: PASSED");
 
