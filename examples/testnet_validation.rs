@@ -62,9 +62,27 @@ fn testnet_rpc_url(env_var: &str, alchemy_host: &str) -> Result<String, CctpErro
 }
 
 fn parse_rpc_url(env_var: &str, rpc_url: &str) -> Result<Url, CctpError> {
-    rpc_url.parse().map_err(|err| {
+    let url: Url = rpc_url.parse().map_err(|err| {
         CctpError::InvalidConfig(format!("{env_var} must be a valid HTTP RPC URL: {err}"))
-    })
+    })?;
+
+    match (url.scheme(), url.host_str()) {
+        ("http" | "https", Some(_)) => Ok(url),
+        _ => Err(CctpError::InvalidConfig(format!(
+            "{env_var} must be an HTTP RPC URL with a host"
+        ))),
+    }
+}
+
+fn redacted_rpc_url(url: &Url) -> String {
+    let mut authority = url
+        .host_str()
+        .map_or_else(|| "<unknown-host>".to_string(), ToString::to_string);
+    if let Some(port) = url.port() {
+        authority.push(':');
+        authority.push_str(&port.to_string());
+    }
+    format!("{}://{authority}/<redacted>", url.scheme())
 }
 
 #[tokio::main]
@@ -93,13 +111,22 @@ async fn main() -> Result<(), CctpError> {
     // Construct RPC URLs
     let base_sepolia_rpc = testnet_rpc_url("BASE_SEPOLIA_RPC_URL", "base-sepolia")?;
     let arbitrum_sepolia_rpc = testnet_rpc_url("ARBITRUM_SEPOLIA_RPC_URL", "arb-sepolia")?;
+    let base_sepolia_rpc_url = parse_rpc_url("BASE_SEPOLIA_RPC_URL", &base_sepolia_rpc)?;
+    let arbitrum_sepolia_rpc_url =
+        parse_rpc_url("ARBITRUM_SEPOLIA_RPC_URL", &arbitrum_sepolia_rpc)?;
 
     println!("📍 Configuration:");
     println!("   Wallet: {wallet_address}");
     println!("   Source: Arbitrum Sepolia");
     println!("   Destination: Base Sepolia");
-    println!("   Arbitrum Sepolia RPC: {arbitrum_sepolia_rpc}");
-    println!("   Base Sepolia RPC: {base_sepolia_rpc}\n");
+    println!(
+        "   Arbitrum Sepolia RPC: {}",
+        redacted_rpc_url(&arbitrum_sepolia_rpc_url)
+    );
+    println!(
+        "   Base Sepolia RPC: {}\n",
+        redacted_rpc_url(&base_sepolia_rpc_url)
+    );
 
     // Create wallet from signer
     let wallet = EthereumWallet::from(signer);
@@ -107,17 +134,13 @@ async fn main() -> Result<(), CctpError> {
     // Create providers with wallet for signing transactions
     println!("1️⃣  Creating blockchain providers...");
 
-    let arbitrum_sepolia_provider =
-        ProviderBuilder::new()
-            .wallet(wallet.clone())
-            .connect_http(parse_rpc_url(
-                "ARBITRUM_SEPOLIA_RPC_URL",
-                &arbitrum_sepolia_rpc,
-            )?);
+    let arbitrum_sepolia_provider = ProviderBuilder::new()
+        .wallet(wallet.clone())
+        .connect_http(arbitrum_sepolia_rpc_url);
 
     let base_sepolia_provider = ProviderBuilder::new()
         .wallet(wallet)
-        .connect_http(parse_rpc_url("BASE_SEPOLIA_RPC_URL", &base_sepolia_rpc)?);
+        .connect_http(base_sepolia_rpc_url);
 
     println!("   ✅ Providers created (with wallet signer)\n");
 
