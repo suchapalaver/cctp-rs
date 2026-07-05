@@ -445,7 +445,7 @@ Check out the [`examples/`](examples/) directory for complete working examples:
 - [`v2_integration_validation.rs`](examples/v2_integration_validation.rs) - Comprehensive v2 validation (no network required)
 - [`v2_standard_transfer.rs`](examples/v2_standard_transfer.rs) - Standard transfer with finality
 - [`v2_fast_transfer.rs`](examples/v2_fast_transfer.rs) - Fast transfer (<30s settlement)
-- [`testnet_validation.rs`](examples/testnet_validation.rs) - Opt-in funded Arbitrum Sepolia -> Base Sepolia transfer harness
+- [`testnet_validation.rs`](examples/testnet_validation.rs) - Opt-in funded, chain-configurable testnet transfer harness
 
 ### CCTP v1 Examples (Legacy)
 
@@ -543,24 +543,35 @@ For opt-in pre-release validation on testnet:
 
 1. Copy `.env.example` to `.env`.
 2. Set `TESTNET_PRIVATE_KEY` and either `TESTNET_API_KEY` or full RPC URL overrides.
-3. Fund the wallet with Arbitrum Sepolia ETH, Base Sepolia ETH, and Arbitrum Sepolia USDC from [Circle's faucet](https://faucet.circle.com).
-4. Run a dry-run balance and configuration check:
+3. Optionally set `SOURCE_CHAIN` and `DESTINATION_CHAIN`. Defaults are `arbitrum-sepolia` -> `base-sepolia`; built-in aliases are `sepolia`, `arbitrum-sepolia`, `base-sepolia`, `optimism-sepolia`, `avalanche-fuji`, and `polygon-amoy`.
+4. Fund the wallet with native testnet gas token on both chains and source-chain USDC from [Circle's faucet](https://faucet.circle.com).
+5. Run a dry-run balance and configuration check:
 
 ```bash
 cargo run --example v2_fast_transfer
 ```
 
-5. Execute the funded fast-transfer path only when ready:
+6. Execute the funded fast-transfer path only when ready:
 
 ```bash
 EXECUTE_TRANSFER=true cargo run --example v2_fast_transfer
+```
+
+Example alternate route:
+
+```bash
+SOURCE_CHAIN=sepolia \
+DESTINATION_CHAIN=base-sepolia \
+cargo run --example v2_fast_transfer
 ```
 
 For a standard-finality transfer, use `cargo run --example testnet_validation`
 with the same environment variables. Both examples check balances and allowance,
 submit approval when needed, burn USDC, poll Iris for the canonical v2 message
 and attestation, then call `mint_if_needed` so a third-party relayer completing
-the transfer first is treated as success.
+the transfer first is treated as success. They refuse mainnet routes; set
+`SOURCE_USDC_ADDRESS` or `DESTINATION_USDC_ADDRESS` only when testing a supported
+testnet before its USDC address has been added to the example allowlist.
 
 **Note**: Integration tests requiring Circle's Iris API and live blockchains are not run in CI due to:
 

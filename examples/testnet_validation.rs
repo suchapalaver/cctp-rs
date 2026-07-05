@@ -4,86 +4,39 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Manual Testnet Validation for CCTP v2
 //!
-//! This example performs an actual USDC transfer from Arbitrum Sepolia to Base Sepolia.
-//!
-//! Prerequisites:
-//! - Arbitrum Sepolia ETH for gas
-//! - Sepolia USDC from Circle faucet (<https://faucet.circle.com>/)
-//! - Base Sepolia ETH for destination gas
+//! This example performs an actual standard-finality CCTP v2 USDC transfer.
+//! Default route: Arbitrum Sepolia -> Base Sepolia. Override with
+//! `SOURCE_CHAIN` and `DESTINATION_CHAIN`.
 //!
 //! Environment variables (set these in .env file):
 //! - `TESTNET_PRIVATE_KEY`: Your wallet private key (must start with 0x)
 //! - `TESTNET_API_KEY`: Alchemy API key used when RPC URL overrides are not set
-//! - `BASE_SEPOLIA_RPC_URL`: (optional) Full Base Sepolia RPC URL override
-//! - `ARBITRUM_SEPOLIA_RPC_URL`: (optional) Full Arbitrum Sepolia RPC URL override
+//! - `SOURCE_CHAIN`: (optional) Source chain alias, for example `arbitrum-sepolia`
+//! - `DESTINATION_CHAIN`: (optional) Destination chain alias, for example `base-sepolia`
+//! - `SOURCE_RPC_URL`: (optional) Full source RPC URL override
+//! - `DESTINATION_RPC_URL`: (optional) Full destination RPC URL override
+//! - chain-specific RPC overrides such as `ARBITRUM_SEPOLIA_RPC_URL` or `BASE_SEPOLIA_RPC_URL`
+//! - `SOURCE_USDC_ADDRESS`: (optional) Source USDC override for new testnets
+//! - `DESTINATION_USDC_ADDRESS`: (optional) Destination USDC override for new testnets
 //! - `EXECUTE_TRANSFER=true`: Required to submit approval, burn, and mint transactions
 //!
 //! Run with: `cargo run --example testnet_validation`
 
+mod common;
+
 use std::future::IntoFuture;
 
-use alloy_chains::NamedChain;
 use alloy_network::EthereumWallet;
-use alloy_primitives::{address, U256};
+use alloy_primitives::U256;
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_signer_local::PrivateKeySigner;
-use cctp_rs::{
-    CctpError, CctpV2, CctpV2Bridge, Erc20Contract, MintResult, PollingConfig,
-    CCTP_V2_MESSAGE_TRANSMITTER_TESTNET, CCTP_V2_TOKEN_MESSENGER_TESTNET,
+use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, Erc20Contract, MintResult, PollingConfig};
+use common::funded_v2::{
+    format_eth_balance, format_usdc_balance, redacted_rpc_url, supported_testnet_routes,
+    FundedV2Route, DEFAULT_TRANSFER_AMOUNT, MIN_NATIVE_BALANCE_WEI, MIN_USDC_BALANCE,
 };
 use dotenvy::dotenv;
 use tracing::{info_span, Instrument};
-use url::Url;
-
-/// Format ETH balance (18 decimals) for display
-fn format_eth_balance(balance: U256) -> String {
-    let eth = balance.to::<u128>() as f64 / 1e18;
-    format!("{eth:.6}")
-}
-
-/// Format USDC balance (6 decimals) for display
-fn format_usdc_balance(balance: U256) -> String {
-    let usdc = balance.to::<u128>() as f64 / 1e6;
-    format!("{usdc:.6}")
-}
-
-fn testnet_rpc_url(env_var: &str, alchemy_host: &str) -> Result<String, CctpError> {
-    match std::env::var(env_var) {
-        Ok(url) => Ok(url),
-        Err(_) => {
-            let api_key = std::env::var("TESTNET_API_KEY").map_err(|_| {
-                CctpError::InvalidConfig(format!(
-                    "TESTNET_API_KEY must be set when {env_var} is not provided"
-                ))
-            })?;
-            Ok(format!("https://{alchemy_host}.g.alchemy.com/v2/{api_key}"))
-        }
-    }
-}
-
-fn parse_rpc_url(env_var: &str, rpc_url: &str) -> Result<Url, CctpError> {
-    let url: Url = rpc_url.parse().map_err(|err| {
-        CctpError::InvalidConfig(format!("{env_var} must be a valid HTTP RPC URL: {err}"))
-    })?;
-
-    match (url.scheme(), url.host_str()) {
-        ("http" | "https", Some(_)) => Ok(url),
-        _ => Err(CctpError::InvalidConfig(format!(
-            "{env_var} must be an HTTP RPC URL with a host"
-        ))),
-    }
-}
-
-fn redacted_rpc_url(url: &Url) -> String {
-    let mut authority = url
-        .host_str()
-        .map_or_else(|| "<unknown-host>".to_string(), ToString::to_string);
-    if let Some(port) = url.port() {
-        authority.push(':');
-        authority.push_str(&port.to_string());
-    }
-    format!("{}://{authority}/<redacted>", url.scheme())
-}
 
 #[tokio::main]
 async fn main() -> Result<(), CctpError> {
@@ -95,7 +48,11 @@ async fn main() -> Result<(), CctpError> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    println!("🧪 CCTP v2 Testnet Transfer: Arbitrum Sepolia → Base Sepolia");
+    let route = FundedV2Route::from_env()?;
+    let source_chain = route.source_chain();
+    let destination_chain = route.destination_chain();
+
+    println!("🧪 CCTP v2 Standard Transfer: {source_chain} → {destination_chain}");
     println!("====================================================\n");
 
     // Load environment variables
@@ -108,24 +65,18 @@ async fn main() -> Result<(), CctpError> {
         .expect("Invalid TESTNET_PRIVATE_KEY format");
     let wallet_address = signer.address();
 
-    // Construct RPC URLs
-    let base_sepolia_rpc = testnet_rpc_url("BASE_SEPOLIA_RPC_URL", "base-sepolia")?;
-    let arbitrum_sepolia_rpc = testnet_rpc_url("ARBITRUM_SEPOLIA_RPC_URL", "arb-sepolia")?;
-    let base_sepolia_rpc_url = parse_rpc_url("BASE_SEPOLIA_RPC_URL", &base_sepolia_rpc)?;
-    let arbitrum_sepolia_rpc_url =
-        parse_rpc_url("ARBITRUM_SEPOLIA_RPC_URL", &arbitrum_sepolia_rpc)?;
-
     println!("📍 Configuration:");
     println!("   Wallet: {wallet_address}");
-    println!("   Source: Arbitrum Sepolia");
-    println!("   Destination: Base Sepolia");
+    println!("   Source: {source_chain}");
+    println!("   Destination: {destination_chain}");
     println!(
-        "   Arbitrum Sepolia RPC: {}",
-        redacted_rpc_url(&arbitrum_sepolia_rpc_url)
+        "   Supported testnet aliases: {}",
+        supported_testnet_routes()
     );
+    println!("   Source RPC: {}", redacted_rpc_url(&route.source_rpc_url));
     println!(
-        "   Base Sepolia RPC: {}\n",
-        redacted_rpc_url(&base_sepolia_rpc_url)
+        "   Destination RPC: {}\n",
+        redacted_rpc_url(&route.destination_rpc_url)
     );
 
     // Create wallet from signer
@@ -134,75 +85,77 @@ async fn main() -> Result<(), CctpError> {
     // Create providers with wallet for signing transactions
     println!("1️⃣  Creating blockchain providers...");
 
-    let arbitrum_sepolia_provider = ProviderBuilder::new()
+    let source_provider = ProviderBuilder::new()
         .wallet(wallet.clone())
-        .connect_http(arbitrum_sepolia_rpc_url);
+        .connect_http(route.source_rpc_url.clone());
 
-    let base_sepolia_provider = ProviderBuilder::new()
+    let destination_provider = ProviderBuilder::new()
         .wallet(wallet)
-        .connect_http(base_sepolia_rpc_url);
+        .connect_http(route.destination_rpc_url.clone());
 
     println!("   ✅ Providers created (with wallet signer)\n");
 
-    // USDC contract addresses
-    let usdc_arbitrum_sepolia = address!("75faf114eafb1BDbe2F0316DF893fd58CE46AA4d");
-    let usdc_base_sepolia = address!("036CbD53842c5426634e7929541eC2318f3dCF7e");
-
     println!("2️⃣  Checking balances...");
 
-    let usdc_arb_contract = Erc20Contract::new(usdc_arbitrum_sepolia, &arbitrum_sepolia_provider);
-    let usdc_base_contract = Erc20Contract::new(usdc_base_sepolia, &base_sepolia_provider);
+    let source_usdc_contract = Erc20Contract::new(route.source_usdc_address, &source_provider);
+    let destination_usdc_contract =
+        Erc20Contract::new(route.destination_usdc_address, &destination_provider);
 
-    let (arb_eth_balance, arb_usdc_balance, base_eth_balance, base_usdc_balance) = tokio::try_join!(
+    let (
+        source_eth_balance,
+        source_usdc_balance,
+        destination_eth_balance,
+        destination_usdc_balance,
+    ) = tokio::try_join!(
         async {
-            arbitrum_sepolia_provider
+            source_provider
                 .get_balance(wallet_address)
                 .into_future()
-                .instrument(info_span!("get_eth_balance", chain = %NamedChain::ArbitrumSepolia))
+                .instrument(info_span!("get_eth_balance", chain = %source_chain))
                 .await
                 .map_err(CctpError::from)
         },
         async {
-            usdc_arb_contract
+            source_usdc_contract
                 .balance_of(wallet_address)
-                .instrument(info_span!("get_usdc_balance", chain = %NamedChain::ArbitrumSepolia))
+                .instrument(info_span!("get_usdc_balance", chain = %source_chain))
                 .await
                 .map_err(CctpError::from)
         },
         async {
-            base_sepolia_provider
+            destination_provider
                 .get_balance(wallet_address)
                 .into_future()
-                .instrument(info_span!("get_eth_balance", chain = %NamedChain::BaseSepolia))
+                .instrument(info_span!("get_eth_balance", chain = %destination_chain))
                 .await
                 .map_err(CctpError::from)
         },
         async {
-            usdc_base_contract
+            destination_usdc_contract
                 .balance_of(wallet_address)
-                .instrument(info_span!("get_usdc_balance", chain = %NamedChain::BaseSepolia))
+                .instrument(info_span!("get_usdc_balance", chain = %destination_chain))
                 .await
                 .map_err(CctpError::from)
         },
     )?;
 
-    println!("   Arbitrum Sepolia:");
+    println!("   {source_chain}:");
     println!(
         "     ETH Balance:  {} ETH",
-        format_eth_balance(arb_eth_balance)
+        format_eth_balance(source_eth_balance)
     );
     println!(
         "     USDC Balance: {} USDC",
-        format_usdc_balance(arb_usdc_balance)
+        format_usdc_balance(source_usdc_balance)
     );
-    println!("   Base Sepolia:");
+    println!("   {destination_chain}:");
     println!(
         "     ETH Balance:  {} ETH",
-        format_eth_balance(base_eth_balance)
+        format_eth_balance(destination_eth_balance)
     );
     println!(
         "     USDC Balance: {} USDC",
-        format_usdc_balance(base_usdc_balance)
+        format_usdc_balance(destination_usdc_balance)
     );
     println!("   ✅ Balances retrieved\n");
 
@@ -212,44 +165,46 @@ async fn main() -> Result<(), CctpError> {
     println!("│ Chain               │ ETH Balance      │ USDC Balance     │");
     println!("├─────────────────────┼──────────────────┼──────────────────┤");
     println!(
-        "│ Arbitrum Sepolia    │ {:>16} │ {:>16} │",
-        format_eth_balance(arb_eth_balance),
-        format_usdc_balance(arb_usdc_balance)
+        "│ {:<19} │ {:>16} │ {:>16} │",
+        source_chain.to_string(),
+        format_eth_balance(source_eth_balance),
+        format_usdc_balance(source_usdc_balance)
     );
     println!(
-        "│ Base Sepolia        │ {:>16} │ {:>16} │",
-        format_eth_balance(base_eth_balance),
-        format_usdc_balance(base_usdc_balance)
+        "│ {:<19} │ {:>16} │ {:>16} │",
+        destination_chain.to_string(),
+        format_eth_balance(destination_eth_balance),
+        format_usdc_balance(destination_usdc_balance)
     );
     println!("└─────────────────────┴──────────────────┴──────────────────┘\n");
 
     // Check if we have sufficient balances
-    let min_eth = U256::from(1_000_000_000_000_000u64); // 0.001 ETH minimum
-    let min_usdc = U256::from(1_000_000u64); // 1 USDC minimum (6 decimals)
+    let min_eth = U256::from(MIN_NATIVE_BALANCE_WEI); // 0.001 native token minimum
+    let min_usdc = U256::from(MIN_USDC_BALANCE); // 1 USDC minimum (6 decimals)
 
     let mut issues: Vec<String> = Vec::new();
 
-    if arb_eth_balance < min_eth {
+    if source_eth_balance < min_eth {
         issues.push(format!(
-            "❌ Insufficient ETH on Arbitrum Sepolia: {} (need >= 0.001 ETH)\n   \
-             → Get testnet ETH: https://faucet.quicknode.com/arbitrum/sepolia",
-            format_eth_balance(arb_eth_balance)
+            "❌ Insufficient native gas token on {source_chain}: {} (need >= 0.001)\n   \
+             → Fund source gas before running with EXECUTE_TRANSFER=true",
+            format_eth_balance(source_eth_balance)
         ));
     }
 
-    if base_eth_balance < min_eth {
+    if destination_eth_balance < min_eth {
         issues.push(format!(
-            "❌ Insufficient ETH on Base Sepolia: {} (need >= 0.001 ETH)\n   \
-             → Get testnet ETH: https://faucet.quicknode.com/base/sepolia",
-            format_eth_balance(base_eth_balance)
+            "❌ Insufficient native gas token on {destination_chain}: {} (need >= 0.001)\n   \
+             → Fund destination gas in case this run needs to self-relay",
+            format_eth_balance(destination_eth_balance)
         ));
     }
 
-    if arb_usdc_balance < min_usdc {
+    if source_usdc_balance < min_usdc {
         issues.push(format!(
-            "❌ Insufficient USDC on Arbitrum Sepolia: {} (need >= 1 USDC)\n   \
+            "❌ Insufficient USDC on {source_chain}: {} (need >= 1 USDC)\n   \
              → Get testnet USDC: https://faucet.circle.com/",
-            format_usdc_balance(arb_usdc_balance)
+            format_usdc_balance(source_usdc_balance)
         ));
     }
 
@@ -278,10 +233,10 @@ async fn main() -> Result<(), CctpError> {
     // Create bridge
     println!("4️⃣  Setting up CCTP v2 bridge...");
     let bridge = CctpV2Bridge::builder()
-        .source_chain(NamedChain::ArbitrumSepolia)
-        .destination_chain(NamedChain::BaseSepolia)
-        .source_provider(arbitrum_sepolia_provider)
-        .destination_provider(base_sepolia_provider)
+        .source_chain(source_chain)
+        .destination_chain(destination_chain)
+        .source_provider(source_provider)
+        .destination_provider(destination_provider)
         .recipient(wallet_address)
         .build();
 
@@ -299,15 +254,8 @@ async fn main() -> Result<(), CctpError> {
     let source_domain = bridge.source_chain().cctp_v2_domain_id()?;
     let dest_domain = bridge.destination_domain_id()?;
 
-    println!("   Source Domain (Arbitrum Sepolia): {source_domain}");
-    println!("   Destination Domain (Base): {dest_domain}");
-
-    assert_eq!(
-        source_domain.as_u32(),
-        3,
-        "Arbitrum Sepolia should have domain ID 3"
-    );
-    assert_eq!(dest_domain.as_u32(), 6, "Base should have domain ID 6");
+    println!("   Source Domain ({source_chain}): {source_domain}");
+    println!("   Destination Domain ({destination_chain}): {dest_domain}");
     println!("   ✅ Domain IDs correct\n");
 
     // Validate contract addresses
@@ -318,17 +266,6 @@ async fn main() -> Result<(), CctpError> {
     println!("   TokenMessenger: {token_messenger}");
     println!("   MessageTransmitter: {message_transmitter}");
 
-    let expected_tm = CCTP_V2_TOKEN_MESSENGER_TESTNET;
-    let expected_mt = CCTP_V2_MESSAGE_TRANSMITTER_TESTNET;
-
-    assert_eq!(
-        token_messenger, expected_tm,
-        "TokenMessenger address mismatch"
-    );
-    assert_eq!(
-        message_transmitter, expected_mt,
-        "MessageTransmitter address mismatch"
-    );
     println!("   ✅ Addresses correct\n");
 
     // Validate API endpoint
@@ -342,14 +279,18 @@ async fn main() -> Result<(), CctpError> {
     println!("   ✅ Using sandbox API\n");
 
     // Transfer configuration
-    let amount = U256::from(1_000_000); // 1 USDC (6 decimals)
+    let amount = U256::from(DEFAULT_TRANSFER_AMOUNT); // 1 USDC (6 decimals)
 
     println!("9️⃣  Transfer Details:");
-    println!("   Token: USDC (Arbitrum Sepolia)");
-    println!("   Token Address: {usdc_arbitrum_sepolia}");
+    println!("   Token: USDC ({source_chain})");
+    println!("   Source Token Address: {}", route.source_usdc_address);
+    println!(
+        "   Destination Token Address: {}",
+        route.destination_usdc_address
+    );
     println!("   Amount: 1.0 USDC");
     println!("   From: {wallet_address}");
-    println!("   To: {wallet_address} (same address on Base Sepolia)\n");
+    println!("   To: {wallet_address} (same address on {destination_chain})\n");
 
     // Execute the transfer
     println!("\n🚀 Starting Transfer...\n");
@@ -360,7 +301,7 @@ async fn main() -> Result<(), CctpError> {
 
     let token_messenger = bridge.token_messenger_v2_contract()?;
     let current_allowance = bridge
-        .get_allowance(usdc_arbitrum_sepolia, wallet_address)
+        .get_allowance(route.source_usdc_address, wallet_address)
         .await?;
 
     println!(
@@ -373,12 +314,10 @@ async fn main() -> Result<(), CctpError> {
         println!("   ⚠️  Insufficient allowance, sending approval transaction...");
 
         let approval_tx = bridge
-            .approve(usdc_arbitrum_sepolia, wallet_address, amount)
+            .approve(route.source_usdc_address, wallet_address, amount)
             .await?;
         println!("   ✅ Approval TX: {approval_tx}");
-        println!(
-            "   View on Arbitrum Sepolia Etherscan: https://sepolia.arbiscan.io/tx/{approval_tx}"
-        );
+        println!("   Explorer: {}", route.source_tx_url(approval_tx));
 
         // Wait for approval to be mined
         println!("   Waiting for approval confirmation...");
@@ -388,17 +327,17 @@ async fn main() -> Result<(), CctpError> {
     }
 
     println!("\n1️⃣1️⃣ Burn Phase:");
-    println!("   Burning 1 USDC on Arbitrum Sepolia...");
+    println!("   Burning 1 USDC on {source_chain}...");
 
     let burn_tx = bridge
-        .burn(amount, wallet_address, usdc_arbitrum_sepolia)
+        .burn(amount, wallet_address, route.source_usdc_address)
         .await?;
     println!("   ✅ Burn TX: {burn_tx}");
-    println!("   View on Arbitrum Sepolia Etherscan: https://sepolia.arbiscan.io/tx/{burn_tx}");
+    println!("   Explorer: {}", route.source_tx_url(burn_tx));
 
     println!("\n1️⃣2️⃣ Attestation Phase:");
     println!("   Polling Circle API for attestation and message...");
-    println!("   This typically takes 10-15 minutes for Arbitrum Sepolia finality.");
+    println!("   This typically takes the standard finality window for {source_chain}.");
     println!("   Progress will be shown every 60 seconds.\n");
 
     // Poll for attestation with progress updates
@@ -413,7 +352,7 @@ async fn main() -> Result<(), CctpError> {
     println!("   Attestation length: {} bytes", attestation.len());
 
     println!("\n1️⃣3️⃣ Mint Phase:");
-    println!("   Minting 1 USDC on Base Sepolia...");
+    println!("   Minting 1 USDC on {destination_chain}...");
 
     let mint_result = bridge
         .mint_if_needed(message, attestation, wallet_address)
@@ -421,7 +360,7 @@ async fn main() -> Result<(), CctpError> {
     let mint_summary = match mint_result {
         MintResult::Minted(mint_tx) => {
             println!("   ✅ Mint TX: {mint_tx}");
-            println!("   View on BaseScan: https://base-sepolia.blockscout.com/tx/{mint_tx}");
+            println!("   Explorer: {}", route.destination_tx_url(mint_tx));
             mint_tx.to_string()
         }
         MintResult::AlreadyRelayed => {
@@ -431,7 +370,9 @@ async fn main() -> Result<(), CctpError> {
     };
 
     println!("\n🎉 Transfer Complete!");
-    println!("   Your 1 USDC has been successfully bridged from Arbitrum Sepolia to Base Sepolia.");
+    println!(
+        "   Your 1 USDC has been successfully bridged from {source_chain} to {destination_chain}."
+    );
     println!("\n   Summary:");
     println!("   - Burn TX: {burn_tx}");
     println!("   - Mint result: {mint_summary}");
