@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+# SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -19,7 +20,6 @@ SPDX-License-Identifier = "Apache-2.0"
 # Documentation
 [[annotations]]
 path = [
-    "README.md",
     "AGENTS.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
@@ -27,6 +27,15 @@ path = [
     "abis/v2/README.md",
 ]
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Touched documentation
+[[annotations]]
+path = "README.md"
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
 SPDX-License-Identifier = "Apache-2.0"
 
 # Nix flake lock (JSON, can't have inline headers)
@@ -50,6 +59,15 @@ SPDX-License-Identifier = "Apache-2.0"
 
 # Configuration files
 [[annotations]]
-path = [".gitignore", ".env.example", ".github/**", ".cargo/**"]
+path = [".gitignore", ".github/**", ".cargo/**"]
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Touched configuration files
+[[annotations]]
+path = ".env.example"
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
 SPDX-License-Identifier = "Apache-2.0"
