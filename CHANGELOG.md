@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.2] - 2026-08-06
+
+### Changed
+
+- Hardened funded CCTP v2 examples by redacting RPC URLs from operator
+  output and moving testnet route selection into configuration instead
+  of fixed example defaults.
+- Documented REUSE provenance guidance for independently maintained
+  fork-era changes.
+- Updated the release workflow to create GitHub Release records for
+  version tags after successful crates.io publishing.
+
+### Fixed
+
+- Refreshed `Cargo.lock` to upgrade `ruint` from `1.19.0` to `1.20.0`,
+  resolving the `RUSTSEC-2026-0220` security CI failure reported by
+  `cargo audit` and `cargo deny`.
+
 ## [7.0.1] - 2026-07-05
 
 ### Changed
