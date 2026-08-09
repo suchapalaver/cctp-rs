@@ -474,6 +474,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+Routine maintainer and agent changes also go through pull requests. Direct
+pushes to `main` are not part of the normal maintenance path; branch protection
+requires review and required checks before merge.
+
 ## Testing
 
 ### Unit Tests

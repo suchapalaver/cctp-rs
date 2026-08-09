@@ -170,6 +170,12 @@ should complete `.github/pull_request_template.md`. Changes that affect chain
 support must include address, domain ID, and attestation-flow validation
 details.
 
+Do not push routine changes directly to `main`, including maintenance,
+dependency, documentation, and release-prep work. Use a topic branch and a pull
+request so branch protection can require review and status checks before the
+change lands. Emergency bypasses require an explicit maintainer decision and a
+follow-up issue/comment explaining what was bypassed and why.
+
 ## Adding chain support
 
 1. Add addresses to `src/chain/addresses.rs`.

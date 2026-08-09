@@ -133,6 +133,12 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ## Submitting Changes
 
+Do not push directly to `main` for routine work. All maintenance, dependency,
+documentation, and release-prep changes should go through a branch and pull
+request so required reviews and status checks run before merge. Emergency
+bypasses should be explicit maintainer actions and should leave an issue or PR
+comment describing what was bypassed and why.
+
 ### Pull Request Process
 
 1. **Update Documentation**: Ensure README, docs, and examples reflect your changes
