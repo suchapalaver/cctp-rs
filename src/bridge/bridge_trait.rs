@@ -37,6 +37,9 @@ use async_trait::async_trait;
 /// // V2 bridge - get attestation by transaction hash
 /// let attestation = v2_bridge.get_attestation(tx_hash, None, None).await?;
 /// ```
+// `async_trait` generates a must-use future; nightly clippy can flag that
+// generated attribute as redundant even though this trait does not add one.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait CctpBridge: Send + Sync {
     /// Returns the source chain for the bridge
