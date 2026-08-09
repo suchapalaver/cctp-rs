@@ -8,10 +8,17 @@
 
 A production-ready Rust implementation of Circle's Cross-Chain Transfer Protocol (CCTP), enabling seamless USDC transfers across blockchain networks.
 
+cctp-rs is independently maintained community Rust tooling. It is not official
+Circle software, and protocol currency work is tracked publicly in the
+[CCTP protocol currency roadmap](https://github.com/suchapalaver/cctp-rs/issues/35).
+
 ## Features
 
 - 🚀 **Type-safe** contract interactions using Alloy
-- 🔄 **Bridge SDK** for 11 v2-capable EVM mainnet chains plus 6 USDC testnets; **protocol parser** recognizes all 21 CCTP v2 domain IDs (including non-EVM domains such as Solana and Starknet Testnet)
+- 🔄 **Bridge SDK** for 11 v2-capable EVM mainnet chains plus 6 USDC
+  testnets; **protocol parser** currently implements 21 CCTP v2 domain
+  IDs, with Circle's 2026 domain expansion tracked in
+  [#28](https://github.com/suchapalaver/cctp-rs/issues/28)
 - 📦 **Builder pattern** for intuitive API usage
 - ⚡ **CCTP v2 support** with fast transfers (<30s settlement)
 - 🤝 **Relayer-aware** APIs for permissionless v2 relay handling
@@ -29,8 +36,8 @@ choosing an integration path.
   attestations end-to-end for the chains listed below. These are the
   chains where `NamedChain::supports_cctp_v2()` returns `true`.
 - **Protocol parser** — `ParsedV2Message`, `ParsedV2MessageSummary`,
-  and the `DomainId` enum recognize every CCTP v2 domain ID Circle has
-  announced (21 at time of writing), including non-EVM domains.
+  and the `DomainId` enum recognize the 21 CCTP v2 domain IDs currently
+  implemented by cctp-rs, including non-EVM domains.
   Parsing a domain is independent of whether the bridge SDK can route
   to or from it. Non-EVM body address words are preserved as raw
   `bytes32` values; EVM address projections are exposed only when the
@@ -65,6 +72,22 @@ Use this list when you need to *inspect* messages crossing these
 domains (for indexing, analytics, or wallet UIs) without routing
 through them. To extend bridge SDK support to one of these domains,
 follow [AGENTS.md → Adding chain support](AGENTS.md#adding-chain-support).
+
+### Protocol currency roadmap
+
+Circle's current
+[supported blockchains and domains](https://developers.circle.com/cctp/concepts/supported-chains-and-domains)
+docs list 28 CCTP v2 domains through X Layer (37). The parser table does
+not yet include the 2026 domain additions: Stellar (27), EDGE (28),
+Injective (29), Morph (30), Pharos (31), Cronos (32), and X Layer (37).
+Until [#28](https://github.com/suchapalaver/cctp-rs/issues/28) lands,
+messages for those domains are rejected as unsupported domains.
+
+The public protocol currency roadmap is tracked in
+[#35](https://github.com/suchapalaver/cctp-rs/issues/35), including
+fast-transfer capability drift, Forwarding Service and Stellar-safe
+flows, Fast Transfer allowance preflight, Standard Transfer fee-switch
+support, current EVM route coverage, and an automated drift check.
 
 ### CCTP v1 (Legacy)
 
