@@ -140,7 +140,7 @@ theorem fromU32_toU32 (d : DomainId) : fromU32 (toU32 d) = some d := by
 
 /-- Canonicality: an accepted wire value is exactly the encoding of the
 domain it decodes to. Together with `fromU32_toU32` this makes the
-conversion a bijection between the 21 announced IDs and the typed values. -/
+conversion a bijection between the 21 modeled IDs and the typed values. -/
 theorem toU32_of_fromU32 {n : Nat} {d : DomainId} (h : fromU32 n = some d) :
     toU32 d = n := by
   unfold fromU32 at h

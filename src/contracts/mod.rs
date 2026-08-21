@@ -9,8 +9,8 @@
 //! - v1: Original CCTP contracts (7 chain families)
 //! - v2: Enhanced contracts with Fast Transfer, hooks, and 11 v2-capable
 //!   chain families (the v1 set plus Linea, Sonic, Sei, HyperEVM). The
-//!   protocol parser handles all 21 announced CCTP v2 domain IDs
-//!   independently of bridge SDK support.
+//!   protocol parser handles the 21 CCTP v2 domain IDs currently implemented
+//!   by cctp-rs, independently of bridge SDK support.
 //!
 //! ## Public API
 //!

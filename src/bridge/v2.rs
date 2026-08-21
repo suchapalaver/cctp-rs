@@ -56,9 +56,10 @@ use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contrac
 /// - **Programmable Hooks**: Execute custom logic post-transfer (swaps, lending, etc.)
 /// - **Expanded Networks**: 11 v2-capable EVM chain families supported
 ///   (the 7 v1 chain families plus Linea, Sonic, Sei, HyperEVM) with their
-///   testnets. The protocol parser recognizes all 21 announced CCTP v2
-///   domain IDs (including non-EVM domains such as Solana and Starknet
-///   Testnet) but bridging requires `NamedChain::supports_cctp_v2()`.
+///   testnets. The protocol parser recognizes the 21 CCTP v2 domain IDs
+///   currently implemented by cctp-rs (including non-EVM domains such as
+///   Solana and Starknet Testnet), but bridging requires
+///   `NamedChain::supports_cctp_v2()`.
 /// - **Unified Addresses**: Same contract addresses across all chains in each environment
 ///
 /// # Examples
