@@ -48,7 +48,6 @@ SPDX-License-Identifier = "Apache-2.0"
 # generated fixtures (JSON, can't have inline headers)
 [[annotations]]
 path = [
-    "verification/README.md",
     "verification/lean-toolchain",
     "verification/lakefile.toml",
     "verification/lake-manifest.json",
@@ -57,10 +56,34 @@ path = [
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
 SPDX-License-Identifier = "Apache-2.0"
 
+# Touched verification README
+[[annotations]]
+path = "verification/README.md"
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
+SPDX-License-Identifier = "Apache-2.0"
+
+# Verification architecture review docs
+[[annotations]]
+path = "verification/architecture.md"
+SPDX-FileCopyrightText = "2026 Joseph Livesey <jlivesey@gmail.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
 # Configuration files
 [[annotations]]
 path = [".gitignore", ".github/**", ".cargo/**"]
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Touched GitHub configuration files
+[[annotations]]
+path = ".github/pull_request_template.md"
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
 SPDX-License-Identifier = "Apache-2.0"
 
 # Touched configuration files

@@ -15,6 +15,10 @@ trust-boundary documentation — so that a regression has to slip past
 several independent layers at once. See issue
 [#11](https://github.com/suchapalaver/cctp-rs/issues/11).
 
+For the broader architecture review process — including the Terraform-style
+resource graph, expert-panel memo format, and current claim ledger — see
+[`architecture.md`](architecture.md).
+
 ## First slice: scope
 
 | Invariant | Lean module | Rust module covered |
