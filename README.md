@@ -319,7 +319,10 @@ drift from the verified model.
 
 See [`verification/README.md`](verification/README.md) for exactly what is
 proven vs tested vs assumed, how to run the proof checks, and how to update
-the model when protocol parsing changes.
+the model when protocol parsing changes. See
+[`verification/architecture.md`](verification/architecture.md) for the
+resource-graph review process used to keep verification claims tied to the
+protocol implementation and external Circle authority.
 
 ## Error Handling
 

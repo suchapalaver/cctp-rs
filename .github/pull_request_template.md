@@ -48,6 +48,8 @@ Fixes #(issue number)
 - [ ] I have verified domain IDs are correct for new chain support
 - [ ] I have tested attestation flow if applicable
 - [ ] My changes maintain compatibility with Circle's CCTP protocol
+- [ ] For protocol, bridge, chain metadata, verification, CI, or public-claim changes,
+      I have checked `verification/architecture.md` and updated the claim ledger or linked a tracking issue
 
 ## Additional Notes
 Any additional information or context about the PR.
