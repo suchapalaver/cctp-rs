@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! CCTP v2 chain configuration trait
@@ -57,8 +58,8 @@ pub enum FastTransferFee {
 /// - **Expanded Chains**: Bridge SDK routes 11 v2-capable chain families
 ///   (the 7 v1 families plus Linea, Sonic, Sei, HyperEVM) with testnets,
 ///   versus the 7 v1 chain families. Note that this trait covers bridge
-///   SDK reach — Circle has announced 21 CCTP v2 domain IDs in total,
-///   which the protocol parser (`DomainId`, `ParsedV2Message`) can decode
+///   SDK reach; the protocol parser (`DomainId`, `ParsedV2Message`) can decode
+///   all 30 domain IDs in Circle's current CCTP domain table
 ///   independently of bridge support.
 ///
 /// # Example
@@ -74,7 +75,8 @@ pub enum FastTransferFee {
 pub trait CctpV2 {
     /// Returns true if this chain supports CCTP v2
     ///
-    /// All v1 chains support v2, plus 19 additional v2-only chains.
+    /// This covers the crate's validated bridge SDK routes, not every
+    /// parser-modeled CCTP domain.
     fn supports_cctp_v2(&self) -> bool;
 
     /// Returns true if this chain supports Fast Transfer

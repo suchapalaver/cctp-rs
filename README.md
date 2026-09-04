@@ -16,9 +16,8 @@ Circle software, and protocol currency work is tracked publicly in the
 
 - 🚀 **Type-safe** contract interactions using Alloy
 - 🔄 **Bridge SDK** for 11 v2-capable EVM mainnet chains plus 6 USDC
-  testnets; **protocol parser** currently implements 21 CCTP v2 domain
-  IDs, with Circle's 2026 domain expansion tracked in
-  [#28](https://github.com/suchapalaver/cctp-rs/issues/28)
+  testnets; **protocol parser** currently implements all 30 domain IDs
+  in Circle's current CCTP domain table
 - 📦 **Builder pattern** for intuitive API usage
 - ⚡ **CCTP v2 support** with fast transfers (<30s settlement)
 - 🤝 **Relayer-aware** APIs for permissionless v2 relay handling
@@ -36,8 +35,8 @@ choosing an integration path.
   attestations end-to-end for the chains listed below. These are the
   chains where `NamedChain::supports_cctp_v2()` returns `true`.
 - **Protocol parser** — `ParsedV2Message`, `ParsedV2MessageSummary`,
-  and the `DomainId` enum recognize the 21 CCTP v2 domain IDs currently
-  implemented by cctp-rs, including non-EVM domains.
+  and the `DomainId` enum recognize all 30 domain IDs in Circle's
+  current CCTP domain table, including non-EVM domains.
   Parsing a domain is independent of whether the bridge SDK can route
   to or from it. Non-EVM body address words are preserved as raw
   `bytes32` values; EVM address projections are exposed only when the
@@ -64,9 +63,12 @@ v2 domains, but the bridge SDK does **not** currently accept them as
 source or destination — `NamedChain::supports_cctp_v2()` returns
 `false` and the bridge builder will reject them:
 
-- Solana (5, non-EVM), Codex (12), World Chain (14), Monad (15),
-  BNB Smart Chain (17), XDC (18), Ink (21), Plume (22),
-  Starknet Testnet (25, non-EVM), Arc Testnet (26)
+- Solana (5, non-EVM), Aptos (9, non-EVM), Codex (12),
+  World Chain (14), Monad (15), BNB Smart Chain (17, USYC only),
+  XDC (18), Ink (21), Plume (22), Starknet (25, non-EVM),
+  Arc Testnet (26), Stellar (27, non-EVM), EDGE (28),
+  Injective (29), Morph (30), Pharos (31), Cronos (32),
+  Plasma (33), X Layer (37)
 
 Use this list when you need to *inspect* messages crossing these
 domains (for indexing, analytics, or wallet UIs) without routing
@@ -77,17 +79,18 @@ follow [AGENTS.md → Adding chain support](AGENTS.md#adding-chain-support).
 
 Circle's current
 [supported blockchains and domains](https://developers.circle.com/cctp/concepts/supported-chains-and-domains)
-docs list 28 CCTP v2 domains through X Layer (37). The parser table does
-not yet include the 2026 domain additions: Stellar (27), EDGE (28),
-Injective (29), Morph (30), Pharos (31), Cronos (32), and X Layer (37).
-Until [#28](https://github.com/suchapalaver/cctp-rs/issues/28) lands,
-messages for those domains are rejected as unsupported domains.
+docs list 30 current CCTP domain IDs through X Layer (37), plus the
+V1 legacy-only Noble (4) and Sui (8) domains. The parser table tracks
+the current 30-domain CCTP table; bridge routing remains a separate,
+validated support boundary.
 
 The public protocol currency roadmap is tracked in
 [#35](https://github.com/suchapalaver/cctp-rs/issues/35), including
 fast-transfer capability drift, Forwarding Service and Stellar-safe
 flows, Fast Transfer allowance preflight, Standard Transfer fee-switch
-support, current EVM route coverage, and an automated drift check.
+support, current EVM route coverage, EURC asset support
+([#44](https://github.com/suchapalaver/cctp-rs/issues/44)), and an
+automated drift check.
 
 ### CCTP v1 (Legacy)
 

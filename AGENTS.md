@@ -15,13 +15,11 @@ layers that have different coverage:
   v2-capable chain families (7 v1 chain families plus Linea, Sonic,
   Sei, HyperEVM) with their testnets.
 - **Protocol parser** (`DomainId`, `ParsedV2Message`,
-  `ParsedV2MessageSummary`) — currently recognizes the 21 CCTP v2 domain
-  IDs implemented by cctp-rs, including non-EVM domains (Solana,
-  Starknet Testnet). Circle's current docs list newer 2026 domains that
-  are tracked in README's protocol currency roadmap. Parsing is
-  independent of whether the bridge SDK can route to or from a given
-  domain; see the README's "Protocol parser — additional domains"
-  section for the parse-only list.
+  `ParsedV2MessageSummary`) — recognizes all 30 domain IDs in Circle's
+  current CCTP domain table, including non-EVM domains (Solana, Aptos,
+  Starknet, Stellar). Parsing is independent of whether the bridge SDK
+  can route to or from a given domain; see the README's
+  "Protocol parser — additional domains" section for the parse-only list.
 
 Supports both CCTP v1 (legacy) and v2 (current, fast transfers with
 sub-30s settlement).
@@ -187,9 +185,9 @@ follow-up issue/comment explaining what was bypassed and why.
 5. Update the prose counts and chain lists in `README.md` and
    `AGENTS.md` so the docs stay in sync with what the parser and
    bridge actually cover:
-   - Every new `DomainId` variant bumps the v2 domain ID count
-     quoted in both files and updates the README's protocol currency
-     roadmap.
+   - Every new `DomainId` variant bumps the domain ID count quoted in
+     both files ("all 30 domain IDs in Circle's current CCTP domain
+     table") and updates the README's protocol currency roadmap.
    - If `NamedChain::supports_cctp_v2()` returns `true` for the new
      chain, bump the v2-capable chain family count in this file
      (currently "11 v2-capable chain families (7 v1 chain families

@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! CCTP domain ID types for identifying blockchain networks
@@ -7,7 +8,7 @@
 //! for each supported blockchain network. This module provides a strongly-typed
 //! enum to prevent invalid domain IDs at compile time.
 //!
-//! Reference: <https://developers.circle.com/stablecoins/evm-smart-contracts>
+//! Reference: <https://developers.circle.com/cctp/concepts/supported-chains-and-domains>
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -16,12 +17,14 @@ use thiserror::Error;
 /// CCTP domain identifier for blockchain networks
 ///
 /// Each blockchain network supported by Circle's CCTP has a unique domain ID.
-/// This enum provides type-safe representation of these identifiers.
+/// This enum provides type-safe representation of the current CCTP domain
+/// table for protocol parsing.
 ///
 /// # CCTP Version Support
 ///
-/// - Domains 0-10: Supported in CCTP v1 and v2
-/// - Domains 11+: Only supported in CCTP v2
+/// This enum models Circle's current CCTP domain identifier table, excluding
+/// v1 legacy-only Noble (4) and Sui (8). Bridge support is narrower than this
+/// parser table; use `NamedChain::supports_cctp_v2()` before routing.
 ///
 /// # Serialization Compatibility
 ///
@@ -52,40 +55,59 @@ pub enum DomainId {
     Optimism = 2,
     /// Arbitrum One and Arbitrum Sepolia (Domain ID: 3)
     Arbitrum = 3,
-    /// Solana (Domain ID: 5) - Non-EVM chain, v2 only
+    /// Solana (Domain ID: 5) - Non-EVM chain
     Solana = 5,
     /// Base and Base Sepolia (Domain ID: 6)
     Base = 6,
     /// Polygon `PoS` (Domain ID: 7)
     Polygon = 7,
+    /// Aptos (Domain ID: 9) - Non-EVM chain, parse-only
+    Aptos = 9,
     /// Unichain (Domain ID: 10)
     Unichain = 10,
-    /// Linea (Domain ID: 11) - v2 only
+    /// Linea (Domain ID: 11)
     Linea = 11,
-    /// Codex (Domain ID: 12) - v2 only
+    /// Codex (Domain ID: 12)
     Codex = 12,
-    /// Sonic (Domain ID: 13) - v2 only
+    /// Sonic (Domain ID: 13)
     Sonic = 13,
-    /// World Chain (Domain ID: 14) - v2 only
+    /// World Chain (Domain ID: 14)
     WorldChain = 14,
-    /// Monad (Domain ID: 15) - v2 only
+    /// Monad (Domain ID: 15)
     Monad = 15,
-    /// Sei (Domain ID: 16) - v2 only
+    /// Sei (Domain ID: 16)
     Sei = 16,
-    /// BNB Smart Chain (Domain ID: 17) - v2 only
+    /// BNB Smart Chain (Domain ID: 17) - USYC only in Circle's current table
     BnbSmartChain = 17,
-    /// XDC Network (Domain ID: 18) - v2 only
+    /// XDC Network (Domain ID: 18)
     Xdc = 18,
-    /// `HyperEVM` (Domain ID: 19) - v2 only
+    /// `HyperEVM` (Domain ID: 19)
     HyperEvm = 19,
-    /// Ink (Domain ID: 21) - v2 only
+    /// Ink (Domain ID: 21)
     Ink = 21,
-    /// Plume (Domain ID: 22) - v2 only
+    /// Plume (Domain ID: 22)
     Plume = 22,
-    /// Starknet Testnet (Domain ID: 25) - Non-EVM chain, v2 only
+    /// Starknet (Domain ID: 25) - Non-EVM chain
+    #[serde(rename = "starknet", alias = "starknet_testnet")]
     StarknetTestnet = 25,
-    /// Arc Testnet (Domain ID: 26) - v2 only
+    /// Arc Testnet (Domain ID: 26)
     ArcTestnet = 26,
+    /// Stellar (Domain ID: 27) - Non-EVM chain
+    Stellar = 27,
+    /// EDGE (Domain ID: 28)
+    Edge = 28,
+    /// Injective (Domain ID: 29)
+    Injective = 29,
+    /// Morph (Domain ID: 30)
+    Morph = 30,
+    /// Pharos (Domain ID: 31)
+    Pharos = 31,
+    /// Cronos (Domain ID: 32)
+    Cronos = 32,
+    /// Plasma (Domain ID: 33)
+    Plasma = 33,
+    /// X Layer (Domain ID: 37)
+    XLayer = 37,
 }
 
 impl DomainId {
@@ -128,6 +150,7 @@ impl DomainId {
             5 => Some(Self::Solana),
             6 => Some(Self::Base),
             7 => Some(Self::Polygon),
+            9 => Some(Self::Aptos),
             10 => Some(Self::Unichain),
             11 => Some(Self::Linea),
             12 => Some(Self::Codex),
@@ -142,6 +165,14 @@ impl DomainId {
             22 => Some(Self::Plume),
             25 => Some(Self::StarknetTestnet),
             26 => Some(Self::ArcTestnet),
+            27 => Some(Self::Stellar),
+            28 => Some(Self::Edge),
+            29 => Some(Self::Injective),
+            30 => Some(Self::Morph),
+            31 => Some(Self::Pharos),
+            32 => Some(Self::Cronos),
+            33 => Some(Self::Plasma),
+            37 => Some(Self::XLayer),
             _ => None,
         }
     }
@@ -168,6 +199,7 @@ impl DomainId {
             Self::Solana => "Solana",
             Self::Base => "Base",
             Self::Polygon => "Polygon",
+            Self::Aptos => "Aptos",
             Self::Unichain => "Unichain",
             Self::Linea => "Linea",
             Self::Codex => "Codex",
@@ -180,8 +212,16 @@ impl DomainId {
             Self::HyperEvm => "HyperEVM",
             Self::Ink => "Ink",
             Self::Plume => "Plume",
-            Self::StarknetTestnet => "Starknet Testnet",
+            Self::StarknetTestnet => "Starknet",
             Self::ArcTestnet => "Arc Testnet",
+            Self::Stellar => "Stellar",
+            Self::Edge => "EDGE",
+            Self::Injective => "Injective",
+            Self::Morph => "Morph",
+            Self::Pharos => "Pharos",
+            Self::Cronos => "Cronos",
+            Self::Plasma => "Plasma",
+            Self::XLayer => "X Layer",
         }
     }
 
@@ -192,7 +232,10 @@ impl DomainId {
     #[inline]
     #[must_use]
     pub const fn is_evm(self) -> bool {
-        !matches!(self, Self::Solana | Self::StarknetTestnet)
+        !matches!(
+            self,
+            Self::Solana | Self::Aptos | Self::StarknetTestnet | Self::Stellar
+        )
     }
 }
 
@@ -229,17 +272,15 @@ mod tests {
 
     #[test]
     fn test_domain_id_values() {
-        // v1 and v2 chains
         assert_eq!(DomainId::Ethereum.as_u32(), 0);
         assert_eq!(DomainId::Avalanche.as_u32(), 1);
         assert_eq!(DomainId::Optimism.as_u32(), 2);
         assert_eq!(DomainId::Arbitrum.as_u32(), 3);
+        assert_eq!(DomainId::Solana.as_u32(), 5);
         assert_eq!(DomainId::Base.as_u32(), 6);
         assert_eq!(DomainId::Polygon.as_u32(), 7);
+        assert_eq!(DomainId::Aptos.as_u32(), 9);
         assert_eq!(DomainId::Unichain.as_u32(), 10);
-
-        // v2 only chains
-        assert_eq!(DomainId::Solana.as_u32(), 5);
         assert_eq!(DomainId::Linea.as_u32(), 11);
         assert_eq!(DomainId::Codex.as_u32(), 12);
         assert_eq!(DomainId::Sonic.as_u32(), 13);
@@ -253,48 +294,61 @@ mod tests {
         assert_eq!(DomainId::Plume.as_u32(), 22);
         assert_eq!(DomainId::StarknetTestnet.as_u32(), 25);
         assert_eq!(DomainId::ArcTestnet.as_u32(), 26);
+        assert_eq!(DomainId::Stellar.as_u32(), 27);
+        assert_eq!(DomainId::Edge.as_u32(), 28);
+        assert_eq!(DomainId::Injective.as_u32(), 29);
+        assert_eq!(DomainId::Morph.as_u32(), 30);
+        assert_eq!(DomainId::Pharos.as_u32(), 31);
+        assert_eq!(DomainId::Cronos.as_u32(), 32);
+        assert_eq!(DomainId::Plasma.as_u32(), 33);
+        assert_eq!(DomainId::XLayer.as_u32(), 37);
     }
 
     #[test]
     fn test_from_u32_valid() {
-        // v1 and v2 chains
         assert_eq!(DomainId::from_u32(0), Some(DomainId::Ethereum));
         assert_eq!(DomainId::from_u32(1), Some(DomainId::Avalanche));
         assert_eq!(DomainId::from_u32(2), Some(DomainId::Optimism));
         assert_eq!(DomainId::from_u32(3), Some(DomainId::Arbitrum));
+        assert_eq!(DomainId::from_u32(5), Some(DomainId::Solana));
         assert_eq!(DomainId::from_u32(6), Some(DomainId::Base));
         assert_eq!(DomainId::from_u32(7), Some(DomainId::Polygon));
+        assert_eq!(DomainId::from_u32(9), Some(DomainId::Aptos));
         assert_eq!(DomainId::from_u32(10), Some(DomainId::Unichain));
-
-        // v2 only chains - priority chains
         assert_eq!(DomainId::from_u32(11), Some(DomainId::Linea));
-        assert_eq!(DomainId::from_u32(13), Some(DomainId::Sonic));
-        assert_eq!(DomainId::from_u32(16), Some(DomainId::Sei));
-        assert_eq!(DomainId::from_u32(17), Some(DomainId::BnbSmartChain));
-
-        // v2 only chains - other
-        assert_eq!(DomainId::from_u32(5), Some(DomainId::Solana));
         assert_eq!(DomainId::from_u32(12), Some(DomainId::Codex));
+        assert_eq!(DomainId::from_u32(13), Some(DomainId::Sonic));
         assert_eq!(DomainId::from_u32(14), Some(DomainId::WorldChain));
         assert_eq!(DomainId::from_u32(15), Some(DomainId::Monad));
+        assert_eq!(DomainId::from_u32(16), Some(DomainId::Sei));
+        assert_eq!(DomainId::from_u32(17), Some(DomainId::BnbSmartChain));
         assert_eq!(DomainId::from_u32(18), Some(DomainId::Xdc));
         assert_eq!(DomainId::from_u32(19), Some(DomainId::HyperEvm));
         assert_eq!(DomainId::from_u32(21), Some(DomainId::Ink));
         assert_eq!(DomainId::from_u32(22), Some(DomainId::Plume));
         assert_eq!(DomainId::from_u32(25), Some(DomainId::StarknetTestnet));
         assert_eq!(DomainId::from_u32(26), Some(DomainId::ArcTestnet));
+        assert_eq!(DomainId::from_u32(27), Some(DomainId::Stellar));
+        assert_eq!(DomainId::from_u32(28), Some(DomainId::Edge));
+        assert_eq!(DomainId::from_u32(29), Some(DomainId::Injective));
+        assert_eq!(DomainId::from_u32(30), Some(DomainId::Morph));
+        assert_eq!(DomainId::from_u32(31), Some(DomainId::Pharos));
+        assert_eq!(DomainId::from_u32(32), Some(DomainId::Cronos));
+        assert_eq!(DomainId::from_u32(33), Some(DomainId::Plasma));
+        assert_eq!(DomainId::from_u32(37), Some(DomainId::XLayer));
     }
 
     #[test]
     fn test_from_u32_invalid() {
         // Test gaps in domain ID space
-        assert_eq!(DomainId::from_u32(4), None); // Gap
-        assert_eq!(DomainId::from_u32(8), None); // Gap
-        assert_eq!(DomainId::from_u32(9), None); // Gap
+        assert_eq!(DomainId::from_u32(4), None); // V1 legacy-only Noble
+        assert_eq!(DomainId::from_u32(8), None); // V1 legacy-only Sui
         assert_eq!(DomainId::from_u32(20), None); // Gap
         assert_eq!(DomainId::from_u32(23), None); // Gap
         assert_eq!(DomainId::from_u32(24), None); // Gap
-        assert_eq!(DomainId::from_u32(27), None); // Beyond current
+        assert_eq!(DomainId::from_u32(34), None); // Gap
+        assert_eq!(DomainId::from_u32(35), None); // Gap
+        assert_eq!(DomainId::from_u32(36), None); // Gap
         assert_eq!(DomainId::from_u32(999), None); // Way beyond
     }
 
@@ -316,6 +370,8 @@ mod tests {
         assert_eq!(format!("{}", DomainId::Ethereum), "Ethereum (0)");
         assert_eq!(format!("{}", DomainId::Arbitrum), "Arbitrum (3)");
         assert_eq!(format!("{}", DomainId::Base), "Base (6)");
+        assert_eq!(format!("{}", DomainId::StarknetTestnet), "Starknet (25)");
+        assert_eq!(format!("{}", DomainId::XLayer), "X Layer (37)");
     }
 
     #[test]
@@ -323,29 +379,49 @@ mod tests {
         assert_eq!(DomainId::Ethereum.name(), "Ethereum");
         assert_eq!(DomainId::Arbitrum.name(), "Arbitrum");
         assert_eq!(DomainId::Avalanche.name(), "Avalanche");
+        assert_eq!(DomainId::StarknetTestnet.name(), "Starknet");
+        assert_eq!(DomainId::XLayer.name(), "X Layer");
+    }
+
+    #[test]
+    fn test_starknet_serde_accepts_legacy_name() {
+        assert_eq!(
+            serde_json::to_string(&DomainId::StarknetTestnet).unwrap(),
+            "\"starknet\""
+        );
+        assert_eq!(
+            serde_json::from_str::<DomainId>("\"starknet\"").unwrap(),
+            DomainId::StarknetTestnet
+        );
+        assert_eq!(
+            serde_json::from_str::<DomainId>("\"starknet_testnet\"").unwrap(),
+            DomainId::StarknetTestnet
+        );
     }
 
     #[test]
     fn test_is_evm() {
         assert!(DomainId::Ethereum.is_evm());
         assert!(DomainId::Base.is_evm());
+        assert!(DomainId::XLayer.is_evm());
         assert!(!DomainId::Solana.is_evm());
+        assert!(!DomainId::Aptos.is_evm());
         assert!(!DomainId::StarknetTestnet.is_evm());
+        assert!(!DomainId::Stellar.is_evm());
     }
 
     #[test]
     fn test_conversion_roundtrip() {
         for domain in [
-            // v1 and v2 chains
             DomainId::Ethereum,
             DomainId::Avalanche,
             DomainId::Optimism,
             DomainId::Arbitrum,
+            DomainId::Solana,
             DomainId::Base,
             DomainId::Polygon,
+            DomainId::Aptos,
             DomainId::Unichain,
-            // v2 only chains
-            DomainId::Solana,
             DomainId::Linea,
             DomainId::Codex,
             DomainId::Sonic,
@@ -359,6 +435,14 @@ mod tests {
             DomainId::Plume,
             DomainId::StarknetTestnet,
             DomainId::ArcTestnet,
+            DomainId::Stellar,
+            DomainId::Edge,
+            DomainId::Injective,
+            DomainId::Morph,
+            DomainId::Pharos,
+            DomainId::Cronos,
+            DomainId::Plasma,
+            DomainId::XLayer,
         ] {
             let value: u32 = domain.into();
             let parsed = DomainId::try_from(value).unwrap();

@@ -1,4 +1,5 @@
 -- SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+-- SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 --
 -- SPDX-License-Identifier: Apache-2.0
 
@@ -70,6 +71,8 @@ def addrC : List UInt8 := ofHex "1234567890abcdef1234567890abcdef12345678"
 def solanaTokenWord : List UInt8 := repeatByte 0xcd 32
 def solanaSenderWord : List UInt8 := repeatByte 0xef 32
 def starknetRecipientWord : List UInt8 := repeatByte 0x42 32
+def stellarTokenWord : List UInt8 := repeatByte 0xac 32
+def stellarSenderWord : List UInt8 := repeatByte 0xbe 32
 
 /-- A real canonical CCTP v2 message (Arbitrum → Base, 1 USDC) captured from
 Circle Iris; also used in the Rust unit tests in `src/protocol/message.rs`. -/
@@ -119,6 +122,11 @@ def starknetDestinationMessage : Message :=
       (evmWord addrA) (repeatByte 0x42 32) (repeatByte 0x77 32) 1000 2000
     body := mkBody 1 (evmWord usdcAddr2) starknetRecipientWord 1 (evmWord addrA) 0 0 0 [] }
 
+def stellarSourceMessage : Message :=
+  { header := mkHeader 1 .stellar .ethereum (repeatByte 0x33 32)
+      stellarSenderWord (evmWord addrC) zeroWord 2000 2000
+    body := mkBody 1 stellarTokenWord (evmWord addrC) 123456 stellarSenderWord 0 0 0 [] }
+
 def maxValuesMessage : Message :=
   { header := mkHeader 1 .base .avalanche (repeatByte 0xff 32) (evmWord addrC)
       (evmWord addrA) zeroWord 0 1500
@@ -163,6 +171,9 @@ def acceptVectors : Except String (List AcceptVector) := do
     ⟨"starknet_destination_caller_set",
       "Non-EVM destination domain: raw recipient and caller words, fast requested but standard executed.",
       starknetDestinationMessage⟩,
+    ⟨"stellar_source_standard_transfer",
+      "Non-EVM source domain newly covered by the domain table: raw token and sender words, EVM destination recipient.",
+      stellarSourceMessage⟩,
     ⟨"max_values_numeric_fields",
       "Maximum uint256 amounts and fees, supported header/body versions, finality values matching no known mode.",
       maxValuesMessage⟩,
@@ -185,11 +196,11 @@ def rejectVectors : List RejectVector :=
       "too_short_body", minimalMessage.header.encode⟩,
     ⟨"message_minus_one_byte", "375 bytes: one short of the minimum message.",
       "too_short_body", minimal.take 375⟩,
-    ⟨"unknown_source_domain_4", "Domain 4 has never been announced by Circle.",
+    ⟨"unknown_source_domain_4", "Domain 4 is Noble, currently CCTP V1 legacy-only.",
       "unknown_source_domain", setSlice minimal (beBytes 4 4) 4⟩,
-    ⟨"unknown_source_domain_8", "Domain 8 is a gap in Circle's table.",
+    ⟨"unknown_source_domain_8", "Domain 8 is Sui, currently CCTP V1 legacy-only.",
       "unknown_source_domain", setSlice minimal (beBytes 4 8) 4⟩,
-    ⟨"unknown_destination_domain_999", "Domain 999 is far beyond the announced table.",
+    ⟨"unknown_destination_domain_999", "Domain 999 is far beyond the current table.",
       "unknown_destination_domain", setSlice minimal (beBytes 4 999) 8⟩,
     ⟨"unknown_destination_domain_20", "Domain 20 is a gap in Circle's table.",
       "unknown_destination_domain", setSlice minimal (beBytes 4 20) 8⟩,
@@ -213,7 +224,7 @@ def rejectVectors : List RejectVector :=
 
 /-! ## Constant-conversion vectors -/
 
-/-- Two past the largest announced domain ID, derived from the model's own
+/-- Two past the largest modeled domain ID, derived from the model's own
 table (completeness enforced by `DomainId.mem_all`) so the sweep cannot go
 stale when a domain is added. -/
 def domainSweepBound : Nat :=

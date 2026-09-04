@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! CCTP v2 message format types
@@ -741,8 +742,9 @@ impl ParsedV2Message {
 /// are always populated. The EVM-shaped fields (`sender`, `recipient`,
 /// `destination_caller`) are populated only when the corresponding domain is
 /// EVM ([`DomainId::is_evm`]); for non-EVM domains such as
-/// [`DomainId::Solana`] or [`DomainId::StarknetTestnet`], they are `None`
-/// because a trailing-20-byte projection would be misleading.
+/// [`DomainId::Solana`], [`DomainId::Aptos`], [`DomainId::StarknetTestnet`],
+/// or [`DomainId::Stellar`], they are `None` because a trailing-20-byte
+/// projection would be misleading.
 ///
 /// The same pattern applies to burn-body words: `burn_token_bytes`,
 /// `mint_recipient_bytes`, and `message_sender_bytes` always carry the
