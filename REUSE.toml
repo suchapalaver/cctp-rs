@@ -13,20 +13,37 @@ SPDX-License-Identifier = "Apache-2.0"
 
 # Package management files
 [[annotations]]
-path = ["Cargo.toml", "Cargo.lock", "deny.toml"]
+path = ["Cargo.lock", "deny.toml"]
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Touched package metadata
+[[annotations]]
+path = "Cargo.toml"
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
 SPDX-License-Identifier = "Apache-2.0"
 
 # Documentation
 [[annotations]]
 path = [
-    "AGENTS.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "TESTNET_VALIDATION.md",
     "abis/v2/README.md",
 ]
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Touched agent guidance
+[[annotations]]
+path = "AGENTS.md"
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
 SPDX-License-Identifier = "Apache-2.0"
 
 # Touched documentation
@@ -51,9 +68,17 @@ path = [
     "verification/lean-toolchain",
     "verification/lakefile.toml",
     "verification/lake-manifest.json",
-    "tests/fixtures/**",
 ]
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Touched generated Lean correspondence fixture
+[[annotations]]
+path = "tests/fixtures/lean/cctp_v2_vectors.json"
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
 SPDX-License-Identifier = "Apache-2.0"
 
 # Touched verification README

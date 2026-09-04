@@ -116,8 +116,8 @@ Failure modes:
 |---|---|---|---|
 | Circle CCTP technical guide | `provider` | trusted by message parser, finality, Iris, nonce, and hook claims | Trusted authority; not controlled here. |
 | Circle CCTP fee guide | `provider` | trusted by fee and fee-switch claims | Trusted authority; protocol drift tracked by #31, #32, #33, and #35. |
-| `src/protocol/domain_id.rs` | `rust_resource` | implements Circle domain IDs; mirrored by `Domain.lean`; documented by README/rustdoc | Tested against Lean fixtures; known protocol drift tracked by #28 and #38. |
-| `verification/CctpSpec/Domain.lean` | `lean_resource` | mirrors Rust domain table; proves conversion canonicality | Proven for currently modeled IDs; stale wording tracked by #38. |
+| `src/protocol/domain_id.rs` | `rust_resource` | implements Circle domain IDs; mirrored by `Domain.lean`; documented by README/rustdoc | Tested against Lean fixtures; current domain-table drift handled by the parser/model/doc graph. |
+| `verification/CctpSpec/Domain.lean` | `lean_resource` | mirrors Rust domain table; proves conversion canonicality | Proven for all currently modeled IDs. |
 | `verification/CctpSpec/Finality.lean` | `lean_resource` | mirrors `FinalityThreshold`; proves accepted wire values | Proven for 1000 and 2000. |
 | `verification/CctpSpec/TransferMode.lean` | `lean_resource` | mirrors transfer-mode dispatch; proves fee/finality/hook relationships | Proven for current Rust mode vocabulary. |
 | `verification/CctpSpec/Bytes.lean` and `Message.lean` | `lean_resource` | model CCTP v2 bytes and messages; prove round-trip and canonicality | Proven inside the parser slice. |
@@ -140,7 +140,7 @@ Use this ledger when reviewing verification-related PRs.
 | Proven | Domain/finality conversion canonicality, transfer-mode dispatch properties, big-endian codecs, bytes32 EVM address canonicality, and CCTP v2 parser round-trip/canonicality over the Lean model. |
 | Tested | Rust parser correspondence with Lean-generated fixtures; parser rejection behavior over modeled edge cases; generated-fixture freshness in CI. |
 | Assumed | Circle docs are current; Iris returns canonical messages; alloy-rs primitives and `keccak256` are correct; contracts, RPC providers, relayers, rustc/LLVM, Lean, Lake, OS, hardware, and CI behave correctly. |
-| Stale | Domain coverage wording and tables can lag Circle's published support; tracked by #28, #29, #35, and #38. |
+| Stale | Domain coverage wording and tables can lag Circle's published support; future drift automation is tracked by #29 and ongoing protocol currency by #35. EURC asset support is tracked by #44. |
 | Unowned | Whole bridge lifecycle verification was not tracked before #42; direct external expert review notes do not yet have a template beyond this document. |
 
 ## Expert-panel memos
@@ -239,12 +239,11 @@ verification files, CI policy, or public verification claims:
 ## Follow-up map
 
 - #15: model `CctpV2Route` validity in Lean.
-- #28: update the protocol domain table for current Circle domains.
 - #29: add a Circle CCTP protocol drift check.
 - #31: align fast-transfer support with Circle source capability.
 - #32: add Fast Transfer allowance preflight.
 - #33: support Standard Transfer fee switch.
 - #34: triage bridge route support for current CCTP EVM domains.
 - #35: maintain protocol currency as an ongoing roadmap item.
-- #38: remove stale announced-domain claims.
 - #42: model the v2 attestation and mint lifecycle.
+- #44: support EURC as a CCTP transfer asset.

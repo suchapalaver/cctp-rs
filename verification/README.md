@@ -23,7 +23,7 @@ resource graph, expert-panel memo format, and current claim ledger — see
 
 | Invariant | Lean module | Rust module covered |
 |---|---|---|
-| `DomainId` ↔ `u32` is a bijection on exactly the 21 modeled IDs; `is_evm` classification | `CctpSpec/Domain.lean` | `src/protocol/domain_id.rs` |
+| `DomainId` ↔ `u32` is a bijection on exactly the 30 modeled IDs; `is_evm` classification | `CctpSpec/Domain.lean` | `src/protocol/domain_id.rs` |
 | `FinalityThreshold` ↔ `u32` accepts exactly 1000 (fast) and 2000 (standard) | `CctpSpec/Finality.lean` | `src/protocol/finality.rs` |
 | `TransferMode` dispatch: fast variants ⇔ threshold 1000; standard variants send zero `maxFee`; hooks carried exactly by `*WithHook` | `CctpSpec/TransferMode.lean` | `src/bridge/transfer_mode.rs` |
 | Big-endian field codec round-trips; `bytes32` EVM-address words are canonical (12 zero leading bytes) | `CctpSpec/Bytes.lean` | `src/protocol/message.rs` (`decode_address_word`, field codecs) |
@@ -146,8 +146,8 @@ Mapped to the checklist in issue #11:
 
 | Claim | Theorem |
 |---|---|
-| `DomainId` u32 conversion round-trips and is canonical/injective on exactly the 21 modeled IDs | `DomainId.fromU32_toU32`, `DomainId.toU32_of_fromU32`, `DomainId.toU32_injective` |
-| Solana and Starknet Testnet are exactly the non-EVM domains | `DomainId.isEvm_eq_false_iff` |
+| `DomainId` u32 conversion round-trips and is canonical/injective on exactly the 30 modeled IDs | `DomainId.fromU32_toU32`, `DomainId.toU32_of_fromU32`, `DomainId.toU32_injective` |
+| Solana, Aptos, Starknet, and Stellar are exactly the non-EVM domains | `DomainId.isEvm_eq_false_iff` |
 | `FinalityThreshold` accepts exactly 1000/2000, fast = 1000, standard = 2000 | `FinalityThreshold.fromU32_toU32`, `toU32_of_fromU32`, `toU32_fast`, `toU32_standard` |
 | Fast transfer modes — and only they — request threshold 1000; standard modes send zero `maxFee`; hooks ⇔ `*WithHook` | `TransferMode.finality_wire_value`, `maxFee_eq_zero_of_not_fast`, `hookData_isSome_iff` |
 | Big-endian field encoding round-trips; every byte string is the canonical encoding of its value | `natOfBe_beBytes`, `beBytes_natOfBe` |
@@ -161,13 +161,13 @@ the existing unit suite):
 
 | Claim | Where |
 |---|---|
-| Production `DomainId::from_u32` / `is_evm` / serde names match the model over domains 0–27 and sentinels | `domain_id_conversion_matches_lean_model` |
+| Production `DomainId::from_u32` / `is_evm` / serde names match the model over domains 0–38 and sentinels | `domain_id_conversion_matches_lean_model` |
 | Production `FinalityThreshold::from_u32` matches the model | `finality_threshold_conversion_matches_lean_model` |
 | Production `TransferMode` dispatch matches the model | `transfer_mode_dispatch_matches_lean_model` |
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
 | Production parser rejects the model's reject vectors, including unsupported header/body versions, naming the offending field or version | `rejected_messages_fail_to_parse` |
 | Real Circle Iris message (Arbitrum→Base) parses identically in model and production | first accept vector |
-| Non-EVM source/destination body words are retained as `bytes32`, with EVM address projections omitted from summaries where misleading | `solana_source_placeholder_nonce` and `starknet_destination_caller_set` vectors; `src/protocol/message.rs` unit tests |
+| Non-EVM source/destination body words are retained as `bytes32`, with EVM address projections omitted from summaries where misleading | `solana_source_placeholder_nonce`, `starknet_destination_caller_set`, and `stellar_source_standard_transfer` vectors; `src/protocol/message.rs` unit tests |
 
 **Assumed** (outside the model; documented, not checked here):
 

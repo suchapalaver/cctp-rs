@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! Chain configuration and contract addresses for CCTP
@@ -9,8 +10,8 @@
 //! - `CctpV1`: Original 7 chain families
 //! - `CctpV2`: 11 v2-capable chain families (the v1 set plus Linea, Sonic,
 //!   Sei, HyperEVM) with Fast Transfer. The protocol parser (`DomainId`,
-//!   `ParsedV2Message`) recognizes the 21 CCTP v2 domain IDs currently
-//!   implemented by cctp-rs, independently of bridge SDK support.
+//!   `ParsedV2Message`) recognizes all 30 domain IDs in Circle's current
+//!   CCTP domain table, independently of bridge SDK support.
 
 pub mod addresses;
 mod config;
