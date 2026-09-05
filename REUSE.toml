@@ -112,7 +112,10 @@ SPDX-License-Identifier = "Apache-2.0"
 
 # Touched GitHub configuration files
 [[annotations]]
-path = ".github/pull_request_template.md"
+path = [
+    ".github/pull_request_template.md",
+    ".github/workflows/release.yml",
+]
 SPDX-FileCopyrightText = [
     "2025 Semiotic AI, Inc.",
     "2026 Joseph Livesey <jlivesey@gmail.com>",

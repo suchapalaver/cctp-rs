@@ -28,6 +28,10 @@ jobs:
     
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
+      with:
+        # cargo publish creates target/package output that rust-cache's
+        # post-save target cleanup can misclassify as test artifacts.
+        save-if: "false"
 
     - name: Run tests before publish
       run: cargo test --all-features
