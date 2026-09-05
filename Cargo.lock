@@ -1271,19 +1271,30 @@ dependencies = [
 
 [[package]]
 name = "cctp-rs"
-version = "7.0.2"
+version = "7.1.0"
 dependencies = [
  "alloy-chains",
+ "alloy-consensus",
+ "alloy-consensus-any",
  "alloy-contract",
+ "alloy-eips",
+ "alloy-genesis",
  "alloy-json-rpc",
  "alloy-network",
+ "alloy-network-primitives",
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-client",
  "alloy-rpc-types",
+ "alloy-rpc-types-anvil",
+ "alloy-rpc-types-any",
+ "alloy-rpc-types-eth",
+ "alloy-serde",
+ "alloy-signer",
  "alloy-signer-local",
  "alloy-sol-types",
  "alloy-transport",
+ "alloy-tx-macros",
  "async-trait",
  "bon",
  "dotenvy",

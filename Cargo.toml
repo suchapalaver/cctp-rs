@@ -1,6 +1,6 @@
 [package]
 name = "cctp-rs"
-version = "7.0.2"
+version = "7.1.0"
 edition = "2021"
 authors = ["Joseph Livesey <jlivesey@gmail.com>"]
 categories = ["finance", "api-bindings"]
@@ -13,21 +13,35 @@ repository = "https://github.com/suchapalaver/cctp-rs"
 
 [dependencies]
 alloy-chains = "0.2"
-alloy-contract = { version = "2.0", default-features = false }
-alloy-json-rpc = { version = "2.0", default-features = false }
-alloy-network = { version = "2.0", default-features = false }
+# Fresh release-time checks do not always use this repository's lockfile.
+# These caps keep Alloy resolution on the tested 2.1.x line until every
+# release-check environment is newer than the rust-version declared by Alloy 2.2+.
+alloy-consensus = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-consensus-any = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-contract = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-eips = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-genesis = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-json-rpc = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-network = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-network-primitives = { version = ">=2.0, <2.2.0", default-features = false }
 alloy-primitives = { version = "1.6", default-features = false, features = [
     "serde",
     "std",
     "rlp",
 ] }
-alloy-provider = { version = "2.0", default-features = false, features = [
+alloy-provider = { version = ">=2.0, <2.2.0", default-features = false, features = [
     "anvil-node",
     "reqwest",
 ] }
-alloy-rpc-types = "2.0"
+alloy-rpc-types = ">=2.0, <2.2.0"
+alloy-rpc-types-anvil = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-rpc-types-any = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-rpc-types-eth = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-serde = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-signer = { version = ">=2.0, <2.2.0", default-features = false }
 alloy-sol-types = { version = "1.6", features = ["json"] }
-alloy-transport = { version = "2.0", default-features = false }
+alloy-transport = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-tx-macros = { version = ">=2.0, <2.2.0", default-features = false }
 async-trait = "0.1"
 bon = "3.9"
 reqwest = { version = "0.13", features = ["json"] }
@@ -39,8 +53,8 @@ tracing = "0.1"
 url = "2.5"
 
 [dev-dependencies]
-alloy-rpc-client = { version = "2.0", default-features = false }
-alloy-signer-local = "2.0"
+alloy-rpc-client = { version = ">=2.0, <2.2.0", default-features = false }
+alloy-signer-local = ">=2.0, <2.2.0"
 dotenvy = "0.15"
 insta = "1.47"
 rstest = "0.26"

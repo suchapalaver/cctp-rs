@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.1.0] - 2026-09-04
+
+### Added
+
+- Added parser and Lean-model support for all 30 domain IDs in
+  Circle's current CCTP domain table, including Aptos, Stellar, EDGE,
+  Injective, Morph, Pharos, Cronos, Plasma, and X Layer.
+- Added a Terraform-style verification resource graph review document
+  and linked it from the verification README and PR checklist.
+
+### Changed
+
+- Updated the protocol currency roadmap and public docs to distinguish
+  parser domain coverage from bridge SDK route support.
+- Renamed the serialized/display form of domain 25 from
+  `starknet_testnet` to Circle's current `starknet` spelling while
+  preserving `starknet_testnet` as a deserialization alias.
+- Updated CI-facing comments and rustdocs to remove stale
+  announced-domain language.
+
+### Fixed
+
+- Refreshed the dependency graph to pick up the `h2` advisory fix pulled
+  through Alloy, resolving the blocked security maintenance item.
+- Capped direct Alloy `2.x` dependencies below `2.2.0` so fresh
+  release-time dependency resolution remains compatible with older
+  stable Rust toolchains still used by local release checks.
+- Allowed nightly clippy's async-trait lint drift without weakening the
+  stable lint gate.
+
 ## [7.0.2] - 2026-08-06
 
 ### Changed
