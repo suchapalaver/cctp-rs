@@ -115,6 +115,7 @@ SPDX-License-Identifier = "Apache-2.0"
 path = [
     ".github/pull_request_template.md",
     ".github/workflows/release.yml",
+    ".github/workflows/security.yml",
 ]
 SPDX-FileCopyrightText = [
     "2025 Semiotic AI, Inc.",
