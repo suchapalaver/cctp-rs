@@ -128,6 +128,7 @@ Failure modes:
 | `verification/README.md` | `claim_resource` | documents proven/tested/assumed scope | Primary claim boundary for verification. |
 | `README.md`, rustdoc, `AGENTS.md` | `claim_resource` | document public SDK and verification claims | Must link back to `verification/README.md` and this file when claims change. |
 | `CctpV2Route` and chain config | `rust_resource` | implements route validity and supported-chain policy | Not formally modeled yet; tracked by #15, #31, and #34. |
+| `CctpTransferAsset` and asset-aware bridge helpers | `rust_resource` | implement bridge asset policy and token-address lookup; trust Circle token address tables and asset rollout docs | Rust-tested for USDC/EURC/USYC boundaries; non-USDC Iris fee endpoint drift tracked by #53. |
 | `CctpV2Bridge` attestation/mint lifecycle | `rust_resource` | implements burn/Iris/receive behavior | Not formally modeled yet; tracked by #42. |
 | Live protocol drift check | `policy_resource` | would observe Circle authority and detect repo drift | Proposed by #29. |
 
@@ -140,7 +141,7 @@ Use this ledger when reviewing verification-related PRs.
 | Proven | Domain/finality conversion canonicality, transfer-mode dispatch properties, big-endian codecs, bytes32 EVM address canonicality, and CCTP v2 parser round-trip/canonicality over the Lean model. |
 | Tested | Rust parser correspondence with Lean-generated fixtures; parser rejection behavior over modeled edge cases; generated-fixture freshness in CI. |
 | Assumed | Circle docs are current; Iris returns canonical messages; alloy-rs primitives and `keccak256` are correct; contracts, RPC providers, relayers, rustc/LLVM, Lean, Lake, OS, hardware, and CI behave correctly. |
-| Stale | Domain coverage wording and tables can lag Circle's published support; future drift automation is tracked by #29 and ongoing protocol currency by #35. EURC asset support is tracked by #44. |
+| Stale | Domain coverage wording and tables can lag Circle's published support; future drift automation is tracked by #29 and ongoing protocol currency by #35. Non-USDC Iris fee and allowance endpoint drift is tracked by #53. |
 | Unowned | Whole bridge lifecycle verification was not tracked before #42; direct external expert review notes do not yet have a template beyond this document. |
 
 ## Expert-panel memos
@@ -246,4 +247,4 @@ verification files, CI policy, or public verification claims:
 - #34: triage bridge route support for current CCTP EVM domains.
 - #35: maintain protocol currency as an ongoing roadmap item.
 - #42: model the v2 attestation and mint lifecycle.
-- #44: support EURC as a CCTP transfer asset.
+- #53: track non-USDC Iris fee and allowance endpoints.

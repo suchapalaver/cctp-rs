@@ -6,7 +6,7 @@
 [![Build Status](https://img.shields.io/github/actions/workflow/status/suchapalaver/cctp-rs/ci.yml?branch=main)](https://github.com/suchapalaver/cctp-rs/actions)
 [![REUSE status](https://api.reuse.software/badge/github.com/suchapalaver/cctp-rs)](https://api.reuse.software/info/github.com/suchapalaver/cctp-rs)
 
-A production-ready Rust implementation of Circle's Cross-Chain Transfer Protocol (CCTP), enabling seamless USDC transfers across blockchain networks.
+A production-ready Rust implementation of Circle's Cross-Chain Transfer Protocol (CCTP), enabling seamless USDC transfers and asset-aware EURC bridge flows across Circle-supported blockchain networks.
 
 cctp-rs is independently maintained community Rust tooling. It is not official
 Circle software, and protocol currency work is tracked publicly in the
@@ -16,8 +16,9 @@ Circle software, and protocol currency work is tracked publicly in the
 
 - 🚀 **Type-safe** contract interactions using Alloy
 - 🔄 **Bridge SDK** for 11 v2-capable EVM mainnet chains plus 6 USDC
-  testnets; **protocol parser** currently implements all 30 domain IDs
-  in Circle's current CCTP domain table
+  testnets, with EURC helpers for Ethereum <-> Base; **protocol parser**
+  currently implements all 30 domain IDs in Circle's current CCTP
+  domain table
 - 📦 **Builder pattern** for intuitive API usage
 - ⚡ **CCTP v2 support** with fast transfers (<30s settlement)
 - 🤝 **Relayer-aware** APIs for permissionless v2 relay handling
@@ -31,9 +32,9 @@ cctp-rs has two layers with different coverage. Read both before
 choosing an integration path.
 
 - **Bridge SDK** — `CctpV2Bridge`, `Cctp`, and the `CctpV1` / `CctpV2`
-  traits on `alloy_chains::NamedChain` can burn USDC and relay
-  attestations end-to-end for the chains listed below. These are the
-  chains where `NamedChain::supports_cctp_v2()` returns `true`.
+  traits on `alloy_chains::NamedChain` can burn modeled CCTP assets and
+  relay attestations end-to-end for the chains listed below. These are
+  the chains where `NamedChain::supports_cctp_v2()` returns `true`.
 - **Protocol parser** — `ParsedV2Message`, `ParsedV2MessageSummary`,
   and the `DomainId` enum recognize all 30 domain IDs in Circle's
   current CCTP domain table, including non-EVM domains.
@@ -55,6 +56,24 @@ Chains returning `true` from `NamedChain::supports_cctp_v2()`:
 
 - Sepolia, Arbitrum Sepolia, Base Sepolia, Optimism Sepolia
 - Avalanche Fuji, Polygon Amoy
+
+### Bridge SDK — supported assets
+
+- **USDC** — asset-aware helpers resolve Circle-published EVM token
+  addresses for every bridge-supported v2 chain listed above.
+- **EURC** — modeled for Ethereum <-> Base on mainnet and Sepolia <-> Base
+  Sepolia on testnet, matching Circle's September 2, 2026 CCTP EURC
+  announcement and Circle's EURC contract address table.
+- **USYC** — represented explicitly as `CctpTransferAsset::Usyc`, but
+  rejected by `CctpV2Bridge` today because Circle documents USYC only for
+  Ethereum and BNB Smart Chain, while this bridge SDK does not currently
+  route BNB Smart Chain.
+
+Prefer `burn_asset`, `approve_asset`, `ensure_asset_approval`, and
+`transfer_asset` when the SDK should validate asset support and resolve
+token addresses. The raw `burn`, `approve`, `ensure_approval`, and
+`transfer` methods still accept explicit ERC-20 addresses for advanced
+contract workflows.
 
 ### Protocol parser — additional domains
 
@@ -88,9 +107,56 @@ The public protocol currency roadmap is tracked in
 [#35](https://github.com/suchapalaver/cctp-rs/issues/35), including
 fast-transfer capability drift, Forwarding Service and Stellar-safe
 flows, Fast Transfer allowance preflight, Standard Transfer fee-switch
-support, current EVM route coverage, EURC asset support
-([#44](https://github.com/suchapalaver/cctp-rs/issues/44)), and an
+support, current EVM route coverage, non-USDC Iris fee endpoint drift,
+([#53](https://github.com/suchapalaver/cctp-rs/issues/53)), and an
 automated drift check.
+
+### Asset-aware V2 burns
+
+```rust
+use cctp_rs::{CctpTransferAsset, CctpV2Bridge, CctpV2Route, CctpError, TransferMode};
+use alloy_chains::NamedChain;
+use alloy_network::Ethereum;
+use alloy_primitives::{Address, U256};
+use alloy_provider::Provider;
+
+async fn bridge_eurc_standard<P: Provider<Ethereum> + Clone>(
+    source_provider: P,
+    destination_provider: P,
+    owner: Address,
+    recipient: Address,
+) -> Result<(), CctpError> {
+    let route = CctpV2Route::for_asset(
+        NamedChain::Mainnet,
+        NamedChain::Base,
+        CctpTransferAsset::Eurc,
+    )?;
+    let bridge = CctpV2Bridge::from_route(route)
+        .source_provider(source_provider)
+        .destination_provider(destination_provider)
+        .recipient(recipient)
+        .transfer_mode(TransferMode::Standard)
+        .build();
+
+    let amount = U256::from(1_000_000u64); // 1 EURC, 6 decimals
+    bridge
+        .ensure_asset_approval(CctpTransferAsset::Eurc, owner, amount)
+        .await?;
+    let _burn_tx = bridge
+        .burn_asset(CctpTransferAsset::Eurc, amount, owner)
+        .await?;
+
+    Ok(())
+}
+```
+
+Circle's public CCTP fee and allowance endpoints are still documented as
+USDC-specific (`/v2/burn/USDC/fees` and `/v2/fastBurn/USDC/allowance`).
+Accordingly, `create_transfer_fees_url_for_asset(CctpTransferAsset::Eurc)`
+and `calculate_fast_transfer_max_fee_for_asset(CctpTransferAsset::Eurc, ...)`
+return `CctpError::TransferFeeEndpointUnavailable` until Circle publishes an
+EURC Iris fee endpoint. Standard EURC burns can use `TransferMode::Standard`;
+fast EURC burns require callers to supply an externally sourced `max_fee`.
 
 ### CCTP v1 (Legacy)
 
@@ -226,9 +292,10 @@ async fn bridge_usdc_v2<P: Provider + Clone>(bridge: &CctpV2Bridge<P>) -> Result
 
 ### Fast Transfer Fees (V2)
 
-Fast transfers require a `maxFee` cap in USDC atomic units. Fees are dynamic and
-route-aware, so fetch the live route fee from Circle Iris before constructing
-your fast-transfer mode. Do not use
+Fast transfers require a `maxFee` cap in burn-token atomic units. The built-in
+live fee helpers currently use Circle's USDC fee endpoint, where fees are
+dynamic and route-aware. Fetch the live USDC route fee from Circle Iris before
+constructing your fast-transfer mode. Do not use
 `NamedChain::fast_transfer_fee_bps()` for production quotes; that helper is
 chain-level static metadata and currently reports `FastTransferFee::Unknown`
 until static fee tables are deliberately sourced.
@@ -472,6 +539,7 @@ Check out the [`examples/`](examples/) directory for complete working examples:
 ### CCTP v2 Examples
 
 - [`v2_integration_validation.rs`](examples/v2_integration_validation.rs) - Comprehensive v2 validation (no network required)
+- [`v2_asset_support.rs`](examples/v2_asset_support.rs) - Asset-aware route and token-address validation (no network required)
 - [`v2_standard_transfer.rs`](examples/v2_standard_transfer.rs) - Standard transfer with finality
 - [`v2_fast_transfer.rs`](examples/v2_fast_transfer.rs) - Fast transfer (<30s settlement)
 - [`testnet_validation.rs`](examples/testnet_validation.rs) - Opt-in funded, chain-configurable testnet transfer harness

@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! Contract addresses for CCTP contracts across all supported chains
@@ -7,6 +8,82 @@
 //! and `TokenMessenger` contracts across mainnet and testnet chains.
 
 use alloy_primitives::{address, Address};
+
+// Native stablecoin token addresses
+//
+// Reference: <https://developers.circle.com/stablecoins/usdc-contract-addresses>
+
+/// Ethereum mainnet native USDC token address.
+pub const ETHEREUM_USDC_ADDRESS: Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+
+/// Ethereum Sepolia native USDC token address.
+pub const ETHEREUM_SEPOLIA_USDC_ADDRESS: Address =
+    address!("1c7D4B196Cb0C7B01d743Fbc6116a902379C7238");
+
+/// Arbitrum mainnet native USDC token address.
+pub const ARBITRUM_USDC_ADDRESS: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
+
+/// Arbitrum Sepolia native USDC token address.
+pub const ARBITRUM_SEPOLIA_USDC_ADDRESS: Address =
+    address!("75faf114eafb1BDbe2F0316DF893fd58CE46AA4d");
+
+/// Avalanche C-Chain native USDC token address.
+pub const AVALANCHE_USDC_ADDRESS: Address = address!("B97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E");
+
+/// Avalanche Fuji native USDC token address.
+pub const AVALANCHE_FUJI_USDC_ADDRESS: Address =
+    address!("5425890298aed601595a70AB815c96711a31Bc65");
+
+/// Base mainnet native USDC token address.
+pub const BASE_USDC_ADDRESS: Address = address!("833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+
+/// Base Sepolia native USDC token address.
+pub const BASE_SEPOLIA_USDC_ADDRESS: Address = address!("036CbD53842c5426634e7929541eC2318f3dCF7e");
+
+/// Optimism mainnet native USDC token address.
+pub const OPTIMISM_USDC_ADDRESS: Address = address!("0b2C639c533813f4Aa9D7837CAf62653d097Ff85");
+
+/// Optimism Sepolia native USDC token address.
+pub const OPTIMISM_SEPOLIA_USDC_ADDRESS: Address =
+    address!("5fd84259d66Cd46123540766Be93DFE6D43130D7");
+
+/// Polygon PoS native USDC token address.
+pub const POLYGON_USDC_ADDRESS: Address = address!("3c499c542cEF5E3811e1192ce70d8cC03d5c3359");
+
+/// Polygon Amoy native USDC token address.
+pub const POLYGON_AMOY_USDC_ADDRESS: Address = address!("41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582");
+
+/// Unichain mainnet native USDC token address.
+pub const UNICHAIN_USDC_ADDRESS: Address = address!("078D782b760474a361dDA0AF3839290b0EF57AD6");
+
+/// Linea mainnet native USDC token address.
+pub const LINEA_USDC_ADDRESS: Address = address!("176211869cA2b568f2A7D4EE941E073a821EE1ff");
+
+/// Sonic mainnet native USDC token address.
+pub const SONIC_USDC_ADDRESS: Address = address!("29219dd400f2Bf60E5a23d13Be72B486D4038894");
+
+/// Sei mainnet native USDC token address.
+pub const SEI_USDC_ADDRESS: Address = address!("e15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392");
+
+/// HyperEVM mainnet native USDC token address.
+pub const HYPEREVM_USDC_ADDRESS: Address = address!("b88339CB7199b77E23DB6E890353E22632Ba630f");
+
+// Native EURC token addresses for Circle's initial CCTP EURC rollout.
+//
+// Reference: <https://developers.circle.com/stablecoins/eurc-contract-addresses>
+
+/// Ethereum mainnet native EURC token address.
+pub const ETHEREUM_EURC_ADDRESS: Address = address!("1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c");
+
+/// Ethereum Sepolia native EURC token address.
+pub const ETHEREUM_SEPOLIA_EURC_ADDRESS: Address =
+    address!("08210F9170F89Ab7658F0B5E3fF39b0E03C594D4");
+
+/// Base mainnet native EURC token address.
+pub const BASE_EURC_ADDRESS: Address = address!("60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42");
+
+/// Base Sepolia native EURC token address.
+pub const BASE_SEPOLIA_EURC_ADDRESS: Address = address!("808456652fdb597867f38412077A9182bf77359F");
 
 // MessageTransmitter Addresses
 

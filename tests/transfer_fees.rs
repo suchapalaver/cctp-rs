@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -18,7 +19,7 @@ use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
-use cctp_rs::{CctpError, CctpV2Bridge, FeeBps};
+use cctp_rs::{CctpError, CctpTransferAsset, CctpV2Bridge, FeeBps};
 use url::Url;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -28,10 +29,18 @@ fn dummy_provider() -> impl Provider<Ethereum> + Clone {
 }
 
 fn bridge(api_override: Url) -> CctpV2Bridge<impl Provider<Ethereum> + Clone> {
+    bridge_for_route(api_override, NamedChain::Mainnet, NamedChain::Linea)
+}
+
+fn bridge_for_route(
+    api_override: Url,
+    source_chain: NamedChain,
+    destination_chain: NamedChain,
+) -> CctpV2Bridge<impl Provider<Ethereum> + Clone> {
     let provider = dummy_provider();
     CctpV2Bridge::builder()
-        .source_chain(NamedChain::Mainnet)
-        .destination_chain(NamedChain::Linea)
+        .source_chain(source_chain)
+        .destination_chain(destination_chain)
         .source_provider(provider.clone())
         .destination_provider(provider)
         .recipient(Address::ZERO)
@@ -103,6 +112,59 @@ async fn fetches_route_fees_and_calculates_buffered_fast_max_fee() {
         .await
         .expect("fast max fee should calculate");
     assert_eq!(max_fee, U256::from(1638u64));
+}
+
+#[test]
+fn usdc_fee_url_is_built_from_asset_segment() {
+    let bridge = bridge(Url::parse("https://iris-api.circle.com").expect("valid URL"));
+    let url = bridge
+        .create_transfer_fees_url_for_asset(CctpTransferAsset::Usdc)
+        .expect("USDC fee URL should build");
+
+    assert_eq!(
+        url.as_str(),
+        "https://iris-api.circle.com/v2/burn/USDC/fees/0/11"
+    );
+}
+
+#[tokio::test]
+async fn eurc_fee_lookup_reports_unpublished_endpoint_for_supported_route() {
+    let server = MockServer::start().await;
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let bridge = bridge_for_route(api_override, NamedChain::Mainnet, NamedChain::Base);
+
+    let err = bridge
+        .get_transfer_fees_for_asset(CctpTransferAsset::Eurc)
+        .await
+        .expect_err("Circle has not published an EURC fee endpoint yet");
+
+    assert!(matches!(
+        err,
+        CctpError::TransferFeeEndpointUnavailable {
+            asset: CctpTransferAsset::Eurc,
+            source_domain: 0,
+            destination_domain: 6,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn eurc_fee_url_rejects_unannounced_asset_route() {
+    let bridge = bridge(Url::parse("https://iris-api.circle.com").expect("valid URL"));
+    let err = bridge
+        .create_transfer_fees_url_for_asset(CctpTransferAsset::Eurc)
+        .expect_err("Ethereum -> Linea is not a modeled EURC route");
+
+    assert!(matches!(
+        err,
+        CctpError::UnsupportedAssetRoute {
+            asset: CctpTransferAsset::Eurc,
+            source_chain: NamedChain::Mainnet,
+            destination_chain: NamedChain::Linea,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]
