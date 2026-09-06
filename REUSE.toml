@@ -114,6 +114,7 @@ SPDX-License-Identifier = "Apache-2.0"
 [[annotations]]
 path = [
     ".github/pull_request_template.md",
+    ".github/workflows/lean.yml",
     ".github/workflows/release.yml",
     ".github/workflows/security.yml",
 ]
