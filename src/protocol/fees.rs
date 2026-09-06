@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! CCTP v2 transfer fee types.
@@ -211,7 +212,7 @@ impl TransferFee {
         matches!(self.finality(), Some(FinalityThreshold::Standard))
     }
 
-    /// Calculates a `maxFee` cap in USDC atomic units with the given buffer.
+    /// Calculates a `maxFee` cap in burn-token atomic units with the given buffer.
     #[must_use]
     pub fn max_fee_with_buffer_percent(self, amount: U256, buffer_percent: u32) -> U256 {
         self.minimum_fee
@@ -337,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn fee_calculation_uses_usdc_atomic_units() {
+    fn fee_calculation_uses_burn_token_atomic_units() {
         let amount = U256::from(10_500_000u64);
         let fee = FeeBps::from_hundredths(100);
 
@@ -358,21 +359,21 @@ mod tests {
 
     #[test]
     fn fee_calculation_handles_zero_and_large_values() {
-        let large_usdc_amount = U256::from(1_000_000_000_000u64);
+        let large_burn_token_amount = U256::from(1_000_000_000_000u64);
         let fractional_fee = FeeBps::from_hundredths(130);
         let zero_fee = FeeBps::from_hundredths(0);
 
         assert_eq!(fractional_fee.apply_to_amount(U256::ZERO), U256::ZERO);
         assert_eq!(
-            zero_fee.apply_to_amount_with_buffer_percent(large_usdc_amount, 20),
+            zero_fee.apply_to_amount_with_buffer_percent(large_burn_token_amount, 20),
             U256::ZERO
         );
         assert_eq!(
-            fractional_fee.apply_to_amount(large_usdc_amount),
+            fractional_fee.apply_to_amount(large_burn_token_amount),
             U256::from(130_000_000u64)
         );
         assert_eq!(
-            fractional_fee.apply_to_amount_with_buffer_percent(large_usdc_amount, 20),
+            fractional_fee.apply_to_amount_with_buffer_percent(large_burn_token_amount, 20),
             U256::from(156_000_000u64)
         );
     }

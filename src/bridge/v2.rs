@@ -6,8 +6,8 @@
 use crate::error::{AttestationFailureKind, CctpError, Result};
 use crate::protocol::{AttestationBytes, FinalityThreshold, TransferFee};
 use crate::{
-    spans, AttestationStatus, CctpV2 as CctpV2Trait, CctpV2Route, DomainId, V2AttestationResponse,
-    V2Message,
+    spans, AttestationStatus, CctpTransferAsset, CctpV2 as CctpV2Trait, CctpV2Route, DomainId,
+    V2AttestationResponse, V2Message,
 };
 use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
@@ -40,16 +40,16 @@ pub enum MintResult {
 }
 
 use super::bridge_trait::CctpBridge;
-use super::config::{iris_api_url, PollingConfig, MESSAGES_PATH_V2, TRANSFER_FEES_PATH_V2};
+use super::config::{iris_api_url, PollingConfig, MESSAGES_PATH_V2, TRANSFER_FEES_PATH_V2_PREFIX};
 use crate::contracts::erc20::Erc20Contract;
 use crate::contracts::message_transmitter::MessageTransmitter::MessageSent;
 use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contract};
 
 /// CCTP v2 bridge implementation
 ///
-/// This struct provides the core functionality for bridging USDC across chains
-/// using Circle's Cross-Chain Transfer Protocol v2 with support for Fast Transfer,
-/// programmable hooks, and expanded network coverage.
+/// This struct provides the core functionality for bridging modeled CCTP assets
+/// across chains using Circle's Cross-Chain Transfer Protocol v2 with support
+/// for Fast Transfer, programmable hooks, and expanded network coverage.
 ///
 /// # V2 Features
 ///
@@ -248,6 +248,28 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         self.transfer_mode.finality_threshold()
     }
 
+    /// Validates that the configured route supports the selected transfer asset.
+    ///
+    /// This is the asset-safe boundary for bridge workflows. The lower-level
+    /// raw token-address helpers remain available for advanced contract use, but
+    /// callers that want SDK validation should use this method or one of the
+    /// `*_asset` helpers.
+    pub fn validate_asset_route(&self, asset: CctpTransferAsset) -> Result<()> {
+        self.validated_asset_route(asset).map(|_| ())
+    }
+
+    /// Returns the source-chain token address for the selected transfer asset.
+    pub fn source_token_address(&self, asset: CctpTransferAsset) -> Result<Address> {
+        self.validated_asset_route(asset)?
+            .source_token_address(asset)
+    }
+
+    /// Returns the destination-chain token address for the selected transfer asset.
+    pub fn destination_token_address(&self, asset: CctpTransferAsset) -> Result<Address> {
+        self.validated_asset_route(asset)?
+            .destination_token_address(asset)
+    }
+
     /// Constructs the Iris API v2 URL for live route fee lookup.
     ///
     /// The fee API is route-aware:
@@ -258,9 +280,37 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// Returns `CctpError::UnsupportedChain` when either configured chain has no
     /// CCTP v2 domain, or `CctpError::InvalidUrl` if URL construction fails.
     pub fn create_transfer_fees_url(&self) -> Result<Url> {
+        self.create_transfer_fees_url_for_asset(CctpTransferAsset::Usdc)
+    }
+
+    /// Constructs the Iris API v2 URL for live route fee lookup for an asset.
+    ///
+    /// Circle's public fee API is currently published for USDC:
+    /// `/v2/burn/USDC/fees/{sourceDomainId}/{destDomainId}`. The path is
+    /// assembled from the asset model so a future Circle-published EURC fee
+    /// segment can be enabled without another hard-coded endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CctpError::UnsupportedChain` when either configured chain has no
+    /// CCTP v2 domain, `CctpError::UnsupportedAssetRoute` when the route is not
+    /// supported for `asset`, `CctpError::TransferFeeEndpointUnavailable` when
+    /// Circle has not published an Iris fee endpoint for `asset`, or
+    /// `CctpError::InvalidUrl` if URL construction fails.
+    pub fn create_transfer_fees_url_for_asset(&self, asset: CctpTransferAsset) -> Result<Url> {
         let (source_domain, destination_domain) = self.transfer_fee_domain_ids()?;
+        self.validate_asset_route(asset)?;
+        let Some(asset_segment) = asset.iris_fee_path_segment() else {
+            return Err(CctpError::TransferFeeEndpointUnavailable {
+                asset,
+                source_domain,
+                destination_domain,
+                reason: asset.fee_endpoint_unavailable_reason().to_string(),
+            });
+        };
+
         Ok(self.api_url().join(&format!(
-            "{TRANSFER_FEES_PATH_V2}{source_domain}/{destination_domain}"
+            "{TRANSFER_FEES_PATH_V2_PREFIX}{asset_segment}/fees/{source_domain}/{destination_domain}"
         ))?)
     }
 
@@ -282,14 +332,29 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// Returns an error when the route is unsupported, the Iris request fails,
     /// or the JSON response cannot be decoded.
     pub async fn get_transfer_fees(&self) -> Result<Vec<TransferFee>> {
+        self.get_transfer_fees_for_asset(CctpTransferAsset::Usdc)
+            .await
+    }
+
+    /// Fetches all live transfer fee entries for this route and asset.
+    ///
+    /// At present Circle publishes this Iris API for USDC only. For assets such
+    /// as EURC, this returns
+    /// [`CctpError::TransferFeeEndpointUnavailable`] until Circle publishes an
+    /// asset-specific fee endpoint.
+    pub async fn get_transfer_fees_for_asset(
+        &self,
+        asset: CctpTransferAsset,
+    ) -> Result<Vec<TransferFee>> {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(CctpError::Network)?;
-        let url = self.create_transfer_fees_url()?;
+        let url = self.create_transfer_fees_url_for_asset(asset)?;
 
         info!(
             url = %url,
+            asset = %asset,
             source_chain = %self.source_chain,
             destination_chain = %self.destination_chain,
             event = "transfer_fee_request_started"
@@ -315,7 +380,19 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         &self,
         finality_threshold: FinalityThreshold,
     ) -> Result<Option<TransferFee>> {
-        let fees = self.get_transfer_fees().await?;
+        self.get_transfer_fee_for_asset(CctpTransferAsset::Usdc, finality_threshold)
+            .await
+    }
+
+    /// Fetches the live fee entry for the asset and finality threshold.
+    ///
+    /// Returns `Ok(None)` when Iris returns no entry for the threshold.
+    pub async fn get_transfer_fee_for_asset(
+        &self,
+        asset: CctpTransferAsset,
+        finality_threshold: FinalityThreshold,
+    ) -> Result<Option<TransferFee>> {
+        let fees = self.get_transfer_fees_for_asset(asset).await?;
         Ok(fees
             .into_iter()
             .find(|fee| fee.finality_threshold == finality_threshold.as_u32()))
@@ -323,12 +400,32 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
 
     /// Fetches the live Fast Transfer fee for this route, if Iris returns one.
     pub async fn get_fast_transfer_fee(&self) -> Result<Option<TransferFee>> {
-        self.get_transfer_fee(FinalityThreshold::Fast).await
+        self.get_fast_transfer_fee_for_asset(CctpTransferAsset::Usdc)
+            .await
+    }
+
+    /// Fetches the live Fast Transfer fee for this asset and route.
+    pub async fn get_fast_transfer_fee_for_asset(
+        &self,
+        asset: CctpTransferAsset,
+    ) -> Result<Option<TransferFee>> {
+        self.get_transfer_fee_for_asset(asset, FinalityThreshold::Fast)
+            .await
     }
 
     /// Fetches the live Standard Transfer fee for this route, if Iris returns one.
     pub async fn get_standard_transfer_fee(&self) -> Result<Option<TransferFee>> {
-        self.get_transfer_fee(FinalityThreshold::Standard).await
+        self.get_standard_transfer_fee_for_asset(CctpTransferAsset::Usdc)
+            .await
+    }
+
+    /// Fetches the live Standard Transfer fee for this asset and route.
+    pub async fn get_standard_transfer_fee_for_asset(
+        &self,
+        asset: CctpTransferAsset,
+    ) -> Result<Option<TransferFee>> {
+        self.get_transfer_fee_for_asset(asset, FinalityThreshold::Standard)
+            .await
     }
 
     /// Fetches the live fast-transfer fee and calculates a buffered `maxFee`.
@@ -348,7 +445,32 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         amount: U256,
         buffer_percent: u32,
     ) -> Result<U256> {
-        let Some(fee) = self.get_fast_transfer_fee().await? else {
+        self.calculate_fast_transfer_max_fee_for_asset(
+            CctpTransferAsset::Usdc,
+            amount,
+            buffer_percent,
+        )
+        .await
+    }
+
+    /// Fetches the live fast-transfer fee for an asset and calculates a
+    /// buffered `maxFee`.
+    ///
+    /// `amount` is denominated in the selected burn token's atomic units.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::TransferFeeEndpointUnavailable`] when Circle has not
+    /// published a fee endpoint for `asset`, and
+    /// [`CctpError::TransferFeeUnavailable`] when Iris returns no Fast Transfer
+    /// fee for the configured route.
+    pub async fn calculate_fast_transfer_max_fee_for_asset(
+        &self,
+        asset: CctpTransferAsset,
+        amount: U256,
+        buffer_percent: u32,
+    ) -> Result<U256> {
+        let Some(fee) = self.get_fast_transfer_fee_for_asset(asset).await? else {
             let (source_domain, destination_domain) = self.transfer_fee_domain_ids()?;
             return Err(CctpError::TransferFeeUnavailable {
                 source_domain,
@@ -691,16 +813,18 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         .await
     }
 
-    /// Initiate a USDC burn on the source chain
+    /// Initiates a CCTP burn on the source chain using an explicit token address.
     ///
-    /// This creates and sends the depositForBurn transaction which locks USDC on the source
-    /// chain and emits a `MessageSent` event.
+    /// This creates and sends the `depositForBurn` transaction and emits a
+    /// `MessageSent` event. Prefer [`Self::burn_asset`] for modeled assets such
+    /// as USDC or EURC so the SDK validates route support and resolves the
+    /// source token address before submitting RPC.
     ///
     /// # Arguments
     ///
-    /// * `amount` - Amount of USDC to transfer (in atomic units, e.g., 1 USDC = `1_000_000`)
-    /// * `from` - Address that will send the transaction (must have USDC balance and gas)
-    /// * `token_address` - USDC token contract address on source chain
+    /// * `amount` - Amount to transfer in burn-token atomic units
+    /// * `from` - Address that will send the transaction
+    /// * `token_address` - CCTP burn token contract address on the source chain
     ///
     /// # Returns
     ///
@@ -801,10 +925,41 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         Ok(tx_hash)
     }
 
-    /// Complete a transfer by minting USDC on the destination chain
+    /// Initiates a burn for a modeled CCTP transfer asset.
     ///
-    /// This submits the receiveMessage transaction with the attestation to mint USDC
-    /// on the destination chain.
+    /// This is the asset-safe alternative to [`Self::burn`]. It validates that
+    /// the bridge route supports `asset`, resolves the source-chain token
+    /// address from the SDK's Circle-sourced token registry, then submits the
+    /// same on-chain burn transaction as the raw token-address method.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::UnsupportedAssetRoute`] when the configured route
+    /// does not support `asset`, or any error returned by [`Self::burn`].
+    pub async fn burn_asset(
+        &self,
+        asset: CctpTransferAsset,
+        amount: U256,
+        from: Address,
+    ) -> Result<TxHash> {
+        let token_address = self.source_token_address(asset)?;
+
+        info!(
+            asset = %asset,
+            token_address = %token_address,
+            source_chain = %self.source_chain,
+            destination_chain = %self.destination_chain,
+            version = "v2",
+            event = "asset_burn_validated"
+        );
+
+        self.burn(amount, from, token_address).await
+    }
+
+    /// Complete a transfer by minting on the destination chain
+    ///
+    /// This submits the `receiveMessage` transaction with the attestation so
+    /// the destination `MessageTransmitterV2` can finalize the mint.
     ///
     /// # Arguments
     ///
@@ -1157,6 +1312,20 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         Ok(erc20.allowance(owner, spender).await?)
     }
 
+    /// Gets the current ERC20 allowance for a modeled transfer asset.
+    ///
+    /// This validates the configured bridge route for `asset` and resolves the
+    /// source-chain token address before querying allowance for the
+    /// `TokenMessengerV2` spender.
+    pub async fn get_asset_allowance(
+        &self,
+        asset: CctpTransferAsset,
+        owner: Address,
+    ) -> Result<U256> {
+        let token_address = self.source_token_address(asset)?;
+        self.get_allowance(token_address, owner).await
+    }
+
     /// Approve the `TokenMessenger` contract to spend tokens
     ///
     /// This must be called before `burn` if the `TokenMessenger` doesn't have
@@ -1228,6 +1397,21 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         Ok(tx_hash)
     }
 
+    /// Approves the `TokenMessengerV2` contract to spend a modeled transfer
+    /// asset.
+    ///
+    /// This validates the configured bridge route for `asset` and resolves the
+    /// source-chain token address before submitting the ERC-20 approval.
+    pub async fn approve_asset(
+        &self,
+        asset: CctpTransferAsset,
+        owner: Address,
+        amount: U256,
+    ) -> Result<TxHash> {
+        let token_address = self.source_token_address(asset)?;
+        self.approve(token_address, owner, amount).await
+    }
+
     /// Check if approval is needed and approve if necessary
     ///
     /// This is a convenience method that combines `get_allowance` and `approve`.
@@ -1297,19 +1481,36 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         Ok(Some(tx_hash))
     }
 
-    /// Execute a full cross-chain transfer: burn + wait for attestation + mint
+    /// Checks if approval is needed for a modeled transfer asset and approves
+    /// if necessary.
+    ///
+    /// This validates the configured bridge route for `asset` and resolves the
+    /// source-chain token address before checking allowance.
+    pub async fn ensure_asset_approval(
+        &self,
+        asset: CctpTransferAsset,
+        owner: Address,
+        amount: U256,
+    ) -> Result<Option<TxHash>> {
+        let token_address = self.source_token_address(asset)?;
+        self.ensure_approval(token_address, owner, amount).await
+    }
+
+    /// Execute a full cross-chain transfer using an explicit token address.
     ///
     /// This is a convenience method that orchestrates the complete transfer flow:
-    /// 1. Burns USDC on source chain
+    /// 1. Burns the selected token on the source chain
     /// 2. Extracts `MessageSent` event from burn transaction
     /// 3. Polls Circle's Iris API for attestation
-    /// 4. Mints USDC on destination chain
+    /// 4. Mints on the destination chain
+    ///
+    /// Prefer [`Self::transfer_asset`] for modeled assets such as USDC or EURC.
     ///
     /// # Arguments
     ///
-    /// * `amount` - Amount of USDC to transfer (in atomic units)
-    /// * `from` - Address initiating the transfer (needs USDC + gas on source, gas on destination)
-    /// * `token_address` - USDC token contract address on source chain
+    /// * `amount` - Amount to transfer in burn-token atomic units
+    /// * `from` - Address initiating the transfer
+    /// * `token_address` - CCTP burn token contract address on the source chain
     ///
     /// # Returns
     ///
@@ -1390,6 +1591,21 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         Ok((burn_tx_hash, mint_tx_hash))
     }
 
+    /// Executes a full cross-chain transfer for a modeled CCTP asset.
+    ///
+    /// This validates the configured route for `asset`, resolves the source
+    /// token address, then runs the same burn, attestation, and mint flow as
+    /// [`Self::transfer`].
+    pub async fn transfer_asset(
+        &self,
+        asset: CctpTransferAsset,
+        amount: U256,
+        from: Address,
+    ) -> Result<(TxHash, TxHash)> {
+        let token_address = self.source_token_address(asset)?;
+        self.transfer(amount, from, token_address).await
+    }
+
     /// Constructs the Iris API v2 URL for attestation polling
     ///
     /// The v2 API uses a different endpoint format than v1:
@@ -1438,6 +1654,10 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             self.source_chain.cctp_v2_domain_id()?.as_u32(),
             self.destination_chain.cctp_v2_domain_id()?.as_u32(),
         ))
+    }
+
+    fn validated_asset_route(&self, asset: CctpTransferAsset) -> Result<CctpV2Route> {
+        CctpV2Route::for_asset(self.source_chain, self.destination_chain, asset)
     }
 
     /// Fetches the attestation response from the CCTP v2 API
@@ -2562,6 +2782,17 @@ mod tests {
             CctpV2<alloy_provider::RootProvider<Ethereum>>,
             Arc<Mutex<Vec<alloy_json_rpc::SerializedRequest>>>,
         ) {
+            build_bridge_for_route(NamedChain::Mainnet, NamedChain::Linea, transfer_mode)
+        }
+
+        fn build_bridge_for_route(
+            source_chain: NamedChain,
+            destination_chain: NamedChain,
+            transfer_mode: TransferMode,
+        ) -> (
+            CctpV2<alloy_provider::RootProvider<Ethereum>>,
+            Arc<Mutex<Vec<alloy_json_rpc::SerializedRequest>>>,
+        ) {
             let transport = CapturingTransport::default();
             let captured = transport.requests.clone();
             // `disable_recommended_fillers` keeps the chainId / nonce /
@@ -2572,8 +2803,8 @@ mod tests {
                 .disable_recommended_fillers()
                 .connect_client(RpcClient::new(transport, true));
             let bridge = CctpV2::builder()
-                .source_chain(NamedChain::Mainnet)
-                .destination_chain(NamedChain::Linea)
+                .source_chain(source_chain)
+                .destination_chain(destination_chain)
                 .source_provider(provider.clone())
                 .destination_provider(provider)
                 .recipient(Address::ZERO)
@@ -2705,6 +2936,71 @@ mod tests {
                     );
                 }
             }
+        }
+
+        #[tokio::test]
+        async fn burn_asset_uses_validated_eurc_token_address() {
+            let (bridge, captured) = build_bridge_for_route(
+                NamedChain::Mainnet,
+                NamedChain::Base,
+                TransferMode::Standard,
+            );
+            let from = Address::repeat_byte(0xaa);
+            let amount = U256::from(1_000_000_u64);
+
+            bridge
+                .burn_asset(CctpTransferAsset::Eurc, amount, from)
+                .await
+                .expect("EURC Ethereum -> Base should submit a burn");
+
+            let requests = captured.lock().expect("captured-request mutex");
+            assert_eq!(requests.len(), 1);
+            let params = requests[0]
+                .params()
+                .expect("eth_sendTransaction request carries params");
+            let (tx_request,): (TransactionRequest,) = serde_json::from_str(params.get())
+                .expect("params decode as a single TransactionRequest");
+            let calldata = tx_request
+                .input
+                .input()
+                .expect("transaction request carries calldata");
+            let decoded = TokenMessengerV2::depositForBurnCall::abi_decode(calldata)
+                .expect("calldata decodes as depositForBurn");
+
+            assert_eq!(
+                decoded.burnToken,
+                CctpTransferAsset::Eurc
+                    .v2_bridge_token_address(NamedChain::Mainnet)
+                    .expect("Ethereum EURC token address")
+            );
+            assert_eq!(decoded.destinationDomain, DomainId::Base.as_u32());
+        }
+
+        #[tokio::test]
+        async fn burn_asset_rejects_unsupported_eurc_route_before_rpc() {
+            let (bridge, captured) = build_bridge(TransferMode::Standard);
+            let err = bridge
+                .burn_asset(
+                    CctpTransferAsset::Eurc,
+                    U256::from(1_000_000_u64),
+                    Address::repeat_byte(0xaa),
+                )
+                .await
+                .expect_err("Ethereum -> Linea is not a modeled EURC route");
+
+            assert!(matches!(
+                err,
+                CctpError::UnsupportedAssetRoute {
+                    asset: CctpTransferAsset::Eurc,
+                    source_chain: NamedChain::Mainnet,
+                    destination_chain: NamedChain::Linea,
+                    ..
+                }
+            ));
+            assert!(
+                captured.lock().expect("captured-request mutex").is_empty(),
+                "unsupported asset routes must fail before eth_sendTransaction"
+            );
         }
     }
 

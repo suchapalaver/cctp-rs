@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -37,11 +38,11 @@ pub const ATTESTATION_PATH_V1: &str = "/v1/attestations/";
 /// - V2: `/v2/messages/{sourceDomain}?transactionHash={txHash}`
 pub const MESSAGES_PATH_V2: &str = "/v2/messages/";
 
-/// CCTP v2 transfer fees API path
+/// CCTP v2 transfer fees API path prefix
 ///
 /// V2 route fees are exposed as:
-/// `/v2/burn/USDC/fees/{sourceDomainId}/{destDomainId}`
-pub const TRANSFER_FEES_PATH_V2: &str = "/v2/burn/USDC/fees/";
+/// `/v2/burn/{asset}/fees/{sourceDomainId}/{destDomainId}`
+pub const TRANSFER_FEES_PATH_V2_PREFIX: &str = "/v2/burn/";
 
 /// Configuration for attestation polling behavior.
 ///

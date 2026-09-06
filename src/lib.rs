@@ -1,18 +1,19 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! # cctp-rs
 //!
 //! A production-ready Rust SDK for Circle's Cross-Chain Transfer Protocol (CCTP).
 //!
-//! This library provides a safe, ergonomic interface for bridging USDC across
-//! multiple blockchain networks using Circle's CCTP infrastructure.
+//! This library provides a safe, ergonomic interface for bridging Circle assets
+//! across multiple blockchain networks using Circle's CCTP infrastructure.
 //!
 //! ## Choosing an API
 //!
 //! | Task                                                | Type                                |
 //! |-----------------------------------------------------|-------------------------------------|
-//! | Bridge USDC (recommended)                           | [`CctpV2Bridge`]                    |
+//! | Bridge USDC or asset-modeled EURC (recommended)     | [`CctpV2Bridge`]                    |
 //! | Bridge USDC on a v1-only legacy chain               | [`Cctp`]                            |
 //! | Self-relay safely against permissionless relayers   | [`CctpV2Bridge::mint_if_needed`]    |
 //! | Wait for any relayer (cheapest happy path)          | [`CctpV2Bridge::wait_for_receive`]  |
@@ -118,7 +119,7 @@
 //! - [`CctpV1`] and [`CctpV2`] - Traits for chain-specific configurations
 //! - [`PollingConfig`] - Configuration for attestation polling behavior
 //! - [`TransferMode`] - Selects which v2 burn variant (standard / fast / with hook) the bridge sends
-//! - [`CctpV2Route`] and [`UsdcAmount`] - Shared application primitives for route and amount validation
+//! - [`CctpTransferAsset`], [`CctpV2Route`], and [`UsdcAmount`] - Shared application primitives for asset, route, and amount validation
 //! - [`FeeBps`] and [`TransferFee`] - Live Iris transfer-fee response types and max-fee helpers
 //! - [`ParsedV2Message`] and [`ParsedV2MessageSummary`] - Parse canonical v2 messages into serializable structs
 //! - [`ParseMessageError`] - Error type for canonical v2 message parsing
@@ -158,8 +159,15 @@ pub use bridge::{
     TokenState, TransferMode,
 };
 pub use chain::addresses::{
-    CCTP_V2_MESSAGE_TRANSMITTER_MAINNET, CCTP_V2_MESSAGE_TRANSMITTER_TESTNET,
-    CCTP_V2_TOKEN_MESSENGER_MAINNET, CCTP_V2_TOKEN_MESSENGER_TESTNET,
+    ARBITRUM_SEPOLIA_USDC_ADDRESS, ARBITRUM_USDC_ADDRESS, AVALANCHE_FUJI_USDC_ADDRESS,
+    AVALANCHE_USDC_ADDRESS, BASE_EURC_ADDRESS, BASE_SEPOLIA_EURC_ADDRESS,
+    BASE_SEPOLIA_USDC_ADDRESS, BASE_USDC_ADDRESS, CCTP_V2_MESSAGE_TRANSMITTER_MAINNET,
+    CCTP_V2_MESSAGE_TRANSMITTER_TESTNET, CCTP_V2_TOKEN_MESSENGER_MAINNET,
+    CCTP_V2_TOKEN_MESSENGER_TESTNET, ETHEREUM_EURC_ADDRESS, ETHEREUM_SEPOLIA_EURC_ADDRESS,
+    ETHEREUM_SEPOLIA_USDC_ADDRESS, ETHEREUM_USDC_ADDRESS, HYPEREVM_USDC_ADDRESS,
+    LINEA_USDC_ADDRESS, OPTIMISM_SEPOLIA_USDC_ADDRESS, OPTIMISM_USDC_ADDRESS,
+    POLYGON_AMOY_USDC_ADDRESS, POLYGON_USDC_ADDRESS, SEI_USDC_ADDRESS, SONIC_USDC_ADDRESS,
+    UNICHAIN_USDC_ADDRESS,
 };
 pub use chain::{CctpV1, CctpV2, FastTransferFee};
 pub use contracts::{
@@ -172,7 +180,7 @@ pub use contracts::{
     },
 };
 pub use error::{AttestationFailureKind, CctpError, Result};
-pub use primitives::{CctpV2Route, UsdcAmount};
+pub use primitives::{CctpTransferAsset, CctpV2Route, UsdcAmount};
 pub use protocol::{
     AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId, FeeBps,
     FinalityThreshold, InvalidDomainId, InvalidFinalityThreshold, MessageHeader, ParseMessageError,

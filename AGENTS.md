@@ -9,11 +9,12 @@ A Rust SDK for Circle's Cross-Chain Transfer Protocol (CCTP) with two
 layers that have different coverage:
 
 - **Bridge SDK** (`CctpV2Bridge`, `Cctp`, `CctpV1` / `CctpV2` traits) —
-  burns USDC and relays attestations end-to-end. Source/destination
-  chains must return `true` from `NamedChain::supports_cctp_v2()`
-  (v2) or `CctpV1::is_supported()` (v1). Current coverage: 11
-  v2-capable chain families (7 v1 chain families plus Linea, Sonic,
-  Sei, HyperEVM) with their testnets.
+  burns modeled CCTP assets and relays attestations end-to-end.
+  Source/destination chains must return `true` from
+  `NamedChain::supports_cctp_v2()` (v2) or `CctpV1::is_supported()`
+  (v1). Current coverage: USDC across 11 v2-capable chain families
+  (7 v1 chain families plus Linea, Sonic, Sei, HyperEVM) with their
+  testnets, plus EURC on Circle's initial Ethereum <-> Base routes.
 - **Protocol parser** (`DomainId`, `ParsedV2Message`,
   `ParsedV2MessageSummary`) — recognizes all 30 domain IDs in Circle's
   current CCTP domain table, including non-EVM domains (Solana, Aptos,
@@ -29,6 +30,7 @@ sub-30s settlement).
 | Task | Reach for | Notes |
 |---|---|---|
 | Bridge USDC on a modern chain | `CctpV2Bridge` | The default. Permissionless mint — see relayer-race note below. |
+| Bridge EURC on Ethereum <-> Base | `CctpV2Bridge::burn_asset` / `transfer_asset` with `CctpTransferAsset::Eurc` | Standard mode is modeled now; Circle's public Iris fee endpoint remains USDC-only. |
 | Bridge USDC on a v1-only legacy chain | `Cctp` | You extract the message from chain yourself. |
 | Submit a burn and let any relayer complete it | `CctpV2Bridge::wait_for_receive` | Cheapest happy path. |
 | Submit a burn and try to self-relay | `CctpV2Bridge::mint_if_needed` | Returns `MintResult::AlreadyRelayed` if a relayer beat you. **Do not use raw `mint`** unless you've checked. |
@@ -54,6 +56,15 @@ sub-30s settlement).
 - **Mainnet vs testnet hit different Iris hosts** (`iris-api.circle.com` vs
   `iris-api-sandbox.circle.com`). Selection is automatic from the chain — but
   if you stub the API in tests, stub both.
+- **Asset-aware helpers are the validated path.** `burn`, `approve`,
+  `ensure_approval`, and `transfer` are raw token-address contract wrappers for
+  advanced flows. Prefer `burn_asset`, `approve_asset`,
+  `ensure_asset_approval`, and `transfer_asset` when moving modeled CCTP assets
+  so unsupported asset/chain pairs fail before RPC.
+- **Non-USDC fee endpoints are not published yet.** Circle documents
+  `/v2/burn/USDC/fees` and `/v2/fastBurn/USDC/allowance`; EURC fee helpers must
+  return `TransferFeeEndpointUnavailable` until Circle publishes an EURC Iris
+  fee endpoint.
 - **Parser address projections are domain-aware.** `ParsedV2MessageSummary`
   always exposes canonical 32-byte `*_bytes` fields. EVM-shaped `Address`
   projections are `None` for non-EVM source or destination domains so tooling
@@ -73,10 +84,11 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `MintResult` | `Minted(TxHash)` / `AlreadyRelayed` | `src/bridge/v2.rs` |
 | `PollingConfig` | Attestation polling tuning | `src/bridge/config.rs` |
 | `TokenState`, `batch_token_state` | ERC-20 allowance/balance helpers | `src/bridge/` |
+| `CctpTransferAsset`, `CctpV2Route`, `UsdcAmount` | Asset, route, and amount primitives | `src/primitives.rs` |
 | `CctpV1`, `CctpV2` traits | Chain config on `NamedChain` | `src/chain/config.rs`, `src/chain/v2.rs` |
 | `FastTransferFee` | `Known(u32)` / `Unknown` — static per-chain fee metadata; not current route quotes | `src/chain/v2.rs` |
 | `FeeBps`, `TransferFee` | Live Iris route-fee response types and max-fee helpers | `src/protocol/fees.rs` |
-| `CCTP_V2_*_MAINNET/TESTNET` | Unified v2 contract addresses | `src/chain/addresses.rs` |
+| `CCTP_V2_*_MAINNET/TESTNET`, `*_USDC_ADDRESS`, `*_EURC_ADDRESS` | Unified v2 contract addresses and native token addresses | `src/chain/addresses.rs` |
 | `TokenMessengerContract`, `MessageTransmitterContract` | V1 contract wrappers | `src/contracts/` |
 | `TokenMessengerV2Contract`, `MessageTransmitterV2Contract` | V2 contract wrappers | `src/contracts/v2/` |
 | `Erc20Contract` | Minimal ERC-20 wrapper | `src/contracts/erc20.rs` |

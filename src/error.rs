@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::primitives::CctpTransferAsset;
+use alloy_chains::NamedChain;
 use alloy_json_rpc::RpcError;
 use alloy_primitives::TxHash;
 use alloy_transport::TransportErrorKind;
@@ -50,6 +53,23 @@ pub enum CctpError {
     #[error("Unsupported chain: {0:?}")]
     UnsupportedChain(alloy_chains::NamedChain),
 
+    #[error("Unsupported CCTP asset {asset} on chain {chain:?}: {reason}")]
+    UnsupportedAssetChain {
+        asset: CctpTransferAsset,
+        chain: NamedChain,
+        reason: String,
+    },
+
+    #[error(
+        "Unsupported CCTP asset {asset} for route {source_chain:?}->{destination_chain:?}: {reason}"
+    )]
+    UnsupportedAssetRoute {
+        asset: CctpTransferAsset,
+        source_chain: NamedChain,
+        destination_chain: NamedChain,
+        reason: String,
+    },
+
     #[error("Message already relayed (transfer successful via third party): {original}")]
     AlreadyRelayed { original: String },
 
@@ -94,6 +114,16 @@ pub enum CctpError {
         source_domain: u32,
         destination_domain: u32,
         finality_threshold: u32,
+    },
+
+    #[error(
+        "Transfer fee endpoint unavailable for asset {asset} on route {source_domain}->{destination_domain}: {reason}"
+    )]
+    TransferFeeEndpointUnavailable {
+        asset: CctpTransferAsset,
+        source_domain: u32,
+        destination_domain: u32,
+        reason: String,
     },
 
     #[error("Timeout waiting for attestation")]

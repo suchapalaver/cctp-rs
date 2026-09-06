@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! CCTP v2 transfer mode selection.
@@ -64,7 +65,7 @@ pub enum TransferMode {
     /// the burn pending until enough finality accrues for the standard
     /// path.
     Fast {
-        /// Maximum fast-transfer fee, in USDC atomic units.
+        /// Maximum fast-transfer fee, in burn-token atomic units.
         max_fee: U256,
     },
 
@@ -83,7 +84,7 @@ pub enum TransferMode {
     /// `maxFee` and `hookData` are passed through to
     /// `depositForBurnWithHook` on-chain.
     FastWithHook {
-        /// Maximum fast-transfer fee, in USDC atomic units.
+        /// Maximum fast-transfer fee, in burn-token atomic units.
         max_fee: U256,
         /// Hook payload forwarded to the destination chain.
         hook_data: Bytes,
