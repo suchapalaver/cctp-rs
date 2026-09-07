@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.2.0] - 2026-09-07
+
+### Added
+
+- Added first-class `CctpTransferAsset` modeling for USDC, EURC, and
+  USYC, plus asset-aware v2 route validation and token-address
+  resolution.
+- Added EURC bridge support for Circle's announced Ethereum <-> Base
+  CCTP rollout on mainnet and Sepolia <-> Base Sepolia on testnet.
+- Added asset-aware `CctpV2Bridge` helpers for burn, approval, full
+  transfer, and fee lookup, with non-USDC Iris fee endpoint drift
+  tracked by #53.
+- Added a no-RPC `v2_asset_support` example.
+
+### Changed
+
+- Updated CCTP v2 fee helpers to build the Iris burn-fee path from the
+  selected asset segment instead of hard-coding the URL path in bridge
+  logic.
+- Updated public docs, AGENTS guidance, and the verification
+  architecture ledger for the new asset support boundary.
+
+### Fixed
+
+- Updated the README install snippet from the stale `cctp-rs = "6"`
+  line to the current major version.
+
 ## [7.1.0] - 2026-09-04
 
 ### Added

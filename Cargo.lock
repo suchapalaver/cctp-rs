@@ -1271,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "cctp-rs"
-version = "7.1.0"
+version = "7.2.0"
 dependencies = [
  "alloy-chains",
  "alloy-consensus",
