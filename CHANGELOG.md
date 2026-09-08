@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Raised the crate's explicit Rust version floor to 1.94.1 and
+  refreshed direct Alloy dependencies to the tested 2.4.x line.
+
+### Fixed
+
+- Removed the resolved `proc-macro-error2` advisory allowance after the
+  Alloy refresh moved the macro path to `proc-macro-error3`.
+- Refreshed the dependency graph so `lru` no longer uses the advisory
+  affected 0.16.x line and the packaged lockfile no longer references
+  yanked `num-bigint` 0.4.7.
+
 ## [7.2.0] - 2026-09-07
 
 ### Added
