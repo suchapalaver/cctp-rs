@@ -26,7 +26,6 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
     "RUSTSEC-2024-0436", # paste unmaintained (transitive via alloy-sol-macro)
-    "RUSTSEC-2026-0173", # proc-macro-error2 unmaintained (transitive via alloy-sol-macro; no safe upgrade yet)
 ]
 
 [sources]

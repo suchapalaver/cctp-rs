@@ -12,6 +12,10 @@ cctp-rs is independently maintained community Rust tooling. It is not official
 Circle software, and protocol currency work is tracked publicly in the
 [CCTP protocol currency roadmap](https://github.com/suchapalaver/cctp-rs/issues/35).
 
+## Requirements
+
+- Rust 1.94.1 or newer.
+
 ## Features
 
 - 🚀 **Type-safe** contract interactions using Alloy
