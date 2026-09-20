@@ -1,0 +1,22 @@
+name: CCTP Protocol Drift
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly signal that Circle's published CCTP tables still match the crate.
+    - cron: "30 12 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  protocol-drift:
+    name: Circle Protocol Drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Check Circle CCTP protocol drift
+        run: python3 scripts/check_cctp_protocol_drift.py

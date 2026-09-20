@@ -115,6 +115,7 @@ SPDX-License-Identifier = "Apache-2.0"
 path = [
     ".github/pull_request_template.md",
     ".github/workflows/lean.yml",
+    ".github/workflows/protocol-drift.yml",
     ".github/workflows/release.yml",
     ".github/workflows/security.yml",
 ]
@@ -122,6 +123,12 @@ SPDX-FileCopyrightText = [
     "2025 Semiotic AI, Inc.",
     "2026 Joseph Livesey <jlivesey@gmail.com>",
 ]
+SPDX-License-Identifier = "Apache-2.0"
+
+# Circle protocol drift snapshot (JSON, can't have inline headers)
+[[annotations]]
+path = "scripts/fixtures/circle_cctp_protocol_snapshot.json"
+SPDX-FileCopyrightText = "2026 Joseph Livesey <jlivesey@gmail.com>"
 SPDX-License-Identifier = "Apache-2.0"
 
 # Touched configuration files

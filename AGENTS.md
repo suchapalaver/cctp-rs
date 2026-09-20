@@ -123,6 +123,10 @@ parser.
 - `pipx run reuse lint` — SPDX/REUSE compliance check. If the tool cannot
   import an encoding detector in the local environment, use
   `pipx run --spec 'reuse[charset-normalizer]' reuse lint`.
+- `python3 scripts/check_cctp_protocol_drift.py` — compares Circle's
+  published CCTP domain, token, V1 legacy-only, and capability tables
+  with the checked-in drift snapshot plus local `DomainId` and docs
+  counts.
 - `cd verification && lake build` — re-checks the Lean proofs (toolchain pinned
   by `verification/lean-toolchain`; install via elan, or nix:
   `nix shell nixpkgs#lean4 nixpkgs#gcc -c lake build`).
@@ -134,6 +138,11 @@ parser.
   with `cargo check`, `cargo audit`, and `cargo deny`. Treat failures there as
   dependency-drift signals, not as evidence that the committed `Cargo.lock` CI
   path is broken.
+- The `CCTP Protocol Drift` workflow is separate from locked CI. It runs on a
+  schedule or manually, fetches Circle's supported blockchains Markdown page,
+  and flags domain, token, V1 legacy-only, and capability drift. Treat failures
+  there as protocol-maintenance signals; file or update an issue before
+  changing parser, bridge, asset, or capability support.
 
 ## Coding style and naming
 

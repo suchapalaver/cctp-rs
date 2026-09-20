@@ -90,7 +90,8 @@ pub enum DomainId {
     /// Starknet (Domain ID: 25) - Non-EVM chain
     #[serde(rename = "starknet", alias = "starknet_testnet")]
     StarknetTestnet = 25,
-    /// Arc Testnet (Domain ID: 26)
+    /// Arc (Domain ID: 26)
+    #[serde(rename = "arc", alias = "arc_testnet")]
     ArcTestnet = 26,
     /// Stellar (Domain ID: 27) - Non-EVM chain
     Stellar = 27,
@@ -213,7 +214,7 @@ impl DomainId {
             Self::Ink => "Ink",
             Self::Plume => "Plume",
             Self::StarknetTestnet => "Starknet",
-            Self::ArcTestnet => "Arc Testnet",
+            Self::ArcTestnet => "Arc",
             Self::Stellar => "Stellar",
             Self::Edge => "EDGE",
             Self::Injective => "Injective",
@@ -371,6 +372,7 @@ mod tests {
         assert_eq!(format!("{}", DomainId::Arbitrum), "Arbitrum (3)");
         assert_eq!(format!("{}", DomainId::Base), "Base (6)");
         assert_eq!(format!("{}", DomainId::StarknetTestnet), "Starknet (25)");
+        assert_eq!(format!("{}", DomainId::ArcTestnet), "Arc (26)");
         assert_eq!(format!("{}", DomainId::XLayer), "X Layer (37)");
     }
 
@@ -380,6 +382,7 @@ mod tests {
         assert_eq!(DomainId::Arbitrum.name(), "Arbitrum");
         assert_eq!(DomainId::Avalanche.name(), "Avalanche");
         assert_eq!(DomainId::StarknetTestnet.name(), "Starknet");
+        assert_eq!(DomainId::ArcTestnet.name(), "Arc");
         assert_eq!(DomainId::XLayer.name(), "X Layer");
     }
 
@@ -396,6 +399,22 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<DomainId>("\"starknet_testnet\"").unwrap(),
             DomainId::StarknetTestnet
+        );
+    }
+
+    #[test]
+    fn test_arc_serde_accepts_legacy_name() {
+        assert_eq!(
+            serde_json::to_string(&DomainId::ArcTestnet).unwrap(),
+            "\"arc\""
+        );
+        assert_eq!(
+            serde_json::from_str::<DomainId>("\"arc\"").unwrap(),
+            DomainId::ArcTestnet
+        );
+        assert_eq!(
+            serde_json::from_str::<DomainId>("\"arc_testnet\"").unwrap(),
+            DomainId::ArcTestnet
         );
     }
 
