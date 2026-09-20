@@ -151,7 +151,7 @@ def jsonName : DomainId → String
   | .ink => "ink"
   | .plume => "plume"
   | .starknetTestnet => "starknet"
-  | .arcTestnet => "arc_testnet"
+  | .arcTestnet => "arc"
   | .stellar => "stellar"
   | .edge => "edge"
   | .injective => "injective"

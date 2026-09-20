@@ -1,0 +1,370 @@
+{
+  "capabilities": [
+    {
+      "blockchain": "Aptos",
+      "fast_transfer": null,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Arbitrum",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Arc",
+      "fast_transfer": null,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Avalanche",
+      "fast_transfer": null,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Base",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "BNB Smart Chain",
+      "fast_transfer": null,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Codex",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Cronos",
+      "fast_transfer": null,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "EDGE",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Ethereum",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "HyperEVM",
+      "fast_transfer": null,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Injective",
+      "fast_transfer": null,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Ink",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Linea",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Monad",
+      "fast_transfer": null,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Morph",
+      "fast_transfer": true,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "OP Mainnet",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Pharos",
+      "fast_transfer": null,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Plasma",
+      "fast_transfer": null,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Plume",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Polygon PoS",
+      "fast_transfer": null,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Sei",
+      "fast_transfer": null,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Solana",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Sonic",
+      "fast_transfer": null,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "Starknet",
+      "fast_transfer": true,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Stellar",
+      "fast_transfer": null,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "Unichain",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "World Chain",
+      "fast_transfer": true,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    },
+    {
+      "blockchain": "X Layer",
+      "fast_transfer": true,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
+      "blockchain": "XDC",
+      "fast_transfer": null,
+      "forwarding_service": true,
+      "standard_transfer": true,
+      "upfront_fees": true
+    }
+  ],
+  "capability_columns": [
+    "Blockchain",
+    "Source (Standard transfer)",
+    "Source (Fast transfer)",
+    "Source (Upfront fees)",
+    "Forwarding Service"
+  ],
+  "current_cctp_domain_count": 30,
+  "domains": [
+    {
+      "blockchain": "Ethereum",
+      "domain": 0
+    },
+    {
+      "blockchain": "Avalanche",
+      "domain": 1
+    },
+    {
+      "blockchain": "OP Mainnet",
+      "domain": 2
+    },
+    {
+      "blockchain": "Arbitrum",
+      "domain": 3
+    },
+    {
+      "blockchain": "Solana",
+      "domain": 5
+    },
+    {
+      "blockchain": "Base",
+      "domain": 6
+    },
+    {
+      "blockchain": "Polygon PoS",
+      "domain": 7
+    },
+    {
+      "blockchain": "Aptos",
+      "domain": 9
+    },
+    {
+      "blockchain": "Unichain",
+      "domain": 10
+    },
+    {
+      "blockchain": "Linea",
+      "domain": 11
+    },
+    {
+      "blockchain": "Codex",
+      "domain": 12
+    },
+    {
+      "blockchain": "Sonic",
+      "domain": 13
+    },
+    {
+      "blockchain": "World Chain",
+      "domain": 14
+    },
+    {
+      "blockchain": "Monad",
+      "domain": 15
+    },
+    {
+      "blockchain": "Sei",
+      "domain": 16
+    },
+    {
+      "blockchain": "BNB Smart Chain",
+      "domain": 17
+    },
+    {
+      "blockchain": "XDC",
+      "domain": 18
+    },
+    {
+      "blockchain": "HyperEVM",
+      "domain": 19
+    },
+    {
+      "blockchain": "Ink",
+      "domain": 21
+    },
+    {
+      "blockchain": "Plume",
+      "domain": 22
+    },
+    {
+      "blockchain": "Starknet",
+      "domain": 25
+    },
+    {
+      "blockchain": "Arc",
+      "domain": 26
+    },
+    {
+      "blockchain": "Stellar",
+      "domain": 27
+    },
+    {
+      "blockchain": "EDGE",
+      "domain": 28
+    },
+    {
+      "blockchain": "Injective",
+      "domain": 29
+    },
+    {
+      "blockchain": "Morph",
+      "domain": 30
+    },
+    {
+      "blockchain": "Pharos",
+      "domain": 31
+    },
+    {
+      "blockchain": "Cronos",
+      "domain": 32
+    },
+    {
+      "blockchain": "Plasma",
+      "domain": 33
+    },
+    {
+      "blockchain": "X Layer",
+      "domain": 37
+    }
+  ],
+  "source": "https://developers.circle.com/cctp/concepts/supported-chains-and-domains.md",
+  "tokens": {
+    "usdc": {
+      "availability": "all_except",
+      "exceptions": [
+        "BNB Smart Chain"
+      ]
+    },
+    "usyc": {
+      "availability": "only",
+      "blockchains": [
+        "Ethereum",
+        "BNB Smart Chain"
+      ]
+    }
+  },
+  "v1_legacy_only_domains": [
+    {
+      "blockchain": "Noble",
+      "domain": 4
+    },
+    {
+      "blockchain": "Sui",
+      "domain": 8
+    }
+  ]
+}

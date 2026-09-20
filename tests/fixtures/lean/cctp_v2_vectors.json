@@ -127,7 +127,7 @@
   {"valid": false, "u32": 23},
   {"valid": false, "u32": 24},
   {"valid": true, "u32": 25, "name": "starknet", "is_evm": false},
-  {"valid": true, "u32": 26, "name": "arc_testnet", "is_evm": true},
+  {"valid": true, "u32": 26, "name": "arc", "is_evm": true},
   {"valid": true, "u32": 27, "name": "stellar", "is_evm": false},
   {"valid": true, "u32": 28, "name": "edge", "is_evm": true},
   {"valid": true, "u32": 29, "name": "injective", "is_evm": true},

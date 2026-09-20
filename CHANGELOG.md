@@ -7,13 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a scheduled/manual `CCTP Protocol Drift` workflow and maintainer
+  script that compare Circle's published CCTP domain, token, V1
+  legacy-only, and capability tables against the crate's local protocol
+  declarations.
+
 ### Changed
 
 - Raised the crate's explicit Rust version floor to 1.94.1 and
   refreshed direct Alloy dependencies to the tested 2.4.x line.
+- Updated domain 26's public display and serde spelling from
+  `Arc Testnet` / `arc_testnet` to Circle's current `Arc` / `arc`
+  naming while preserving `arc_testnet` as a deserialization alias.
 
 ### Fixed
 
+- Refreshed the dependency graph so `rustls` uses the
+  `RUSTSEC-2026-0285` fixed 0.23.45 line.
 - Removed the resolved `proc-macro-error2` advisory allowance after the
   Alloy refresh moved the macro path to `proc-macro-error3`.
 - Refreshed the dependency graph so `lru` no longer uses the advisory

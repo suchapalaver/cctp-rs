@@ -89,7 +89,7 @@ source or destination — `NamedChain::supports_cctp_v2()` returns
 - Solana (5, non-EVM), Aptos (9, non-EVM), Codex (12),
   World Chain (14), Monad (15), BNB Smart Chain (17, USYC only),
   XDC (18), Ink (21), Plume (22), Starknet (25, non-EVM),
-  Arc Testnet (26), Stellar (27, non-EVM), EDGE (28),
+  Arc (26), Stellar (27, non-EVM), EDGE (28),
   Injective (29), Morph (30), Pharos (31), Cronos (32),
   Plasma (33), X Layer (37)
 
@@ -114,6 +114,21 @@ flows, Fast Transfer allowance preflight, Standard Transfer fee-switch
 support, current EVM route coverage, non-USDC Iris fee endpoint drift,
 ([#53](https://github.com/suchapalaver/cctp-rs/issues/53)), and an
 automated drift check.
+
+Maintainers can run the drift check locally with:
+
+```bash
+python3 scripts/check_cctp_protocol_drift.py
+```
+
+The scheduled/manual `CCTP Protocol Drift` workflow runs the same
+command against Circle's published Markdown docs and compares the
+domain table, V1 legacy-only table, token availability, and
+Standard/Fast/Upfront/Forwarding capability matrix with the checked-in
+snapshot plus the local `DomainId` and README/AGENTS counts. Drift is a
+maintenance signal: file or update an issue first, then convert the
+change into parser-only, bridge-route, asset-support, or capability-gate
+work before advertising new protocol support.
 
 ### Asset-aware V2 burns
 
