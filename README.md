@@ -594,6 +594,11 @@ Routine maintainer and agent changes also go through pull requests. Direct
 pushes to `main` are not part of the normal maintenance path; branch protection
 requires review and required checks before merge.
 
+Maintainer commits should be signed before opening a pull request. The protected
+`main` branch requires verified signatures and uses squash merges only, so the
+commit that lands on `main` is GitHub-signed while preserving a linear history.
+Do not use rebase merge for this repository.
+
 ## Testing
 
 ### Unit Tests

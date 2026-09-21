@@ -31,6 +31,7 @@ Fixes #(issue number)
 - [ ] My changes generate no new compiler warnings
 - [ ] I have run `cargo clippy` and addressed any issues
 - [ ] I have run `cargo fmt` to format my code
+- [ ] My commits are signed, and this PR should land with squash merge only
 
 ## Documentation
 - [ ] I have updated the documentation accordingly

@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Documented the signed-commit policy for maintainers and agents, and
+  clarified that protected PRs should land by squash merge only.
 - Raised the crate's explicit Rust version floor to 1.94.1 and
   refreshed direct Alloy dependencies to the tested 2.4.x line.
 - Updated domain 26's public display and serde spelling from
