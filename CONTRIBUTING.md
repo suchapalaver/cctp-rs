@@ -139,6 +139,13 @@ request so required reviews and status checks run before merge. Emergency
 bypasses should be explicit maintainer actions and should leave an issue or PR
 comment describing what was bypassed and why.
 
+Sign your commits before opening the pull request. The repository requires
+verified signatures on `main` and allows only squash merges for protected-branch
+PRs. Use the GitHub squash merge button or `gh pr merge --squash`; do not use
+GitHub rebase merge, because it can recreate commits and lose local GPG
+signatures. If an admin override is needed for a maintainer-owned PR, the
+override should still use squash merge after required checks pass.
+
 ### Pull Request Process
 
 1. **Update Documentation**: Ensure README, docs, and examples reflect your changes

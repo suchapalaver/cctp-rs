@@ -29,11 +29,19 @@ SPDX-License-Identifier = "Apache-2.0"
 # Documentation
 [[annotations]]
 path = [
-    "CONTRIBUTING.md",
     "TESTNET_VALIDATION.md",
     "abis/v2/README.md",
 ]
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Touched contributing guide
+[[annotations]]
+path = "CONTRIBUTING.md"
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
 SPDX-License-Identifier = "Apache-2.0"
 
 # Touched changelog

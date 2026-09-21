@@ -191,11 +191,25 @@ should complete `.github/pull_request_template.md`. Changes that affect chain
 support must include address, domain ID, and attestation-flow validation
 details.
 
+All commits created by maintainers or agents must be signed. Use the repo/user
+GPG configuration or `git commit -S`; do not disable signing to get around a
+pinentry problem. If signing fails, fix the GPG/TTY environment and retry.
+
 Do not push routine changes directly to `main`, including maintenance,
 dependency, documentation, and release-prep work. Use a topic branch and a pull
 request so branch protection can require review and status checks before the
-change lands. Emergency bypasses require an explicit maintainer decision and a
-follow-up issue/comment explaining what was bypassed and why.
+change lands. `main` requires verified signatures and a linear history. The
+approved landing path is a GitHub squash merge, which creates a verified
+GitHub-signed commit on `main`; do not use GitHub rebase merge or merge commits.
+If an admin override is needed because the author cannot approve their own PR,
+use squash merge only, after required checks pass. Emergency bypasses require an
+explicit maintainer decision and a follow-up issue/comment explaining what was
+bypassed and why.
+
+Historical note: PR #60 was merged before signature protection was enabled and
+created unsigned commit `c02df971d1e11b1390e1df81fe06caa103952833`. Do not
+force-push to rewrite it; the forward fix is the repository setting and process
+above.
 
 ## Adding chain support
 
