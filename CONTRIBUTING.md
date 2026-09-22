@@ -146,6 +146,11 @@ GitHub rebase merge, because it can recreate commits and lose local GPG
 signatures. If an admin override is needed for a maintainer-owned PR, the
 override should still use squash merge after required checks pass.
 
+GitHub Actions workflows intentionally pin `ubuntu-24.04` instead of
+`ubuntu-latest`. Runner image changes should be reviewed as CI maintenance and
+validated across the normal CI, Lean, release, protocol drift, live smoke,
+security, and fresh-dependencies workflows.
+
 ### Pull Request Process
 
 1. **Update Documentation**: Ensure README, docs, and examples reflect your changes

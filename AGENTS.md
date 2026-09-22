@@ -143,6 +143,11 @@ parser.
   and flags domain, token, V1 legacy-only, and capability drift. Treat failures
   there as protocol-maintenance signals; file or update an issue before
   changing parser, bridge, asset, or capability support.
+- GitHub Actions workflows pin `ubuntu-24.04` rather than `ubuntu-latest` so
+  CI/runtime drift is deliberate. Do not move runner images as part of unrelated
+  changes; validate toolchain, Lean, release, protocol drift, live smoke,
+  security, and dependency-refresh workflows together when changing the runner
+  baseline.
 
 ## Coding style and naming
 

@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pinned GitHub Actions runners to `ubuntu-24.04` so CI avoids the scheduled
+  `ubuntu-latest` Ubuntu 26 migration until that baseline is validated
+  deliberately.
 - Documented the signed-commit policy for maintainers and agents, and
   clarified that protected PRs should land by squash merge only.
 - Raised the crate's explicit Rust version floor to 1.94.1 and
