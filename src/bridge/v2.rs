@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{AttestationFailureKind, CctpError, Result};
-use crate::protocol::{AttestationBytes, FinalityThreshold, TransferFee};
+use crate::protocol::{AttestationBytes, FastTransferAllowance, FinalityThreshold, TransferFee};
 use crate::{
     spans, AttestationStatus, CctpTransferAsset, CctpV2 as CctpV2Trait, CctpV2Route, DomainId,
     V2AttestationResponse, V2Message,
@@ -40,7 +40,10 @@ pub enum MintResult {
 }
 
 use super::bridge_trait::CctpBridge;
-use super::config::{iris_api_url, PollingConfig, MESSAGES_PATH_V2, TRANSFER_FEES_PATH_V2_PREFIX};
+use super::config::{
+    iris_api_url, PollingConfig, FAST_TRANSFER_ALLOWANCE_PATH_V2, MESSAGES_PATH_V2,
+    TRANSFER_FEES_PATH_V2_PREFIX,
+};
 use crate::contracts::erc20::Erc20Contract;
 use crate::contracts::message_transmitter::MessageTransmitter::MessageSent;
 use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contract};
@@ -314,6 +317,21 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         ))?)
     }
 
+    /// Constructs the Iris API v2 URL for the global USDC Fast Transfer allowance.
+    ///
+    /// Circle documents this as:
+    /// `/v2/fastBurn/USDC/allowance`.
+    ///
+    /// The allowance is global for the selected Iris environment. It is not
+    /// specific to the bridge's source or destination route.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CctpError::InvalidUrl` if URL construction fails.
+    pub fn create_fast_transfer_allowance_url(&self) -> Result<Url> {
+        Ok(self.api_url().join(FAST_TRANSFER_ALLOWANCE_PATH_V2)?)
+    }
+
     /// Fetches all live transfer fee entries for this bridge's source and
     /// destination domain route.
     ///
@@ -360,7 +378,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             event = "transfer_fee_request_started"
         );
 
-        let response = self.fetch_transfer_fees_response(&client, &url).await?;
+        let response = self.fetch_iris_json_response(&client, &url).await?;
         response.error_for_status_ref()?;
         let response_text = response.text().await?;
         let fees: Vec<TransferFee> = serde_json::from_str(&response_text)?;
@@ -371,6 +389,45 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         );
 
         Ok(fees)
+    }
+
+    /// Fetches Circle's current global USDC Fast Transfer allowance.
+    ///
+    /// This no-wallet/no-RPC preflight lets callers compare the returned
+    /// allowance against a planned Fast Transfer amount before choosing
+    /// [`TransferMode::Fast`](crate::TransferMode::Fast). When allowance is
+    /// insufficient, use a Standard Transfer or wait for the allowance to
+    /// replenish.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the Iris request fails or the JSON response cannot
+    /// be decoded.
+    pub async fn get_fast_transfer_allowance(&self) -> Result<FastTransferAllowance> {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(CctpError::Network)?;
+        let url = self.create_fast_transfer_allowance_url()?;
+
+        info!(
+            url = %url,
+            source_chain = %self.source_chain,
+            event = "fast_transfer_allowance_request_started"
+        );
+
+        let response = self.fetch_iris_json_response(&client, &url).await?;
+        response.error_for_status_ref()?;
+        let response_text = response.text().await?;
+        let allowance: FastTransferAllowance = serde_json::from_str(&response_text)?;
+
+        info!(
+            allowance = %allowance.allowance,
+            last_updated = %allowance.last_updated,
+            event = "fast_transfer_allowance_request_complete"
+        );
+
+        Ok(allowance)
     }
 
     /// Fetches the live fee entry for the requested finality threshold.
@@ -1675,8 +1732,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             .map_err(CctpError::Network)
     }
 
-    /// Fetches the transfer fee response from the CCTP v2 API
-    async fn fetch_transfer_fees_response(&self, client: &Client, url: &Url) -> Result<Response> {
+    /// Fetches a JSON response from the CCTP v2 API.
+    async fn fetch_iris_json_response(&self, client: &Client, url: &Url) -> Result<Response> {
         client
             .get(url.as_str())
             .header(reqwest::header::ACCEPT, "application/json")

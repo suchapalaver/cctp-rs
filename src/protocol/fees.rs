@@ -7,12 +7,14 @@
 use alloy_primitives::U256;
 use serde::de::{self, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::value::RawValue;
 use std::fmt;
 
 use super::FinalityThreshold;
 
 const BPS_HUNDREDTH_DENOMINATOR: u64 = 1_000_000;
 const BUFFER_PERCENT_DENOMINATOR: u64 = 100;
+const USDC_ATOMIC_SCALE: u64 = 1_000_000;
 
 /// A CCTP transfer fee in basis points, stored as hundredths of a basis point.
 ///
@@ -220,6 +222,60 @@ impl TransferFee {
     }
 }
 
+/// Fast Transfer allowance returned by Circle Iris.
+///
+/// Circle's endpoint exposes a global USDC allowance, not a per-route value.
+/// The SDK stores it as atomic USDC units so callers can compare it directly
+/// against burn amounts without floating-point money math.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FastTransferAllowance {
+    /// Remaining global Fast Transfer allowance in atomic USDC units.
+    #[serde(serialize_with = "serialize_usdc_atomic_decimal")]
+    pub allowance: U256,
+    /// Server timestamp from Iris.
+    pub last_updated: String,
+}
+
+impl FastTransferAllowance {
+    /// Creates an allowance response from atomic USDC units and an Iris timestamp.
+    #[must_use]
+    pub fn new(allowance: U256, last_updated: impl Into<String>) -> Self {
+        Self {
+            allowance,
+            last_updated: last_updated.into(),
+        }
+    }
+
+    /// Returns true when this allowance can cover `amount` atomic USDC units.
+    #[must_use]
+    pub fn is_sufficient_for(&self, amount: U256) -> bool {
+        self.allowance >= amount
+    }
+}
+
+impl<'de> Deserialize<'de> for FastTransferAllowance {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct WireAllowance {
+            allowance: Box<RawValue>,
+            last_updated: String,
+        }
+
+        let wire = WireAllowance::deserialize(deserializer)?;
+        let allowance = parse_usdc_atomic_raw(wire.allowance.get()).map_err(de::Error::custom)?;
+
+        Ok(Self {
+            allowance,
+            last_updated: wire.last_updated,
+        })
+    }
+}
+
 fn ceil_div(numerator: U256, denominator: U256) -> U256 {
     if numerator == U256::ZERO {
         U256::ZERO
@@ -272,6 +328,90 @@ fn parse_fee_hundredths(input: &str) -> Result<FeeBps, String> {
     Ok(FeeBps::from_hundredths(total))
 }
 
+fn parse_usdc_atomic_raw(input: &str) -> Result<U256, String> {
+    let trimmed = input.trim();
+    let decimal = if trimmed.starts_with('"') {
+        serde_json::from_str::<String>(trimmed)
+            .map_err(|error| format!("allowance string is not valid JSON: {error}"))?
+    } else {
+        trimmed.to_string()
+    };
+
+    parse_usdc_atomic_decimal(&decimal)
+}
+
+fn parse_usdc_atomic_decimal(input: &str) -> Result<U256, String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err("allowance cannot be empty".to_string());
+    }
+    if input.starts_with('-') || input.starts_with('+') {
+        return Err("allowance must be unsigned".to_string());
+    }
+
+    let (whole, fractional) = input.split_once('.').unwrap_or((input, ""));
+    if whole.is_empty() && fractional.is_empty() {
+        return Err("allowance must include digits".to_string());
+    }
+    if !whole.chars().all(|c| c.is_ascii_digit()) {
+        return Err("allowance whole component must be numeric".to_string());
+    }
+    if !fractional.chars().all(|c| c.is_ascii_digit()) {
+        return Err("allowance fractional component must be numeric".to_string());
+    }
+    if fractional.len() > 6 {
+        return Err("allowance cannot have more than six decimal places".to_string());
+    }
+
+    let whole_units = if whole.is_empty() {
+        U256::ZERO
+    } else {
+        U256::from_str_radix(whole, 10)
+            .map_err(|_| "allowance whole component overflowed U256".to_string())?
+    };
+
+    let mut padded_fraction = fractional.to_string();
+    while padded_fraction.len() < 6 {
+        padded_fraction.push('0');
+    }
+    let fractional_units = if padded_fraction.is_empty() {
+        0
+    } else {
+        padded_fraction
+            .parse::<u64>()
+            .map_err(|_| "allowance fractional component overflowed u64".to_string())?
+    };
+
+    whole_units
+        .checked_mul(U256::from(USDC_ATOMIC_SCALE))
+        .and_then(|value| value.checked_add(U256::from(fractional_units)))
+        .ok_or_else(|| "allowance overflowed U256".to_string())
+}
+
+fn serialize_usdc_atomic_decimal<S>(allowance: &U256, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&format_usdc_atomic(*allowance))
+}
+
+fn format_usdc_atomic(allowance: U256) -> String {
+    let scale = U256::from(USDC_ATOMIC_SCALE);
+    let whole = allowance / scale;
+    let fraction = allowance % scale;
+
+    if fraction == U256::ZERO {
+        return whole.to_string();
+    }
+
+    let mut fraction_text = format!("{fraction:06}");
+    while fraction_text.ends_with('0') {
+        fraction_text.pop();
+    }
+
+    format!("{whole}.{fraction_text}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,6 +453,68 @@ mod tests {
             fees,
             vec![TransferFee::new(1000, FeeBps::from_hundredths(130))]
         );
+    }
+
+    #[test]
+    fn fast_transfer_allowance_deserializes_numeric_response_as_atomic_units() {
+        let json = r#"{
+            "allowance": 52455615.650179,
+            "lastUpdated": "2026-09-23T12:42:40.722Z"
+        }"#;
+
+        let allowance: FastTransferAllowance = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            allowance,
+            FastTransferAllowance::new(
+                U256::from(52_455_615_650_179_u64),
+                "2026-09-23T12:42:40.722Z"
+            )
+        );
+        assert!(allowance.is_sufficient_for(U256::from(52_455_615_650_179_u64)));
+        assert!(!allowance.is_sufficient_for(U256::from(52_455_615_650_180_u64)));
+    }
+
+    #[test]
+    fn fast_transfer_allowance_accepts_string_response_shape() {
+        let json = r#"{
+            "allowance": "0.000001",
+            "lastUpdated": "2026-09-23T12:42:40.722Z"
+        }"#;
+
+        let allowance: FastTransferAllowance = serde_json::from_str(json).unwrap();
+
+        assert_eq!(allowance.allowance, U256::from(1_u64));
+    }
+
+    #[test]
+    fn fast_transfer_allowance_rejects_more_than_six_decimals() {
+        let json = r#"{
+            "allowance": "1.0000001",
+            "lastUpdated": "2026-09-23T12:42:40.722Z"
+        }"#;
+
+        let result = serde_json::from_str::<FastTransferAllowance>(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn fast_transfer_allowance_serializes_atomic_units_as_decimal_string() {
+        let allowance = FastTransferAllowance::new(
+            U256::from(52_455_615_650_179_u64),
+            "2026-09-23T12:42:40.722Z",
+        );
+
+        let json = serde_json::to_value(allowance).unwrap();
+
+        assert_eq!(json["allowance"], "52455615.650179");
+        assert_eq!(json["lastUpdated"], "2026-09-23T12:42:40.722Z");
+
+        let sub_usdc = FastTransferAllowance::new(U256::from(1_u64), "timestamp");
+        let json = serde_json::to_value(sub_usdc).unwrap();
+
+        assert_eq!(json["allowance"], "0.000001");
     }
 
     #[test]

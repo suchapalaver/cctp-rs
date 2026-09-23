@@ -65,6 +65,11 @@ sub-30s settlement).
   `/v2/burn/USDC/fees` and `/v2/fastBurn/USDC/allowance`; EURC fee helpers must
   return `TransferFeeEndpointUnavailable` until Circle publishes an EURC Iris
   fee endpoint.
+- **Fast Transfer allowance is global.** `get_fast_transfer_allowance()` checks
+  Circle's USDC allowance pool for the selected Iris environment, not a
+  source/destination route. Compare it with the planned burn amount before using
+  `TransferMode::Fast`; use Standard Transfer or wait if allowance is
+  insufficient.
 - **Parser address projections are domain-aware.** `ParsedV2MessageSummary`
   always exposes canonical 32-byte `*_bytes` fields. EVM-shaped `Address`
   projections are `None` for non-EVM source or destination domains so tooling
@@ -87,7 +92,7 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `CctpTransferAsset`, `CctpV2Route`, `UsdcAmount` | Asset, route, and amount primitives | `src/primitives.rs` |
 | `CctpV1`, `CctpV2` traits | Chain config on `NamedChain` | `src/chain/config.rs`, `src/chain/v2.rs` |
 | `FastTransferFee` | `Known(u32)` / `Unknown` — static per-chain fee metadata; not current route quotes | `src/chain/v2.rs` |
-| `FeeBps`, `TransferFee` | Live Iris route-fee response types and max-fee helpers | `src/protocol/fees.rs` |
+| `FeeBps`, `TransferFee`, `FastTransferAllowance` | Live Iris route-fee and allowance response types plus max-fee helpers | `src/protocol/fees.rs` |
 | `CCTP_V2_*_MAINNET/TESTNET`, `*_USDC_ADDRESS`, `*_EURC_ADDRESS` | Unified v2 contract addresses and native token addresses | `src/chain/addresses.rs` |
 | `TokenMessengerContract`, `MessageTransmitterContract` | V1 contract wrappers | `src/contracts/` |
 | `TokenMessengerV2Contract`, `MessageTransmitterV2Contract` | V2 contract wrappers | `src/contracts/v2/` |

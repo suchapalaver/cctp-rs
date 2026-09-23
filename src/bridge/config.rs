@@ -44,6 +44,12 @@ pub const MESSAGES_PATH_V2: &str = "/v2/messages/";
 /// `/v2/burn/{asset}/fees/{sourceDomainId}/{destDomainId}`
 pub const TRANSFER_FEES_PATH_V2_PREFIX: &str = "/v2/burn/";
 
+/// CCTP v2 Fast Transfer allowance API path.
+///
+/// The allowance is a global USDC capacity pool per Iris environment:
+/// `/v2/fastBurn/USDC/allowance`
+pub const FAST_TRANSFER_ALLOWANCE_PATH_V2: &str = "/v2/fastBurn/USDC/allowance";
+
 /// Configuration for attestation polling behavior.
 ///
 /// Controls how the bridge polls Circle's Iris API for attestation availability.

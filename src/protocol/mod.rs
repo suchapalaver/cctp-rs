@@ -17,7 +17,7 @@ pub use attestation::{
     AttestationBytes, AttestationResponse, AttestationStatus, V2AttestationResponse, V2Message,
 };
 pub use domain_id::{DomainId, InvalidDomainId};
-pub use fees::{FeeBps, TransferFee};
+pub use fees::{FastTransferAllowance, FeeBps, TransferFee};
 pub use finality::{FinalityThreshold, InvalidFinalityThreshold};
 pub use message::{
     BurnMessageV2, MessageHeader, ParseMessageError, ParsedV2Message, ParsedV2MessageSummary,

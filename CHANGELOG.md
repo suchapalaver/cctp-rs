@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added no-wallet/no-RPC USDC Fast Transfer allowance preflight via
+  `CctpV2Bridge::get_fast_transfer_allowance()`, with typed atomic-unit
+  response handling and live smoke coverage for both Iris hosts.
 - Added a scheduled/manual `CCTP Protocol Drift` workflow and maintainer
   script that compare Circle's published CCTP domain, token, V1
   legacy-only, and capability tables against the crate's local protocol
