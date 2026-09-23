@@ -12,7 +12,7 @@ on:
 jobs:
   verify:
     name: Proofs and fixture freshness
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:

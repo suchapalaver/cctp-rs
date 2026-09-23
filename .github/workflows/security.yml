@@ -13,7 +13,7 @@ on:
 jobs:
   security_audit:
     name: Security Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -41,7 +41,7 @@ jobs:
 
   dependency_review:
     name: Dependency Review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout repository
@@ -54,7 +54,7 @@ jobs:
 
   supply_chain_security:
     name: Supply Chain Security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
