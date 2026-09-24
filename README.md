@@ -110,10 +110,11 @@ validated support boundary.
 The public protocol currency roadmap is tracked in
 [#35](https://github.com/suchapalaver/cctp-rs/issues/35), including
 fast-transfer capability drift, Forwarding Service and Stellar-safe
-flows, Fast Transfer allowance preflight, Standard Transfer fee-switch
-support, current EVM route coverage, non-USDC Iris fee endpoint drift,
+flows, Standard Transfer fee-switch support, current EVM route coverage,
+non-USDC Iris fee endpoint drift
 ([#53](https://github.com/suchapalaver/cctp-rs/issues/53)), and an
-automated drift check.
+automated drift check. USDC Fast Transfer allowance preflight is
+implemented via `get_fast_transfer_allowance()`.
 
 Maintainers can run the drift check locally with:
 
@@ -328,6 +329,11 @@ async fn fast_mode_with_live_fee<P: Provider + Clone>(
     bridge: &CctpV2Bridge<P>,
 ) -> Result<TransferMode, CctpError> {
     let amount = U256::from(10_500_000u64); // 10.5 USDC, 6 decimals
+    let allowance = bridge.get_fast_transfer_allowance().await?;
+    if !allowance.is_sufficient_for(amount) {
+        return Ok(TransferMode::Standard);
+    }
+
     let max_fee = bridge
         .calculate_fast_transfer_max_fee(amount, 20) // 20% buffer
         .await?;
@@ -339,10 +345,14 @@ async fn fast_mode_with_live_fee<P: Provider + Clone>(
 The live lookup methods are no-wallet, no-RPC HTTP calls against Iris:
 `get_transfer_fees()` returns every route entry,
 `get_fast_transfer_fee()` and `get_standard_transfer_fee()` select a finality
-threshold, and `calculate_fast_transfer_max_fee()` converts the Fast Transfer
-fee into an amount-denominated cap with your selected buffer. Funded transfer
-execution remains separate: after computing `maxFee`, pass it into
-`TransferMode::Fast { max_fee }` before calling burn/transfer helpers.
+threshold, `calculate_fast_transfer_max_fee()` converts the Fast Transfer fee
+into an amount-denominated cap with your selected buffer, and
+`get_fast_transfer_allowance()` returns Circle's current global USDC Fast
+Transfer allowance in atomic units. Check allowance before selecting
+`TransferMode::Fast`; if it is insufficient, use `TransferMode::Standard` or
+wait for replenishment. Funded transfer execution remains separate: after
+computing `maxFee`, pass it into `TransferMode::Fast { max_fee }` before
+calling burn/transfer helpers.
 
 ### Agent Tooling: Inspect a Canonical V2 Message
 
@@ -659,8 +669,9 @@ cargo test --test transfer_fees live_ --all-features -- --ignored --nocapture
 
 These opt-in tests query both the Sepolia -> Base Sepolia sandbox route and the
 Ethereum -> Base mainnet route (`/v2/burn/USDC/fees/0/6` on each Iris host),
-verify the responses decode as CCTP v2 transfer fees, and check that Iris
-returns a Fast Transfer threshold.
+verify the responses decode as CCTP v2 transfer fees, check that Iris returns a
+Fast Transfer threshold, and confirm both Iris hosts expose the global USDC Fast
+Transfer allowance endpoint (`/v2/fastBurn/USDC/allowance`).
 
 ### Live Testnet Testing
 

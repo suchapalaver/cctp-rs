@@ -19,7 +19,7 @@ use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
-use cctp_rs::{CctpError, CctpTransferAsset, CctpV2Bridge, FeeBps};
+use cctp_rs::{CctpError, CctpTransferAsset, CctpV2Bridge, FastTransferAllowance, FeeBps};
 use url::Url;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -125,6 +125,52 @@ fn usdc_fee_url_is_built_from_asset_segment() {
         url.as_str(),
         "https://iris-api.circle.com/v2/burn/USDC/fees/0/11"
     );
+}
+
+#[test]
+fn fast_transfer_allowance_url_uses_iris_environment() {
+    let mainnet_bridge = live_mainnet_bridge();
+    let mainnet_url = mainnet_bridge
+        .create_fast_transfer_allowance_url()
+        .expect("mainnet allowance URL should build");
+    assert_eq!(
+        mainnet_url.as_str(),
+        "https://iris-api.circle.com/v2/fastBurn/USDC/allowance"
+    );
+
+    let sandbox_bridge = live_sandbox_bridge();
+    let sandbox_url = sandbox_bridge
+        .create_fast_transfer_allowance_url()
+        .expect("sandbox allowance URL should build");
+    assert_eq!(
+        sandbox_url.as_str(),
+        "https://iris-api-sandbox.circle.com/v2/fastBurn/USDC/allowance"
+    );
+}
+
+#[tokio::test]
+async fn fetches_fast_transfer_allowance() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v2/fastBurn/USDC/allowance"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"allowance":123.456789,"lastUpdated":"2026-09-23T12:42:40.722Z"}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let allowance = bridge(api_override)
+        .get_fast_transfer_allowance()
+        .await
+        .expect("allowance response should decode");
+
+    assert_eq!(
+        allowance,
+        FastTransferAllowance::new(U256::from(123_456_789_u64), "2026-09-23T12:42:40.722Z")
+    );
+    assert!(allowance.is_sufficient_for(U256::from(123_456_789_u64)));
+    assert!(!allowance.is_sufficient_for(U256::from(123_456_790_u64)));
 }
 
 #[tokio::test]
@@ -235,6 +281,50 @@ async fn malformed_fee_response_returns_json_error() {
 }
 
 #[tokio::test]
+async fn non_success_allowance_response_returns_network_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v2/fastBurn/USDC/allowance"))
+        .respond_with(ResponseTemplate::new(503).set_body_string("iris unavailable"))
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let err = bridge(api_override)
+        .get_fast_transfer_allowance()
+        .await
+        .expect_err("HTTP status failures should be surfaced");
+
+    assert!(matches!(
+        err,
+        CctpError::Network(ref network_error)
+            if network_error.status().is_some_and(|status| status.as_u16() == 503)
+    ));
+}
+
+#[tokio::test]
+async fn malformed_allowance_response_returns_json_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v2/fastBurn/USDC/allowance"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(
+                r#"{"allowance":1.0000001,"lastUpdated":"2026-09-23T12:42:40.722Z"}"#,
+            ),
+        )
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let err = bridge(api_override)
+        .get_fast_transfer_allowance()
+        .await
+        .expect_err("too many decimal places should be surfaced");
+
+    assert!(matches!(err, CctpError::Json(_)));
+}
+
+#[tokio::test]
 #[ignore]
 async fn live_sandbox_fee_lookup_smoke_test() {
     let bridge = live_sandbox_bridge();
@@ -279,5 +369,51 @@ async fn live_mainnet_fee_lookup_smoke_test() {
     assert!(
         fees.iter().any(|fee| fee.finality_threshold == 1000),
         "Iris mainnet route should include a Fast Transfer fee"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn live_sandbox_fast_transfer_allowance_smoke_test() {
+    let bridge = live_sandbox_bridge();
+    let url = bridge
+        .create_fast_transfer_allowance_url()
+        .expect("sandbox allowance URL should construct");
+    assert_eq!(
+        url.as_str(),
+        "https://iris-api-sandbox.circle.com/v2/fastBurn/USDC/allowance"
+    );
+
+    let allowance = bridge
+        .get_fast_transfer_allowance()
+        .await
+        .expect("Iris sandbox allowance response should decode");
+
+    assert!(
+        !allowance.last_updated.is_empty(),
+        "Iris sandbox should report an allowance timestamp"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn live_mainnet_fast_transfer_allowance_smoke_test() {
+    let bridge = live_mainnet_bridge();
+    let url = bridge
+        .create_fast_transfer_allowance_url()
+        .expect("mainnet allowance URL should construct");
+    assert_eq!(
+        url.as_str(),
+        "https://iris-api.circle.com/v2/fastBurn/USDC/allowance"
+    );
+
+    let allowance = bridge
+        .get_fast_transfer_allowance()
+        .await
+        .expect("Iris mainnet allowance response should decode");
+
+    assert!(
+        !allowance.last_updated.is_empty(),
+        "Iris mainnet should report an allowance timestamp"
     );
 }

@@ -182,9 +182,10 @@ pub use contracts::{
 pub use error::{AttestationFailureKind, CctpError, Result};
 pub use primitives::{CctpTransferAsset, CctpV2Route, UsdcAmount};
 pub use protocol::{
-    AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId, FeeBps,
-    FinalityThreshold, InvalidDomainId, InvalidFinalityThreshold, MessageHeader, ParseMessageError,
-    ParsedV2Message, ParsedV2MessageSummary, TransferFee, V2AttestationResponse, V2Message,
+    AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId,
+    FastTransferAllowance, FeeBps, FinalityThreshold, InvalidDomainId, InvalidFinalityThreshold,
+    MessageHeader, ParseMessageError, ParsedV2Message, ParsedV2MessageSummary, TransferFee,
+    V2AttestationResponse, V2Message,
 };
 pub use provider::{
     calculate_gas_price_with_buffer, estimate_gas_with_buffer, ProviderConfig,
