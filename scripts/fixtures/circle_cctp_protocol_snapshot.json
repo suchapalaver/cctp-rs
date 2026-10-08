@@ -183,6 +183,13 @@
       "upfront_fees": false
     },
     {
+      "blockchain": "Sui",
+      "fast_transfer": null,
+      "forwarding_service": false,
+      "standard_transfer": true,
+      "upfront_fees": false
+    },
+    {
       "blockchain": "Unichain",
       "fast_transfer": true,
       "forwarding_service": true,
@@ -218,7 +225,7 @@
     "Source (Upfront fees)",
     "Forwarding Service"
   ],
-  "current_cctp_domain_count": 30,
+  "current_cctp_domain_count": 31,
   "domains": [
     {
       "blockchain": "Ethereum",
@@ -247,6 +254,10 @@
     {
       "blockchain": "Polygon PoS",
       "domain": 7
+    },
+    {
+      "blockchain": "Sui",
+      "domain": 8
     },
     {
       "blockchain": "Aptos",
@@ -361,10 +372,6 @@
     {
       "blockchain": "Noble",
       "domain": 4
-    },
-    {
-      "blockchain": "Sui",
-      "domain": 8
     }
   ]
 }

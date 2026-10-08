@@ -10,7 +10,7 @@
 //! - v1: Original CCTP contracts (7 chain families)
 //! - v2: Enhanced contracts with Fast Transfer, hooks, and 11 v2-capable
 //!   chain families (the v1 set plus Linea, Sonic, Sei, HyperEVM). The
-//!   protocol parser handles all 30 domain IDs in Circle's current CCTP
+//!   protocol parser handles all 31 domain IDs in Circle's current CCTP
 //!   domain table, independently of bridge SDK support.
 //!
 //! ## Public API

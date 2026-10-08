@@ -70,6 +70,8 @@ def addrB : List UInt8 := ofHex "7f7d081724f0240c64c9e01cde4626602f9a0192"
 def addrC : List UInt8 := ofHex "1234567890abcdef1234567890abcdef12345678"
 def solanaTokenWord : List UInt8 := repeatByte 0xcd 32
 def solanaSenderWord : List UInt8 := repeatByte 0xef 32
+def suiTokenWord : List UInt8 := repeatByte 0x8a 32
+def suiSenderWord : List UInt8 := repeatByte 0x8b 32
 def starknetRecipientWord : List UInt8 := repeatByte 0x42 32
 def stellarTokenWord : List UInt8 := repeatByte 0xac 32
 def stellarSenderWord : List UInt8 := repeatByte 0xbe 32
@@ -116,6 +118,11 @@ def solanaSourceMessage : Message :=
   { header := mkHeader 1 .solana .base zeroWord (repeatByte 0xab 32)
       (evmWord addrB) zeroWord 2000 2000
     body := mkBody 1 solanaTokenWord (evmWord addrB) 1000000 solanaSenderWord 0 0 0 [] }
+
+def suiSourceMessage : Message :=
+  { header := mkHeader 1 .sui .base (repeatByte 0x08 32) suiSenderWord
+      (evmWord addrB) zeroWord 2000 2000
+    body := mkBody 1 suiTokenWord (evmWord addrB) 2000000 suiSenderWord 0 0 0 [] }
 
 def starknetDestinationMessage : Message :=
   { header := mkHeader 1 .ethereum .starknetTestnet (repeatByte 0x22 32)
@@ -168,6 +175,9 @@ def acceptVectors : Except String (List AcceptVector) := do
     ⟨"solana_source_placeholder_nonce",
       "Non-EVM source domain: raw 32-byte sender word without EVM padding, all-zero placeholder nonce, permissionless.",
       solanaSourceMessage⟩,
+    ⟨"sui_source_standard_transfer",
+      "Current non-EVM source domain: raw token and sender words, EVM destination recipient.",
+      suiSourceMessage⟩,
     ⟨"starknet_destination_caller_set",
       "Non-EVM destination domain: raw recipient and caller words, fast requested but standard executed.",
       starknetDestinationMessage⟩,
@@ -198,8 +208,6 @@ def rejectVectors : List RejectVector :=
       "too_short_body", minimal.take 375⟩,
     ⟨"unknown_source_domain_4", "Domain 4 is Noble, currently CCTP V1 legacy-only.",
       "unknown_source_domain", setSlice minimal (beBytes 4 4) 4⟩,
-    ⟨"unknown_source_domain_8", "Domain 8 is Sui, currently CCTP V1 legacy-only.",
-      "unknown_source_domain", setSlice minimal (beBytes 4 8) 4⟩,
     ⟨"unknown_destination_domain_999", "Domain 999 is far beyond the current table.",
       "unknown_destination_domain", setSlice minimal (beBytes 4 999) 8⟩,
     ⟨"unknown_destination_domain_20", "Domain 20 is a gap in Circle's table.",

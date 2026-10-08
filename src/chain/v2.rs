@@ -59,7 +59,7 @@ pub enum FastTransferFee {
 ///   (the 7 v1 families plus Linea, Sonic, Sei, HyperEVM) with testnets,
 ///   versus the 7 v1 chain families. Note that this trait covers bridge
 ///   SDK reach; the protocol parser (`DomainId`, `ParsedV2Message`) can decode
-///   all 30 domain IDs in Circle's current CCTP domain table
+///   all 31 domain IDs in Circle's current CCTP domain table
 ///   independently of bridge support.
 ///
 /// # Example

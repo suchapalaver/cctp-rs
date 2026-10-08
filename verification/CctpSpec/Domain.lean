@@ -6,11 +6,11 @@
 /-!
 # CCTP domain identifiers
 
-Models `DomainId` from `src/protocol/domain_id.rs`: the 30 current CCTP domain
+Models `DomainId` from `src/protocol/domain_id.rs`: the 31 current CCTP domain
 IDs modeled by the parser, their `u32` wire values, and the
 EVM-address-convention flag. The theorems pin the conversion table: `fromU32`
 and `toU32` are mutually inverse on exactly the modeled IDs, so legacy-only or
-gap values (4, 8, 20, 23, 24, ...) can never decode.
+gap values (4, 20, 23, 24, ...) can never decode.
 -/
 
 namespace CctpSpec
@@ -25,6 +25,7 @@ inductive DomainId where
   | solana
   | base
   | polygon
+  | sui
   | aptos
   | unichain
   | linea
@@ -61,6 +62,7 @@ def toU32 : DomainId → Nat
   | .solana => 5
   | .base => 6
   | .polygon => 7
+  | .sui => 8
   | .aptos => 9
   | .unichain => 10
   | .linea => 11
@@ -94,6 +96,7 @@ def fromU32 : Nat → Option DomainId
   | 5 => some .solana
   | 6 => some .base
   | 7 => some .polygon
+  | 8 => some .sui
   | 9 => some .aptos
   | 10 => some .unichain
   | 11 => some .linea
@@ -123,6 +126,7 @@ def fromU32 : Nat → Option DomainId
 Mirrors `DomainId::is_evm`. -/
 def isEvm : DomainId → Bool
   | .solana => false
+  | .sui => false
   | .aptos => false
   | .starknetTestnet => false
   | .stellar => false
@@ -137,6 +141,7 @@ def jsonName : DomainId → String
   | .solana => "solana"
   | .base => "base"
   | .polygon => "polygon"
+  | .sui => "sui"
   | .aptos => "aptos"
   | .unichain => "unichain"
   | .linea => "linea"
@@ -166,8 +171,8 @@ def jsonName : DomainId → String
 this list fails the build. -/
 def all : List DomainId :=
   [.ethereum, .avalanche, .optimism, .arbitrum, .solana, .base, .polygon,
-   .aptos, .unichain, .linea, .codex, .sonic, .worldChain, .monad, .sei,
-   .bnbSmartChain, .xdc, .hyperEvm, .ink, .plume, .starknetTestnet,
+   .sui, .aptos, .unichain, .linea, .codex, .sonic, .worldChain, .monad,
+   .sei, .bnbSmartChain, .xdc, .hyperEvm, .ink, .plume, .starknetTestnet,
    .arcTestnet, .stellar, .edge, .injective, .morph, .pharos, .cronos,
    .plasma, .xLayer]
 
@@ -180,7 +185,7 @@ theorem fromU32_toU32 (d : DomainId) : fromU32 (toU32 d) = some d := by
 
 /-- Canonicality: an accepted wire value is exactly the encoding of the
 domain it decodes to. Together with `fromU32_toU32` this makes the
-conversion a bijection between the 30 modeled IDs and the typed values. -/
+conversion a bijection between the 31 modeled IDs and the typed values. -/
 theorem toU32_of_fromU32 {n : Nat} {d : DomainId} (h : fromU32 n = some d) :
     toU32 d = n := by
   unfold fromU32 at h
@@ -197,9 +202,9 @@ theorem toU32_injective {d₁ d₂ : DomainId} (h : toU32 d₁ = toU32 d₂) :
 theorem toU32_lt (d : DomainId) : toU32 d < 2 ^ 32 := by
   cases d <;> decide
 
-/-- Exactly Solana, Aptos, Starknet, and Stellar are non-EVM. -/
+/-- Exactly Solana, Sui, Aptos, Starknet, and Stellar are non-EVM. -/
 theorem isEvm_eq_false_iff (d : DomainId) :
-    d.isEvm = false ↔ d = .solana ∨ d = .aptos ∨
+    d.isEvm = false ↔ d = .solana ∨ d = .sui ∨ d = .aptos ∨
       d = .starknetTestnet ∨ d = .stellar := by
   cases d <;> simp [isEvm]
 

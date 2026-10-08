@@ -23,7 +23,7 @@ use thiserror::Error;
 /// # CCTP Version Support
 ///
 /// This enum models Circle's current CCTP domain identifier table, excluding
-/// v1 legacy-only Noble (4) and Sui (8). Bridge support is narrower than this
+/// v1 legacy-only Noble (4). Bridge support is narrower than this
 /// parser table; use `NamedChain::supports_cctp_v2()` before routing.
 ///
 /// # Serialization Compatibility
@@ -61,6 +61,8 @@ pub enum DomainId {
     Base = 6,
     /// Polygon `PoS` (Domain ID: 7)
     Polygon = 7,
+    /// Sui (Domain ID: 8) - Non-EVM chain, parse-only
+    Sui = 8,
     /// Aptos (Domain ID: 9) - Non-EVM chain, parse-only
     Aptos = 9,
     /// Unichain (Domain ID: 10)
@@ -151,6 +153,7 @@ impl DomainId {
             5 => Some(Self::Solana),
             6 => Some(Self::Base),
             7 => Some(Self::Polygon),
+            8 => Some(Self::Sui),
             9 => Some(Self::Aptos),
             10 => Some(Self::Unichain),
             11 => Some(Self::Linea),
@@ -200,6 +203,7 @@ impl DomainId {
             Self::Solana => "Solana",
             Self::Base => "Base",
             Self::Polygon => "Polygon",
+            Self::Sui => "Sui",
             Self::Aptos => "Aptos",
             Self::Unichain => "Unichain",
             Self::Linea => "Linea",
@@ -235,7 +239,7 @@ impl DomainId {
     pub const fn is_evm(self) -> bool {
         !matches!(
             self,
-            Self::Solana | Self::Aptos | Self::StarknetTestnet | Self::Stellar
+            Self::Solana | Self::Sui | Self::Aptos | Self::StarknetTestnet | Self::Stellar
         )
     }
 }
@@ -280,6 +284,7 @@ mod tests {
         assert_eq!(DomainId::Solana.as_u32(), 5);
         assert_eq!(DomainId::Base.as_u32(), 6);
         assert_eq!(DomainId::Polygon.as_u32(), 7);
+        assert_eq!(DomainId::Sui.as_u32(), 8);
         assert_eq!(DomainId::Aptos.as_u32(), 9);
         assert_eq!(DomainId::Unichain.as_u32(), 10);
         assert_eq!(DomainId::Linea.as_u32(), 11);
@@ -314,6 +319,7 @@ mod tests {
         assert_eq!(DomainId::from_u32(5), Some(DomainId::Solana));
         assert_eq!(DomainId::from_u32(6), Some(DomainId::Base));
         assert_eq!(DomainId::from_u32(7), Some(DomainId::Polygon));
+        assert_eq!(DomainId::from_u32(8), Some(DomainId::Sui));
         assert_eq!(DomainId::from_u32(9), Some(DomainId::Aptos));
         assert_eq!(DomainId::from_u32(10), Some(DomainId::Unichain));
         assert_eq!(DomainId::from_u32(11), Some(DomainId::Linea));
@@ -343,7 +349,6 @@ mod tests {
     fn test_from_u32_invalid() {
         // Test gaps in domain ID space
         assert_eq!(DomainId::from_u32(4), None); // V1 legacy-only Noble
-        assert_eq!(DomainId::from_u32(8), None); // V1 legacy-only Sui
         assert_eq!(DomainId::from_u32(20), None); // Gap
         assert_eq!(DomainId::from_u32(23), None); // Gap
         assert_eq!(DomainId::from_u32(24), None); // Gap
@@ -371,6 +376,7 @@ mod tests {
         assert_eq!(format!("{}", DomainId::Ethereum), "Ethereum (0)");
         assert_eq!(format!("{}", DomainId::Arbitrum), "Arbitrum (3)");
         assert_eq!(format!("{}", DomainId::Base), "Base (6)");
+        assert_eq!(format!("{}", DomainId::Sui), "Sui (8)");
         assert_eq!(format!("{}", DomainId::StarknetTestnet), "Starknet (25)");
         assert_eq!(format!("{}", DomainId::ArcTestnet), "Arc (26)");
         assert_eq!(format!("{}", DomainId::XLayer), "X Layer (37)");
@@ -381,6 +387,7 @@ mod tests {
         assert_eq!(DomainId::Ethereum.name(), "Ethereum");
         assert_eq!(DomainId::Arbitrum.name(), "Arbitrum");
         assert_eq!(DomainId::Avalanche.name(), "Avalanche");
+        assert_eq!(DomainId::Sui.name(), "Sui");
         assert_eq!(DomainId::StarknetTestnet.name(), "Starknet");
         assert_eq!(DomainId::ArcTestnet.name(), "Arc");
         assert_eq!(DomainId::XLayer.name(), "X Layer");
@@ -424,6 +431,7 @@ mod tests {
         assert!(DomainId::Base.is_evm());
         assert!(DomainId::XLayer.is_evm());
         assert!(!DomainId::Solana.is_evm());
+        assert!(!DomainId::Sui.is_evm());
         assert!(!DomainId::Aptos.is_evm());
         assert!(!DomainId::StarknetTestnet.is_evm());
         assert!(!DomainId::Stellar.is_evm());
@@ -439,6 +447,7 @@ mod tests {
             DomainId::Solana,
             DomainId::Base,
             DomainId::Polygon,
+            DomainId::Sui,
             DomainId::Aptos,
             DomainId::Unichain,
             DomainId::Linea,

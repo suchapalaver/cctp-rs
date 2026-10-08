@@ -23,7 +23,7 @@ resource graph, expert-panel memo format, and current claim ledger — see
 
 | Invariant | Lean module | Rust module covered |
 |---|---|---|
-| `DomainId` ↔ `u32` is a bijection on exactly the 30 modeled IDs; `is_evm` classification | `CctpSpec/Domain.lean` | `src/protocol/domain_id.rs` |
+| `DomainId` ↔ `u32` is a bijection on exactly the 31 modeled IDs; `is_evm` classification | `CctpSpec/Domain.lean` | `src/protocol/domain_id.rs` |
 | `FinalityThreshold` ↔ `u32` accepts exactly 1000 (fast) and 2000 (standard) | `CctpSpec/Finality.lean` | `src/protocol/finality.rs` |
 | `TransferMode` dispatch: fast variants ⇔ threshold 1000; standard variants send zero `maxFee`; hooks carried exactly by `*WithHook` | `CctpSpec/TransferMode.lean` | `src/bridge/transfer_mode.rs` |
 | Big-endian field codec round-trips; `bytes32` EVM-address words are canonical (12 zero leading bytes) | `CctpSpec/Bytes.lean` | `src/protocol/message.rs` (`decode_address_word`, field codecs) |
@@ -146,8 +146,8 @@ Mapped to the checklist in issue #11:
 
 | Claim | Theorem |
 |---|---|
-| `DomainId` u32 conversion round-trips and is canonical/injective on exactly the 30 modeled IDs | `DomainId.fromU32_toU32`, `DomainId.toU32_of_fromU32`, `DomainId.toU32_injective` |
-| Solana, Aptos, Starknet, and Stellar are exactly the non-EVM domains | `DomainId.isEvm_eq_false_iff` |
+| `DomainId` u32 conversion round-trips and is canonical/injective on exactly the 31 modeled IDs | `DomainId.fromU32_toU32`, `DomainId.toU32_of_fromU32`, `DomainId.toU32_injective` |
+| Solana, Sui, Aptos, Starknet, and Stellar are exactly the non-EVM domains | `DomainId.isEvm_eq_false_iff` |
 | `FinalityThreshold` accepts exactly 1000/2000, fast = 1000, standard = 2000 | `FinalityThreshold.fromU32_toU32`, `toU32_of_fromU32`, `toU32_fast`, `toU32_standard` |
 | Fast transfer modes — and only they — request threshold 1000; standard modes send zero `maxFee`; hooks ⇔ `*WithHook` | `TransferMode.finality_wire_value`, `maxFee_eq_zero_of_not_fast`, `hookData_isSome_iff` |
 | Big-endian field encoding round-trips; every byte string is the canonical encoding of its value | `natOfBe_beBytes`, `beBytes_natOfBe` |

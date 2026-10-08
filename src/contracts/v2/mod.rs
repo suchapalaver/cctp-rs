@@ -7,7 +7,7 @@
 //! This module contains contract bindings for Circle's CCTP v2 contracts,
 //! which add Fast Transfer, programmable hooks, and support for 11
 //! v2-capable EVM chain families (the v1 set plus Linea, Sonic, Sei,
-//! HyperEVM). See [`crate::DomainId`] for the full set of 30 current CCTP
+//! HyperEVM). See [`crate::DomainId`] for the full set of 31 current CCTP
 //! domain IDs the protocol parser recognizes.
 
 mod message_transmitter_v2;

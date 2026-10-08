@@ -16,9 +16,9 @@ layers that have different coverage:
   (7 v1 chain families plus Linea, Sonic, Sei, HyperEVM) with their
   testnets, plus EURC on Circle's initial Ethereum <-> Base routes.
 - **Protocol parser** (`DomainId`, `ParsedV2Message`,
-  `ParsedV2MessageSummary`) — recognizes all 30 domain IDs in Circle's
-  current CCTP domain table, including non-EVM domains (Solana, Aptos,
-  Starknet, Stellar). Parsing is independent of whether the bridge SDK
+  `ParsedV2MessageSummary`) — recognizes all 31 domain IDs in Circle's
+  current CCTP domain table, including non-EVM domains (Solana, Sui,
+  Aptos, Starknet, Stellar). Parsing is independent of whether the bridge SDK
   can route to or from a given domain; see the README's
   "Protocol parser — additional domains" section for the parse-only list.
 
@@ -231,7 +231,7 @@ above.
    `AGENTS.md` so the docs stay in sync with what the parser and
    bridge actually cover:
    - Every new `DomainId` variant bumps the domain ID count quoted in
-     both files ("all 30 domain IDs in Circle's current CCTP domain
+     both files ("all 31 domain IDs in Circle's current CCTP domain
      table") and updates the README's protocol currency roadmap.
    - If `NamedChain::supports_cctp_v2()` returns `true` for the new
      chain, bump the v2-capable chain family count in this file
