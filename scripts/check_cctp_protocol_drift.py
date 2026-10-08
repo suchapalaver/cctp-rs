@@ -251,7 +251,7 @@ def parse_markdown_table(text: str) -> tuple[list[str], list[dict[str, str]]]:
     rows = []
     for line in lines:
         cells = [normalize_cell(cell) for cell in line.strip("|").split("|")]
-        if all(re.fullmatch(r":?-{2,}:?", cell.replace(" ", "")) for cell in cells):
+        if all(re.fullmatch(r":?-+:?", cell.replace(" ", "")) for cell in cells):
             continue
         rows.append(cells)
 

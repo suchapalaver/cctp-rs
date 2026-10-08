@@ -742,8 +742,9 @@ impl ParsedV2Message {
 /// are always populated. The EVM-shaped fields (`sender`, `recipient`,
 /// `destination_caller`) are populated only when the corresponding domain is
 /// EVM ([`DomainId::is_evm`]); for non-EVM domains such as
-/// [`DomainId::Solana`], [`DomainId::Aptos`], [`DomainId::StarknetTestnet`],
-/// or [`DomainId::Stellar`], they are `None` because a trailing-20-byte
+/// [`DomainId::Solana`], [`DomainId::Sui`], [`DomainId::Aptos`],
+/// [`DomainId::StarknetTestnet`], or [`DomainId::Stellar`], they are `None`
+/// because a trailing-20-byte
 /// projection would be misleading.
 ///
 /// The same pattern applies to burn-body words: `burn_token_bytes`,
