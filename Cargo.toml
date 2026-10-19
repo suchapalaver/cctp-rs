@@ -38,7 +38,7 @@ alloy-rpc-types-anvil = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-rpc-types-any = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-rpc-types-eth = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-serde = { version = ">=2.4, <2.5.0", default-features = false }
-alloy-signer = { version = ">=2.4, <2.5.0", default-features = false }
+alloy-signer = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-sol-types = { version = "1.7", features = ["json"] }
 alloy-transport = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-tx-macros = { version = ">=2.4, <2.5.0", default-features = false }
