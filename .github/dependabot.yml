@@ -9,6 +9,20 @@ updates:
       time: "09:00"
       timezone: "America/New_York"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+    groups:
+      routine-cargo-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      cargo-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
     reviewers:
       - "suchapalaver"
     assignees:
@@ -25,6 +39,12 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions-updates:
+        patterns:
+          - "*"
     commit-message:
       prefix: "ci"
       include: "scope"
