@@ -395,7 +395,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ///
     /// This no-wallet/no-RPC preflight lets callers compare the returned
     /// allowance against a planned Fast Transfer amount before choosing
-    /// [`TransferMode::Fast`](crate::TransferMode::Fast). When allowance is
+    /// [`TransferMode::Fast`]. When allowance is
     /// insufficient, use a Standard Transfer or wait for the allowance to
     /// replenish.
     ///

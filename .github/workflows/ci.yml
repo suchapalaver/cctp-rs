@@ -98,12 +98,9 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: Build documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
         run: cargo doc --all-features --no-deps --document-private-items
-
-      - name: Check documentation coverage
-        run: |
-          cargo doc --all-features --no-deps --document-private-items 2>&1 | \
-          grep -E "warning:|error:" || echo "Documentation built successfully"
 
   reuse:
     name: REUSE Compliance
