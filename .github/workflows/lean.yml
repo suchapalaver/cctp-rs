@@ -9,12 +9,15 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: Proofs and fixture freshness
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
@@ -50,7 +53,7 @@ jobs:
 
       - name: Cache Lean toolchain
         if: steps.changes.outputs.relevant == 'true'
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/.elan
           key: elan-${{ runner.os }}-${{ hashFiles('verification/lean-toolchain') }}
