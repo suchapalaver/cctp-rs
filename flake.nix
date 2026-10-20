@@ -22,7 +22,9 @@
           inherit system overlays;
         };
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+        cargoManifest = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+        rustVersion = cargoManifest.package."rust-version";
+        rustToolchain = pkgs.rust-bin.stable.${rustVersion}.default.override {
           extensions = [ "rust-src" "rust-analyzer" ];
         };
 
