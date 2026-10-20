@@ -19,8 +19,8 @@ alloy-chains = "0.2"
 alloy-consensus = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-consensus-any = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-contract = { version = ">=2.4, <2.5.0", default-features = false }
-alloy-eips = { version = ">=2.4, <2.5.0", default-features = false }
-alloy-genesis = { version = ">=2.4, <2.5.0", default-features = false }
+alloy-eips = { version = ">=2.4, <2.6.0", default-features = false }
+alloy-genesis = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-json-rpc = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-network = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-network-primitives = { version = ">=2.4, <2.5.0", default-features = false }
