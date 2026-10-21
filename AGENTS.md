@@ -125,6 +125,10 @@ parser.
 - `cargo clippy --all-targets --all-features -- -D warnings` — matches the CI lint gate.
 - `cargo fmt --all -- --check` — verifies formatting; `cargo fmt` applies fixes.
 - `cargo build --example v2_integration_validation` — validates a representative v2 example.
+- `rust-toolchain.toml` pins the repository's development compiler and is also
+  consumed by `flake.nix`; update it deliberately when advancing the contributor
+  toolchain. `Cargo.toml`'s `rust-version` remains the independent public MSRV,
+  enforced by the `Minimum Supported Rust` CI job.
 - `pipx run reuse lint` — SPDX/REUSE compliance check. If the tool cannot
   import an encoding detector in the local environment, use
   `pipx run --spec 'reuse[charset-normalizer]' reuse lint`.
