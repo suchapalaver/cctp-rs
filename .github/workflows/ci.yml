@@ -81,8 +81,8 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
-      - name: Check flake
-        run: nix flake check
+      - name: Check flake outputs across systems
+        run: nix flake check --all-systems
 
       - name: Check development shell
         run: nix develop -c cargo check --all-targets --all-features
