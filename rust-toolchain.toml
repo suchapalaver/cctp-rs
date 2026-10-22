@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[toolchain]
+channel = "1.96.0"
+components = ["clippy", "rust-analyzer", "rust-src", "rustfmt"]
+profile = "minimal"
