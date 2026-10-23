@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+# SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -29,11 +30,10 @@
           pkg-config
         ];
 
+        # Darwin stdenv supplies the default Apple SDK, including the Security
+        # and SystemConfiguration frameworks used by the Rust dependency graph.
         buildInputs = with pkgs; [
           openssl
-        ] ++ lib.optionals stdenv.isDarwin [
-          darwin.apple_sdk.frameworks.Security
-          darwin.apple_sdk.frameworks.SystemConfiguration
         ];
       in
       {
