@@ -11,10 +11,13 @@ path = "abis/**/*.json"
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
 SPDX-License-Identifier = "Apache-2.0"
 
-# Package management files
+# Touched security policy files
 [[annotations]]
-path = "deny.toml"
-SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+path = [".cargo/audit.toml", "deny.toml"]
+SPDX-FileCopyrightText = [
+    "2025 Semiotic AI, Inc.",
+    "2026 Joseph Livesey <jlivesey@gmail.com>",
+]
 SPDX-License-Identifier = "Apache-2.0"
 
 # Touched package metadata
