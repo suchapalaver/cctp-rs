@@ -70,6 +70,13 @@ sub-30s settlement).
   source/destination route. Compare it with the planned burn amount before using
   `TransferMode::Fast`; use Standard Transfer or wait if allowance is
   insufficient.
+- **Fast Transfer capability belongs to the source chain.** Ethereum,
+  Arbitrum, Base, OP Mainnet, Unichain, and Linea are Fast-capable sources in
+  the current bridge set. Circle marks Avalanche, HyperEVM, Polygon PoS, Sei,
+  and Sonic N/A because Standard Transfer is already fast. They remain valid
+  Standard Transfer sources and Fast Transfer destinations. Check
+  `supports_fast_transfer()` before offering a fast mode; fast-only metadata
+  and burns return `FastTransferUnsupported` for N/A sources before RPC.
 - **Parser address projections are domain-aware.** `ParsedV2MessageSummary`
   always exposes canonical 32-byte `*_bytes` fields. EVM-shaped `Address`
   projections are `None` for non-EVM source or destination domains so tooling

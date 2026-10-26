@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -79,11 +80,13 @@ pub trait CctpBridge: Send + Sync {
     /// - The event data cannot be decoded
     async fn get_message_sent_event(&self, tx_hash: TxHash) -> Result<(Vec<u8>, FixedBytes<32>)>;
 
-    /// Returns whether this bridge supports fast transfers (v2 feature)
+    /// Returns whether this bridge is configured for Fast Transfer on an
+    /// eligible source chain (v2 feature)
     ///
-    /// Fast transfers enable <30 second settlement times with optional fees (0-14 bps).
-    /// This uses a lower finality threshold (1000 = "confirmed" level) compared to
-    /// standard transfers (2000 = "finalized" level).
+    /// Fast transfers use a lower finality threshold (1000 = "confirmed"
+    /// level) compared to standard transfers (2000 = "finalized" level).
+    /// Availability is source-chain-specific; some v2 chains only need Standard
+    /// Transfer because their standard attestation is already fast.
     ///
     /// # Default Implementation
     ///

@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! CCTP v2 Integration Validation
@@ -13,7 +14,7 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_provider::ProviderBuilder;
-use cctp_rs::{CctpV2, CctpV2Bridge, DomainId, FastTransferFee, TransferMode};
+use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, DomainId, FastTransferFee, TransferMode};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -463,40 +464,47 @@ fn validate_fast_transfer_support() -> Result<(), Box<dyn std::error::Error>> {
     println!("6️⃣  Validating Fast Transfer Support");
     println!("   ---------------------------------");
 
-    // All v2 chains should support fast transfer
+    // Fast Transfer is a source-chain capability; N/A chains retain Standard
+    // Transfer support but must not expose fast-only metadata.
     let test_chains = vec![
-        NamedChain::Mainnet,
-        NamedChain::Arbitrum,
-        NamedChain::Base,
-        NamedChain::Optimism,
-        NamedChain::Linea,
-        NamedChain::Sonic,
-        NamedChain::Avalanche,
-        NamedChain::Polygon,
-        NamedChain::Sei,
-        NamedChain::Unichain,
-        NamedChain::Hyperliquid,
-        NamedChain::Sepolia,
-        NamedChain::BaseSepolia,
+        (NamedChain::Mainnet, true),
+        (NamedChain::Arbitrum, true),
+        (NamedChain::Base, true),
+        (NamedChain::Optimism, true),
+        (NamedChain::Linea, true),
+        (NamedChain::Sonic, false),
+        (NamedChain::Avalanche, false),
+        (NamedChain::Polygon, false),
+        (NamedChain::Sei, false),
+        (NamedChain::Unichain, true),
+        (NamedChain::Hyperliquid, false),
+        (NamedChain::Sepolia, true),
+        (NamedChain::BaseSepolia, true),
     ];
 
-    for chain in test_chains {
+    for (chain, expected) in test_chains {
         let supports_fast = chain.supports_fast_transfer()?;
-        assert!(supports_fast, "{chain} should support fast transfer");
+        assert_eq!(
+            supports_fast, expected,
+            "{chain} Fast Transfer source capability"
+        );
 
-        let fee_bps = chain.fast_transfer_fee_bps()?;
-
-        print!("   ✓ {:<20} Fast: Yes  ", format!("{chain}"));
-
-        match fee_bps {
-            FastTransferFee::Known(bps) => {
-                assert!(bps <= 14, "Fee should be 0-14 bps, got {bps}");
-                println!("Fee: {bps} bps");
+        if supports_fast {
+            print!("   ✓ {:<20} Fast: Yes  ", format!("{chain}"));
+            match chain.fast_transfer_fee_bps()? {
+                FastTransferFee::Known(bps) => println!("Static fee: {bps} bps"),
+                FastTransferFee::Unknown => {
+                    println!("Static fee: unknown (use live route lookup for quotes)")
+                }
+                _ => println!("Static fee: unrecognized FastTransferFee variant"),
             }
-            FastTransferFee::Unknown => {
-                println!("Static fee: unknown (use live route lookup for quotes)")
-            }
-            _ => println!("Fee: unrecognized FastTransferFee variant"),
+        } else {
+            assert!(matches!(
+                chain.fast_transfer_fee_bps(),
+                Err(CctpError::FastTransferUnsupported { source_chain })
+                    if source_chain == chain
+            ));
+            println!("   ✓ {:<20} Fast: N/A", format!("{chain}"));
         }
     }
 
