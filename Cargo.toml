@@ -16,14 +16,14 @@ repository = "https://github.com/suchapalaver/cctp-rs"
 alloy-chains = "0.2"
 # Keep direct Alloy crates on the tested 2.4.x line. Alloy 2.4.x declares
 # Rust 1.94.1, reflected in the package rust-version above.
-alloy-consensus = { version = ">=2.4, <2.5.0", default-features = false }
-alloy-consensus-any = { version = ">=2.4, <2.5.0", default-features = false }
+alloy-consensus = { version = ">=2.4, <2.6.0", default-features = false }
+alloy-consensus-any = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-contract = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-eips = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-genesis = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-json-rpc = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-network = { version = ">=2.4, <2.5.0", default-features = false }
-alloy-network-primitives = { version = ">=2.4, <2.5.0", default-features = false }
+alloy-network-primitives = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-primitives = { version = "1.7", default-features = false, features = [
     "serde",
     "std",
@@ -36,7 +36,7 @@ alloy-provider = { version = ">=2.4, <2.5.0", default-features = false, features
 alloy-rpc-types = ">=2.4, <2.5.0"
 alloy-rpc-types-anvil = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-rpc-types-any = { version = ">=2.4, <2.5.0", default-features = false }
-alloy-rpc-types-eth = { version = ">=2.4, <2.5.0", default-features = false }
+alloy-rpc-types-eth = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-serde = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-signer = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-sol-types = { version = "1.7", features = ["json"] }
