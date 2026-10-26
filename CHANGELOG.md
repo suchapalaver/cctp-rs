@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Aligned Fast Transfer source capability with Circle's current matrix. Fast
+  burns from Avalanche, HyperEVM, Polygon PoS, Sei, and Sonic now fail before
+  RPC with `FastTransferUnsupported`, while Standard Transfer and destination
+  support remain available.
 - Refreshed the dependency graph so `rustls` uses the
   `RUSTSEC-2026-0285` fixed 0.23.45 line.
 - Removed the resolved `proc-macro-error2` advisory allowance after the

@@ -318,10 +318,21 @@ dynamic and route-aware. Fetch the live USDC route fee from Circle Iris before
 constructing your fast-transfer mode. Do not use
 `NamedChain::fast_transfer_fee_bps()` for production quotes; that helper is
 chain-level static metadata and currently reports `FastTransferFee::Unknown`
-until static fee tables are deliberately sourced.
+for Fast-capable sources until static fee tables are deliberately sourced.
+
+Fast Transfer availability is a **source-chain capability**, not a property of
+every CCTP v2 deployment. The bridge SDK currently supports Fast Transfer burns
+from Ethereum, Arbitrum, Base, OP Mainnet, Unichain, and Linea (plus supported
+testnets). Circle marks Avalanche, HyperEVM, Polygon PoS, Sei, and Sonic N/A
+because their Standard Transfer attestation is already fast. Query
+`source_chain.supports_fast_transfer()` before presenting a fast option; fast
+fee/timing helpers and burn submission return
+`CctpError::FastTransferUnsupported` for an N/A source without making an RPC
+call. Those chains remain fully available for Standard Transfer and as Fast
+Transfer destinations.
 
 ```rust
-use cctp_rs::{CctpV2Bridge, CctpError, TransferMode};
+use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, TransferMode};
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 
@@ -329,6 +340,10 @@ async fn fast_mode_with_live_fee<P: Provider + Clone>(
     bridge: &CctpV2Bridge<P>,
 ) -> Result<TransferMode, CctpError> {
     let amount = U256::from(10_500_000u64); // 10.5 USDC, 6 decimals
+    if !bridge.source_chain().supports_fast_transfer()? {
+        return Ok(TransferMode::Standard);
+    }
+
     let allowance = bridge.get_fast_transfer_allowance().await?;
     if !allowance.is_sufficient_for(amount) {
         return Ok(TransferMode::Standard);
@@ -349,10 +364,10 @@ threshold, `calculate_fast_transfer_max_fee()` converts the Fast Transfer fee
 into an amount-denominated cap with your selected buffer, and
 `get_fast_transfer_allowance()` returns Circle's current global USDC Fast
 Transfer allowance in atomic units. Check allowance before selecting
-`TransferMode::Fast`; if it is insufficient, use `TransferMode::Standard` or
-wait for replenishment. Funded transfer execution remains separate: after
-computing `maxFee`, pass it into `TransferMode::Fast { max_fee }` before
-calling burn/transfer helpers.
+`TransferMode::Fast`; if the source is N/A or allowance is insufficient, use
+`TransferMode::Standard` (or wait for allowance replenishment when applicable).
+Funded transfer execution remains separate: after computing `maxFee`, pass it
+into `TransferMode::Fast { max_fee }` before calling burn/transfer helpers.
 
 ### Agent Tooling: Inspect a Canonical V2 Message
 
@@ -679,7 +694,7 @@ For opt-in pre-release validation on testnet:
 
 1. Copy `.env.example` to `.env`.
 2. Set `TESTNET_PRIVATE_KEY` and either `TESTNET_API_KEY` or full RPC URL overrides.
-3. Optionally set `SOURCE_CHAIN` and `DESTINATION_CHAIN`. Defaults are `arbitrum-sepolia` -> `base-sepolia`; built-in aliases are `sepolia`, `arbitrum-sepolia`, `base-sepolia`, `optimism-sepolia`, `avalanche-fuji`, and `polygon-amoy`.
+3. Optionally set `SOURCE_CHAIN` and `DESTINATION_CHAIN`. Defaults are `arbitrum-sepolia` -> `base-sepolia`; built-in aliases are `sepolia`, `arbitrum-sepolia`, `base-sepolia`, `optimism-sepolia`, `avalanche-fuji`, and `polygon-amoy`. For the Fast Transfer example, choose `sepolia`, `arbitrum-sepolia`, `base-sepolia`, or `optimism-sepolia` as the source; Avalanche Fuji and Polygon Amoy are Standard-only sources but remain valid destinations.
 4. Fund the wallet with native testnet gas token on both chains and source-chain USDC from [Circle's faucet](https://faucet.circle.com).
 5. Run a dry-run balance and configuration check:
 

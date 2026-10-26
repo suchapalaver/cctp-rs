@@ -81,7 +81,9 @@ pub trait CctpV2 {
 
     /// Returns true if this chain supports Fast Transfer
     ///
-    /// Fast Transfer enables ~30 second settlement times vs 13-19 minutes.
+    /// Fast Transfer is a source-chain capability. Circle marks it N/A when a
+    /// chain's Standard Transfer attestation is already fast enough that the
+    /// lower finality threshold provides no meaningful improvement.
     fn supports_fast_transfer(&self) -> Result<bool>;
 
     /// Reports whether static fast transfer fee metadata has been sourced for
@@ -100,7 +102,8 @@ pub trait CctpV2 {
     /// state for every v2 chain in this SDK. Callers handling user funds must
     /// not coerce `Unknown` to zero.
     ///
-    /// Errors if the chain doesn't support CCTP v2.
+    /// Errors if the chain doesn't support CCTP v2 or Fast Transfer is N/A for
+    /// the chain as a transfer source.
     #[must_use = "ignoring the fast transfer fee can mis-quote a transfer; \
                   Unknown must not be coerced to zero"]
     fn fast_transfer_fee_bps(&self) -> Result<FastTransferFee>;
@@ -128,12 +131,14 @@ pub trait CctpV2 {
     /// Fast Transfer uses a lower finality threshold (≤1000) to achieve
     /// rapid attestations at the cost of a small fee on some chains.
     ///
-    /// Typical times:
+    /// Typical times on Fast-capable sources:
     /// - Ethereum: ~20 seconds (2 block confirmations)
-    /// - Most L2s and alt-L1s: ~8 seconds (1 block confirmation)
-    /// - High-performance chains (Sonic, Sei): ~5 seconds
+    /// - Supported L2s: ~8 seconds (1 block confirmation)
     ///
     /// See: <https://developers.circle.com/stablecoins/required-block-confirmations>
+    ///
+    /// Returns [`CctpError::FastTransferUnsupported`] when Circle marks Fast
+    /// Transfer N/A for this source chain.
     fn fast_transfer_confirmation_time_seconds(&self) -> Result<u64>;
 
     /// Returns the average Standard Transfer attestation time in seconds
@@ -183,13 +188,29 @@ impl CctpV2 for NamedChain {
             return Err(CctpError::UnsupportedChain(*self));
         }
 
-        // All v2 chains support fast transfer
-        Ok(true)
+        // Fast Transfer is a source-chain capability, not a property shared by
+        // every CCTP v2 deployment. Circle marks chains with already-fast
+        // standard attestation as N/A.
+        Ok(matches!(
+            self,
+            Self::Mainnet
+                | Self::Sepolia
+                | Self::Arbitrum
+                | Self::ArbitrumSepolia
+                | Self::Base
+                | Self::BaseSepolia
+                | Self::Optimism
+                | Self::OptimismSepolia
+                | Self::Unichain
+                | Self::Linea
+        ))
     }
 
     fn fast_transfer_fee_bps(&self) -> Result<FastTransferFee> {
-        if !self.supports_cctp_v2() {
-            return Err(CctpError::UnsupportedChain(*self));
+        if !self.supports_fast_transfer()? {
+            return Err(CctpError::FastTransferUnsupported {
+                source_chain: *self,
+            });
         }
 
         // Per-chain fees have not been sourced against Circle's
@@ -249,8 +270,10 @@ impl CctpV2 for NamedChain {
     }
 
     fn fast_transfer_confirmation_time_seconds(&self) -> Result<u64> {
-        if !self.supports_cctp_v2() {
-            return Err(CctpError::UnsupportedChain(*self));
+        if !self.supports_fast_transfer()? {
+            return Err(CctpError::FastTransferUnsupported {
+                source_chain: *self,
+            });
         }
 
         // Fast Transfer attestation times (1-2 block confirmations)
@@ -264,20 +287,10 @@ impl CctpV2 for NamedChain {
             Self::Base | Self::BaseSepolia => 8,
             // Optimism: ~8 seconds (1 block confirmation)
             Self::Optimism | Self::OptimismSepolia => 8,
-            // Avalanche: ~8 seconds (1 block confirmation)
-            Self::Avalanche | Self::AvalancheFuji => 8,
-            // Polygon: ~8 seconds (1 block confirmation)
-            Self::Polygon | Self::PolygonAmoy => 8,
             // Unichain: ~8 seconds (1 block confirmation)
             Self::Unichain => 8,
             // Linea: ~8 seconds (vs 6-32 hours for Standard!)
             Self::Linea => 8,
-            // Sonic: ~5 seconds (high-performance chain)
-            Self::Sonic => 5,
-            // Sei: ~5 seconds (parallel EVM)
-            Self::Sei => 5,
-            // HyperEVM: ~5 seconds (1 block confirmation, high-performance chain)
-            Self::Hyperliquid => 5,
             _ => return Err(CctpError::UnsupportedChain(*self)),
         })
     }
@@ -333,44 +346,93 @@ mod tests {
         assert_eq!(chain.supports_cctp_v2(), expected);
     }
 
-    #[test]
-    fn test_fast_transfer_support() {
-        // All v2 chains support fast transfer
-        assert!(NamedChain::Mainnet.supports_fast_transfer().unwrap());
-        assert!(NamedChain::Linea.supports_fast_transfer().unwrap());
-        assert!(NamedChain::Sonic.supports_fast_transfer().unwrap());
+    #[rstest]
+    #[case(NamedChain::Mainnet, true)]
+    #[case(NamedChain::Sepolia, true)]
+    #[case(NamedChain::Arbitrum, true)]
+    #[case(NamedChain::ArbitrumSepolia, true)]
+    #[case(NamedChain::Base, true)]
+    #[case(NamedChain::BaseSepolia, true)]
+    #[case(NamedChain::Optimism, true)]
+    #[case(NamedChain::OptimismSepolia, true)]
+    #[case(NamedChain::Unichain, true)]
+    #[case(NamedChain::Linea, true)]
+    #[case(NamedChain::Avalanche, false)]
+    #[case(NamedChain::AvalancheFuji, false)]
+    #[case(NamedChain::Polygon, false)]
+    #[case(NamedChain::PolygonAmoy, false)]
+    #[case(NamedChain::Sonic, false)]
+    #[case(NamedChain::Sei, false)]
+    #[case(NamedChain::Hyperliquid, false)]
+    fn fast_transfer_is_a_source_chain_capability(
+        #[case] chain: NamedChain,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(chain.supports_fast_transfer().unwrap(), expected);
+    }
 
-        // Unsupported chain returns error
+    #[test]
+    fn fast_transfer_support_matches_circle_capability_snapshot() {
+        let snapshot: serde_json::Value = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/circle_cctp_protocol_snapshot.json"
+        ))
+        .expect("checked-in Circle capability snapshot must be valid JSON");
+        let rows = snapshot["capabilities"]
+            .as_array()
+            .expect("snapshot capabilities must be an array");
+        let supported_mainnets = [
+            ("Ethereum", NamedChain::Mainnet),
+            ("Arbitrum", NamedChain::Arbitrum),
+            ("Base", NamedChain::Base),
+            ("OP Mainnet", NamedChain::Optimism),
+            ("Avalanche", NamedChain::Avalanche),
+            ("Polygon PoS", NamedChain::Polygon),
+            ("Unichain", NamedChain::Unichain),
+            ("Linea", NamedChain::Linea),
+            ("Sonic", NamedChain::Sonic),
+            ("Sei", NamedChain::Sei),
+            ("HyperEVM", NamedChain::Hyperliquid),
+        ];
+
+        for (published_name, chain) in supported_mainnets {
+            let row = rows
+                .iter()
+                .find(|row| row["blockchain"] == published_name)
+                .unwrap_or_else(|| panic!("missing {published_name} capability row"));
+            let published_support = match &row["fast_transfer"] {
+                serde_json::Value::Bool(value) => *value,
+                serde_json::Value::Null => false,
+                value => panic!("unexpected Fast Transfer value for {published_name}: {value}"),
+            };
+
+            assert_eq!(
+                chain.supports_fast_transfer().unwrap(),
+                published_support,
+                "{chain} must match Circle's source-chain Fast Transfer capability"
+            );
+        }
+
         assert!(NamedChain::Moonbeam.supports_fast_transfer().is_err());
     }
 
     #[rstest]
-    // v1 mainnets that also support v2
+    // Fast-capable v1 mainnets that also support v2
     #[case(NamedChain::Mainnet)]
     #[case(NamedChain::Arbitrum)]
     #[case(NamedChain::Base)]
     #[case(NamedChain::Optimism)]
-    #[case(NamedChain::Avalanche)]
-    #[case(NamedChain::Polygon)]
     #[case(NamedChain::Unichain)]
-    // v2-only mainnets
+    // Fast-capable v2-only mainnets
     #[case(NamedChain::Linea)]
-    #[case(NamedChain::Sonic)]
-    #[case(NamedChain::Sei)]
-    #[case(NamedChain::Hyperliquid)]
-    // v1 testnets that also support v2
+    // Fast-capable v1 testnets that also support v2
     #[case(NamedChain::Sepolia)]
     #[case(NamedChain::ArbitrumSepolia)]
     #[case(NamedChain::BaseSepolia)]
     #[case(NamedChain::OptimismSepolia)]
-    #[case(NamedChain::AvalancheFuji)]
-    #[case(NamedChain::PolygonAmoy)]
     fn fast_transfer_fee_is_unknown_until_sourced(#[case] chain: NamedChain) {
-        // Per-chain values are not sourced yet, so every supported v2
+        // Per-chain values are not sourced yet, so every fast-capable
         // chain must report Unknown — never a placeholder Known(0)
-        // that would look like a confirmed fee to callers. Exhaustive
-        // over every variant matched by `supports_cctp_v2()` so a
-        // future variant that accidentally returns Err is caught.
+        // that would look like a confirmed fee to callers.
         assert_eq!(
             chain.fast_transfer_fee_bps().unwrap(),
             FastTransferFee::Unknown
@@ -388,6 +450,23 @@ mod tests {
     #[test]
     fn fast_transfer_fee_errors_for_unsupported_chain() {
         assert!(NamedChain::Moonbeam.fast_transfer_fee_bps().is_err());
+    }
+
+    #[rstest]
+    #[case(NamedChain::Avalanche)]
+    #[case(NamedChain::Polygon)]
+    #[case(NamedChain::Sonic)]
+    #[case(NamedChain::Sei)]
+    #[case(NamedChain::Hyperliquid)]
+    fn fast_transfer_metadata_rejects_n_a_source(#[case] chain: NamedChain) {
+        assert!(matches!(
+            chain.fast_transfer_fee_bps(),
+            Err(CctpError::FastTransferUnsupported { source_chain }) if source_chain == chain
+        ));
+        assert!(matches!(
+            chain.fast_transfer_confirmation_time_seconds(),
+            Err(CctpError::FastTransferUnsupported { source_chain }) if source_chain == chain
+        ));
     }
 
     #[test]
@@ -458,25 +537,6 @@ mod tests {
                 .fast_transfer_confirmation_time_seconds()
                 .unwrap(),
             8
-        );
-        // High-performance chains: 5 seconds
-        assert_eq!(
-            NamedChain::Sonic
-                .fast_transfer_confirmation_time_seconds()
-                .unwrap(),
-            5
-        );
-        assert_eq!(
-            NamedChain::Sei
-                .fast_transfer_confirmation_time_seconds()
-                .unwrap(),
-            5
-        );
-        assert_eq!(
-            NamedChain::Hyperliquid
-                .fast_transfer_confirmation_time_seconds()
-                .unwrap(),
-            5
         );
     }
 

@@ -114,6 +114,40 @@ async fn fetches_route_fees_and_calculates_buffered_fast_max_fee() {
     assert_eq!(max_fee, U256::from(1638u64));
 }
 
+#[tokio::test]
+async fn fast_fee_rejects_n_a_source_without_blocking_standard_fee_lookup() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v2/burn/USDC/fees/1/6"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            { "finalityThreshold": 2000, "minimumFee": 0 }
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let bridge = bridge_for_route(api_override, NamedChain::Avalanche, NamedChain::Base);
+
+    let err = bridge
+        .get_fast_transfer_fee()
+        .await
+        .expect_err("Avalanche is Fast Transfer N/A as a source");
+    assert!(matches!(
+        err,
+        CctpError::FastTransferUnsupported {
+            source_chain: NamedChain::Avalanche
+        }
+    ));
+
+    let standard_fee = bridge
+        .get_standard_transfer_fee()
+        .await
+        .expect("standard fee lookup remains available")
+        .expect("standard fee entry should be selected");
+    assert!(standard_fee.is_standard_transfer());
+}
+
 #[test]
 fn usdc_fee_url_is_built_from_asset_segment() {
     let bridge = bridge(Url::parse("https://iris-api.circle.com").expect("valid URL"));

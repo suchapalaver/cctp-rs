@@ -5,7 +5,8 @@
 //! CCTP v2 Fast Transfer Example
 //!
 //! This example demonstrates how to perform a fast CCTP v2 transfer with <30 second settlement.
-//! Fast transfers use finality threshold 1000 ("confirmed" level) and may incur fees (0-14 bps).
+//! Fast transfers use finality threshold 1000 ("confirmed" level) and incur a
+//! route-dependent fee.
 //!
 //! Default route: Arbitrum Sepolia -> Base Sepolia. Override with
 //! `SOURCE_CHAIN` and `DESTINATION_CHAIN`.
@@ -55,6 +56,10 @@ async fn main() -> Result<(), CctpError> {
     let route = FundedV2Route::from_env()?;
     let source_chain = route.source_chain();
     let destination_chain = route.destination_chain();
+
+    if !source_chain.supports_fast_transfer()? {
+        return Err(CctpError::FastTransferUnsupported { source_chain });
+    }
 
     println!("⚡ CCTP v2 Fast Transfer: {source_chain} → {destination_chain}");
     println!("==========================================================\n");
@@ -231,7 +236,7 @@ async fn main() -> Result<(), CctpError> {
     println!("   ├─────────────────┼─────────────┼──────────────┤");
     println!("   │ Settlement Time │ <30 seconds │ 10-15 minutes│");
     println!("   │ Finality Level  │ 1000        │ 2000         │");
-    println!("   │ Fee             │ 0-14 bps    │ Free         │");
+    println!("   │ Fee             │ Route quote │ Free         │");
     println!("   │ Poll Interval   │ 5 seconds   │ 60 seconds   │");
     println!("   │ Security        │ Confirmed   │ Finalized    │");
     println!("   └─────────────────┴─────────────┴──────────────┘\n");

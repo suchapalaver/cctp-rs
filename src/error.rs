@@ -53,6 +53,11 @@ pub enum CctpError {
     #[error("Unsupported chain: {0:?}")]
     UnsupportedChain(alloy_chains::NamedChain),
 
+    #[error(
+        "Fast Transfer is not available from source chain {source_chain:?}; use a standard transfer"
+    )]
+    FastTransferUnsupported { source_chain: NamedChain },
+
     #[error("Unsupported CCTP asset {asset} on chain {chain:?}: {reason}")]
     UnsupportedAssetChain {
         asset: CctpTransferAsset,

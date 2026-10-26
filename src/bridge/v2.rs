@@ -52,7 +52,8 @@ use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contrac
 ///
 /// This struct provides the core functionality for bridging modeled CCTP assets
 /// across chains using Circle's Cross-Chain Transfer Protocol v2 with support
-/// for Fast Transfer, programmable hooks, and expanded network coverage.
+/// for source chains where Circle offers Fast Transfer, programmable hooks,
+/// and expanded network coverage.
 ///
 /// # V2 Features
 ///
@@ -251,6 +252,25 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         self.transfer_mode.finality_threshold()
     }
 
+    /// Validates that Circle offers Fast Transfer from the configured source.
+    fn ensure_fast_transfer_supported(&self) -> Result<()> {
+        if self.source_chain.supports_fast_transfer()? {
+            Ok(())
+        } else {
+            Err(CctpError::FastTransferUnsupported {
+                source_chain: self.source_chain,
+            })
+        }
+    }
+
+    /// Validates source-chain capability when the configured mode is fast.
+    fn validate_transfer_mode(&self) -> Result<()> {
+        if self.transfer_mode.is_fast() {
+            self.ensure_fast_transfer_supported()?;
+        }
+        Ok(())
+    }
+
     /// Validates that the configured route supports the selected transfer asset.
     ///
     /// This is the asset-safe boundary for bridge workflows. The lower-level
@@ -339,7 +359,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// The chain-level [`CctpV2::fast_transfer_fee_bps`](crate::CctpV2::fast_transfer_fee_bps)
     /// helper reports static metadata only and currently returns
     /// [`FastTransferFee::Unknown`](crate::FastTransferFee::Unknown) for every
-    /// supported chain.
+    /// Fast-capable source chain.
     ///
     /// Circle returns fees in basis points. Use [`Self::get_fast_transfer_fee`]
     /// or [`Self::calculate_fast_transfer_max_fee`] when preparing the `maxFee`
@@ -462,10 +482,14 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     }
 
     /// Fetches the live Fast Transfer fee for this asset and route.
+    ///
+    /// Returns [`CctpError::FastTransferUnsupported`] without an HTTP request
+    /// when Circle marks the configured source chain Fast Transfer N/A.
     pub async fn get_fast_transfer_fee_for_asset(
         &self,
         asset: CctpTransferAsset,
     ) -> Result<Option<TransferFee>> {
+        self.ensure_fast_transfer_supported()?;
         self.get_transfer_fee_for_asset(asset, FinalityThreshold::Fast)
             .await
     }
@@ -495,8 +519,9 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ///
     /// # Errors
     ///
-    /// Returns [`CctpError::TransferFeeUnavailable`] when Iris does not return a
-    /// Fast Transfer fee for the configured route.
+    /// Returns [`CctpError::FastTransferUnsupported`] when the source chain is
+    /// Fast Transfer N/A, or [`CctpError::TransferFeeUnavailable`] when Iris
+    /// does not return a Fast Transfer fee for the configured route.
     pub async fn calculate_fast_transfer_max_fee(
         &self,
         amount: U256,
@@ -517,7 +542,9 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ///
     /// # Errors
     ///
-    /// Returns [`CctpError::TransferFeeEndpointUnavailable`] when Circle has not
+    /// Returns [`CctpError::FastTransferUnsupported`] when the source chain is
+    /// Fast Transfer N/A,
+    /// [`CctpError::TransferFeeEndpointUnavailable`] when Circle has not
     /// published a fee endpoint for `asset`, and
     /// [`CctpError::TransferFeeUnavailable`] when Iris returns no Fast Transfer
     /// fee for the configured route.
@@ -887,6 +914,12 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ///
     /// The transaction hash of the burn transaction
     ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::FastTransferUnsupported`] before making an RPC call
+    /// when a fast transfer mode is configured for a source chain where Circle
+    /// marks Fast Transfer N/A.
+    ///
     /// # Example
     ///
     /// ```rust,ignore
@@ -909,6 +942,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         from: Address,
         token_address: Address,
     ) -> Result<TxHash> {
+        self.validate_transfer_mode()?;
         let token_messenger_address = self.token_messenger_v2_contract()?;
         let destination_domain = self.destination_domain_id()?;
 
@@ -1764,6 +1798,7 @@ impl<P: Provider<Ethereum> + Clone> CctpBridge for CctpV2<P> {
 
     fn supports_fast_transfer(&self) -> bool {
         self.transfer_mode.is_fast()
+            && matches!(self.source_chain.supports_fast_transfer(), Ok(true))
     }
 
     fn supports_hooks(&self) -> bool {
@@ -2305,7 +2340,8 @@ mod tests {
         let provider =
             ProviderBuilder::new().connect_http("http://localhost:8545".parse().unwrap());
 
-        // All v2 chains support fast transfer
+        // The source is Fast-capable; destinations may be Fast N/A because
+        // capability is directional and only constrains burn submission.
         let bridge = CctpV2::builder()
             .source_chain(source)
             .destination_chain(destination)
@@ -2993,6 +3029,62 @@ mod tests {
                     );
                 }
             }
+        }
+
+        #[tokio::test]
+        async fn fast_burn_rejects_n_a_source_before_rpc() {
+            let (bridge, captured) = build_bridge_for_route(
+                NamedChain::Avalanche,
+                NamedChain::Base,
+                TransferMode::Fast {
+                    max_fee: U256::from(100_u64),
+                },
+            );
+
+            assert!(!bridge.supports_fast_transfer());
+            let err = bridge
+                .burn(
+                    U256::from(1_000_000_u64),
+                    Address::repeat_byte(0xaa),
+                    Address::repeat_byte(0xbb),
+                )
+                .await
+                .expect_err("Avalanche is Fast Transfer N/A as a source");
+
+            assert!(matches!(
+                err,
+                CctpError::FastTransferUnsupported {
+                    source_chain: NamedChain::Avalanche
+                }
+            ));
+            assert!(
+                captured.lock().expect("captured-request mutex").is_empty(),
+                "unsupported fast burns must fail before eth_sendTransaction"
+            );
+        }
+
+        #[tokio::test]
+        async fn standard_burn_remains_available_from_fast_n_a_source() {
+            let (bridge, captured) = build_bridge_for_route(
+                NamedChain::Avalanche,
+                NamedChain::Base,
+                TransferMode::Standard,
+            );
+
+            bridge
+                .burn(
+                    U256::from(1_000_000_u64),
+                    Address::repeat_byte(0xaa),
+                    Address::repeat_byte(0xbb),
+                )
+                .await
+                .expect("standard transfer must remain available from Avalanche");
+
+            assert_eq!(
+                captured.lock().expect("captured-request mutex").len(),
+                1,
+                "standard burn should submit exactly one eth_sendTransaction"
+            );
         }
 
         #[tokio::test]
