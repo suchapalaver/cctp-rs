@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! `TokenMessengerV2` contract bindings and wrapper
@@ -84,7 +85,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
 
     /// Create the transaction request for the `depositForBurn` function (v2 standard)
     ///
-    /// For standard (no-hook, no-fast-fee) transfers. Pass
+    /// For standard (no-hook, zero-fee) transfers. Pass
     /// `FinalityThreshold::Standard.as_u32()` (2000) for this path; the
     /// parameter is exposed rather than hardcoded so the same value can be
     /// derived from a single caller-side source of truth.
@@ -96,6 +97,35 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
         destination_domain: DomainId,
         token_address: Address,
         amount: U256,
+        min_finality_threshold: u32,
+    ) -> TransactionRequest {
+        self.deposit_for_burn_with_fee_transaction(
+            from_address,
+            recipient,
+            destination_domain,
+            token_address,
+            amount,
+            U256::ZERO,
+            min_finality_threshold,
+        )
+    }
+
+    /// Create a `depositForBurn` transaction with an explicit Standard
+    /// Transfer fee cap.
+    ///
+    /// Callers must capability-gate this path because Circle's Standard
+    /// Transfer fee switch is deployment-specific. The bridge-level
+    /// [`CctpV2Bridge::burn`](crate::CctpV2Bridge::burn) path performs that
+    /// validation automatically.
+    #[allow(clippy::too_many_arguments)]
+    pub fn deposit_for_burn_with_fee_transaction(
+        &self,
+        from_address: Address,
+        recipient: Address,
+        destination_domain: DomainId,
+        token_address: Address,
+        amount: U256,
+        max_fee: U256,
         min_finality_threshold: u32,
     ) -> TransactionRequest {
         let span = spans::deposit_for_burn(
@@ -113,6 +143,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             destination_domain = %destination_domain,
             token_address = %token_address,
             amount = %amount,
+            max_fee = %max_fee,
             contract_address = %self.instance.address(),
             version = "v2",
             finality_threshold = min_finality_threshold,
@@ -125,10 +156,22 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             destination_domain,
             token_address,
             amount,
-            U256::ZERO, // max_fee: 0 for standard transfers
+            max_fee,
             min_finality_threshold,
             Address::ZERO, // destination_caller: 0x0 = anyone
         )
+    }
+
+    /// Returns the deployment's minimum Standard Transfer fee for `amount`.
+    ///
+    /// Callers must capability-gate this selector because older
+    /// `TokenMessengerV2` deployments do not expose it.
+    pub(crate) async fn get_min_fee_amount(
+        &self,
+        amount: U256,
+    ) -> Result<U256, alloy_contract::Error> {
+        let result = self.instance.getMinFeeAmount(amount).call().await?;
+        Ok(result)
     }
 
     /// Create transaction for depositForBurn with Fast Transfer enabled

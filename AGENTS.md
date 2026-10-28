@@ -70,6 +70,12 @@ sub-30s settlement).
   source/destination route. Compare it with the planned burn amount before using
   `TransferMode::Fast`; use Standard Transfer or wait if allowance is
   insufficient.
+- **The Standard Transfer fee switch is deployment-specific.** Circle
+  currently exposes `getMinFeeAmount(uint256)` on Sei only; calling it on older
+  `TokenMessengerV2` deployments reverts. Use
+  `get_min_standard_transfer_fee_amount()` and `StandardWithFee` (or
+  `StandardWithFeeAndHook`) only when the source capability check succeeds.
+  Legacy `Standard` modes continue to send a zero `maxFee`.
 - **Fast Transfer capability belongs to the source chain.** Ethereum,
   Arbitrum, Base, OP Mainnet, Unichain, and Linea are Fast-capable sources in
   the current bridge set. Circle marks Avalanche, HyperEVM, Polygon PoS, Sei,

@@ -86,6 +86,18 @@ pub trait CctpV2 {
     /// lower finality threshold provides no meaningful improvement.
     fn supports_fast_transfer(&self) -> Result<bool>;
 
+    /// Returns true if this source deployment exposes Circle's Standard
+    /// Transfer fee switch and its `getMinFeeAmount(uint256)` selector.
+    ///
+    /// This is deliberately deployment-gated: calling the selector on an
+    /// older `TokenMessengerV2` deployment reverts. Circle currently lists
+    /// this capability for Sei only.
+    ///
+    /// See <https://developers.circle.com/cctp/concepts/fees>.
+    fn supports_standard_transfer_fee_switch(&self) -> Result<bool> {
+        Ok(false)
+    }
+
     /// Reports whether static fast transfer fee metadata has been sourced for
     /// this chain, and if so its value in basis points.
     ///
@@ -204,6 +216,14 @@ impl CctpV2 for NamedChain {
                 | Self::Unichain
                 | Self::Linea
         ))
+    }
+
+    fn supports_standard_transfer_fee_switch(&self) -> Result<bool> {
+        if !self.supports_cctp_v2() {
+            return Err(CctpError::UnsupportedChain(*self));
+        }
+
+        Ok(matches!(self, Self::Sei))
     }
 
     fn fast_transfer_fee_bps(&self) -> Result<FastTransferFee> {
@@ -369,6 +389,41 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(chain.supports_fast_transfer().unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case(NamedChain::Mainnet, false)]
+    #[case(NamedChain::Sepolia, false)]
+    #[case(NamedChain::Arbitrum, false)]
+    #[case(NamedChain::ArbitrumSepolia, false)]
+    #[case(NamedChain::Base, false)]
+    #[case(NamedChain::BaseSepolia, false)]
+    #[case(NamedChain::Optimism, false)]
+    #[case(NamedChain::OptimismSepolia, false)]
+    #[case(NamedChain::Avalanche, false)]
+    #[case(NamedChain::AvalancheFuji, false)]
+    #[case(NamedChain::Polygon, false)]
+    #[case(NamedChain::PolygonAmoy, false)]
+    #[case(NamedChain::Unichain, false)]
+    #[case(NamedChain::Linea, false)]
+    #[case(NamedChain::Sonic, false)]
+    #[case(NamedChain::Sei, true)]
+    #[case(NamedChain::Hyperliquid, false)]
+    fn standard_transfer_fee_switch_is_a_source_deployment_capability(
+        #[case] chain: NamedChain,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            chain.supports_standard_transfer_fee_switch().unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn standard_transfer_fee_switch_rejects_unsupported_chain() {
+        assert!(NamedChain::Moonbeam
+            .supports_standard_transfer_fee_switch()
+            .is_err());
     }
 
     #[test]

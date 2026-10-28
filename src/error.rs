@@ -58,6 +58,11 @@ pub enum CctpError {
     )]
     FastTransferUnsupported { source_chain: NamedChain },
 
+    #[error(
+        "Standard Transfer fee switch is not available from source chain {source_chain:?}; use TransferMode::Standard with a zero maxFee"
+    )]
+    StandardTransferFeeSwitchUnsupported { source_chain: NamedChain },
+
     #[error("Unsupported CCTP asset {asset} on chain {chain:?}: {reason}")]
     UnsupportedAssetChain {
         asset: CctpTransferAsset,

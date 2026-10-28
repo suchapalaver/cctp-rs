@@ -246,8 +246,10 @@ def finalitySweep : List Nat :=
 
 def transferModes : List TransferMode := [
   .standard,
+  .standardWithFee 42,
   .fast 150,
   .standardWithHook (ofHex "deadbeef"),
+  .standardWithFeeAndHook 314159 (ofHex "cafe"),
   .fastWithHook 98765432109876543210 [0x00]
 ]
 

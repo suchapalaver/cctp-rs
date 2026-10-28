@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! CCTP v2 finality threshold types
@@ -129,7 +130,7 @@ impl FinalityThreshold {
 }
 
 impl Default for FinalityThreshold {
-    /// Standard transfers have no fees and are the safest option.
+    /// Standard finality is the safest option; fee policy is deployment-specific.
     fn default() -> Self {
         Self::Standard
     }
