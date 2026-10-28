@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -217,8 +218,12 @@ fn transfer_mode_dispatch_matches_lean_model() {
 
         let mode = match (vector.mode.as_str(), hook_data.clone()) {
             ("standard", None) => TransferMode::Standard,
+            ("standard_with_fee", None) => TransferMode::StandardWithFee { max_fee },
             ("fast", None) => TransferMode::Fast { max_fee },
             ("standard_with_hook", Some(hook_data)) => TransferMode::StandardWithHook { hook_data },
+            ("standard_with_fee_and_hook", Some(hook_data)) => {
+                TransferMode::StandardWithFeeAndHook { max_fee, hook_data }
+            }
             ("fast_with_hook", Some(hook_data)) => {
                 TransferMode::FastWithHook { max_fee, hook_data }
             }

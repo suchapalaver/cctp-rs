@@ -243,7 +243,6 @@ verification files, CI policy, or public verification claims:
 
 - #15: model `CctpV2Route` validity in Lean.
 - #29: add a Circle CCTP protocol drift check.
-- #33: support Standard Transfer fee switch.
 - #34: triage bridge route support for current CCTP EVM domains.
 - #35: maintain protocol currency as an ongoing roadmap item.
 - #42: model the v2 attestation and mint lifecycle.

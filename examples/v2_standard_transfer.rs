@@ -108,7 +108,7 @@ async fn main() -> Result<(), CctpError> {
 
     println!("   🔥 Step 2: Burn USDC on source chain");
     println!("      Method: bridge.burn()");
-    println!("      → Uses depositForBurn() (standard, no fees)");
+    println!("      → Uses depositForBurn() (standard, zero maxFee by default)");
     println!("      → Finality threshold: 2000 (finalized level)");
     println!("      Code example:");
     println!("      ```rust");

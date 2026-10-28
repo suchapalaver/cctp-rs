@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added deployment-gated Standard Transfer fee-switch support. Sei callers can
+  query the on-chain `getMinFeeAmount` value and pass an explicit cap through
+  `StandardWithFee` or `StandardWithFeeAndHook`; older deployments reject
+  these paths before RPC while legacy Standard modes retain a zero `maxFee`.
 - Added no-wallet/no-RPC USDC Fast Transfer allowance preflight via
   `CctpV2Bridge::get_fast_transfer_allowance()`, with typed atomic-unit
   response handling and live smoke coverage for both Iris hosts.

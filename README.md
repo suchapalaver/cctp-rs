@@ -110,7 +110,7 @@ validated support boundary.
 The public protocol currency roadmap is tracked in
 [#35](https://github.com/suchapalaver/cctp-rs/issues/35), including
 fast-transfer capability drift, Forwarding Service and Stellar-safe
-flows, Standard Transfer fee-switch support, current EVM route coverage,
+flows, current EVM route coverage,
 non-USDC Iris fee endpoint drift
 ([#53](https://github.com/suchapalaver/cctp-rs/issues/53)), and an
 automated drift check. USDC Fast Transfer allowance preflight is
@@ -368,6 +368,31 @@ Transfer allowance in atomic units. Check allowance before selecting
 `TransferMode::Standard` (or wait for allowance replenishment when applicable).
 Funded transfer execution remains separate: after computing `maxFee`, pass it
 into `TransferMode::Fast { max_fee }` before calling burn/transfer helpers.
+
+### Standard Transfer fee switch (V2)
+
+Circle's [fee documentation](https://developers.circle.com/cctp/concepts/fees)
+currently publishes Standard Transfer at zero cost, but newer
+`TokenMessengerV2` deployments can activate an on-chain fee switch. The SDK
+models this as a source-deployment capability because calling
+`getMinFeeAmount(uint256)` on an older deployment reverts. Sei is the only
+currently supported bridge source with this selector.
+
+On Sei, query the contract immediately before submitting a burn, select a cap
+that covers the returned minimum, and opt in explicitly:
+
+```rust
+let amount = U256::from(10_500_000u64);
+let max_fee = bridge
+    .get_min_standard_transfer_fee_amount(amount)
+    .await?;
+let mode = TransferMode::StandardWithFee { max_fee };
+```
+
+Use `StandardWithFeeAndHook { max_fee, hook_data }` for the corresponding hook
+call. Existing `Standard` and `StandardWithHook` modes deliberately keep
+sending a zero `maxFee`; fee-switch modes on older deployments fail with
+`CctpError::StandardTransferFeeSwitchUnsupported` before any RPC request.
 
 ### Agent Tooling: Inspect a Canonical V2 Message
 

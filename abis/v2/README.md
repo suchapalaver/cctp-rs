@@ -24,6 +24,7 @@ v2 uses the same contract addresses across all supported chains within each envi
 |--------|-------------|
 | `depositForBurn` | Burn USDC with finality threshold and max fee |
 | `depositForBurnWithHook` | Burn with programmable hook data for destination actions |
+| `getMinFeeAmount` | Query the minimum Standard Transfer fee on fee-switch deployments |
 | `handleReceiveFinalizedMessage` | Handle standard (threshold 2000) transfers |
 | `handleReceiveUnfinalizedMessage` | Handle fast (threshold 1000) transfers |
 
@@ -38,7 +39,7 @@ v2 uses the same contract addresses across all supported chains within each envi
 ## Differences from v1
 
 - **Finality thresholds**: 1000 (fast/confirmed) vs 2000 (standard/finalized)
-- **Fee support**: `maxFee` parameter for fast transfer fees
+- **Fee support**: `maxFee` for Fast Transfer and deployment-gated Standard Transfer fees
 - **Hooks**: `hookData` parameter for programmable destination actions
 - **Removed**: `replaceDepositForBurn` and `replaceMessage` methods
 
@@ -46,3 +47,5 @@ v2 uses the same contract addresses across all supported chains within each envi
 
 - Circle CCTP GitHub: <https://github.com/circlefin/evm-cctp-contracts>
 - Circle Docs: <https://developers.circle.com/stablecoins/cctp-getting-started>
+- `getMinFeeAmount` comes from Circle's fee-switch contract revision and must
+  be called only on deployments that expose it (currently Sei).

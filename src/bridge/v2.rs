@@ -104,13 +104,15 @@ use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contrac
 ///
 /// # Transfer mode selection
 ///
-/// The four valid CCTP v2 configurations are expressed via [`TransferMode`]:
+/// CCTP v2 burn configurations are expressed via [`TransferMode`]:
 ///
 /// | Mode | Finality | Hook | On-chain call |
 /// |---|---|---|---|
 /// | [`Standard`](TransferMode::Standard) | 2000 (finalized) | none | `depositForBurn` |
+/// | [`StandardWithFee`](TransferMode::StandardWithFee) | 2000 | none | `depositForBurn` |
 /// | [`Fast`](TransferMode::Fast) | 1000 (confirmed) | none | `depositForBurn` |
 /// | [`StandardWithHook`](TransferMode::StandardWithHook) | 2000 | yes | `depositForBurnWithHook` |
+/// | [`StandardWithFeeAndHook`](TransferMode::StandardWithFeeAndHook) | 2000 | yes | `depositForBurnWithHook` |
 /// | [`FastWithHook`](TransferMode::FastWithHook) | 1000 | yes | `depositForBurnWithHook` |
 ///
 /// Earlier versions exposed `fast_transfer`, `hook_data`, and `max_fee` as
@@ -234,10 +236,10 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         self.transfer_mode.hook_data()
     }
 
-    /// Returns the fast-transfer fee cap, or `None` when the mode is not a
-    /// fast variant. Standard modes implicitly use a zero `maxFee` on-chain.
+    /// Returns the explicit transfer fee cap, or `None` for legacy standard
+    /// modes that implicitly send a zero `maxFee` on-chain.
     pub fn max_fee(&self) -> Option<U256> {
-        if self.transfer_mode.is_fast() {
+        if self.transfer_mode.has_explicit_fee_cap() {
             Some(self.transfer_mode.max_fee())
         } else {
             None
@@ -263,10 +265,25 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         }
     }
 
+    /// Validates that the source deployment exposes Circle's Standard
+    /// Transfer fee switch.
+    fn ensure_standard_transfer_fee_switch_supported(&self) -> Result<()> {
+        if self.source_chain.supports_standard_transfer_fee_switch()? {
+            Ok(())
+        } else {
+            Err(CctpError::StandardTransferFeeSwitchUnsupported {
+                source_chain: self.source_chain,
+            })
+        }
+    }
+
     /// Validates source-chain capability when the configured mode is fast.
     fn validate_transfer_mode(&self) -> Result<()> {
         if self.transfer_mode.is_fast() {
             self.ensure_fast_transfer_supported()?;
+        }
+        if self.transfer_mode.uses_standard_transfer_fee_switch() {
+            self.ensure_standard_transfer_fee_switch_supported()?;
         }
         Ok(())
     }
@@ -507,6 +524,23 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ) -> Result<Option<TransferFee>> {
         self.get_transfer_fee_for_asset(asset, FinalityThreshold::Standard)
             .await
+    }
+
+    /// Queries the source `TokenMessengerV2` for its minimum Standard Transfer
+    /// fee for `amount`, in burn-token atomic units.
+    ///
+    /// This on-chain value is authoritative for fee-switch deployments and is
+    /// distinct from the route fee metadata returned by Iris. The selector is
+    /// not present on older deployments, so this method rejects unsupported
+    /// source chains before making an RPC request. Circle currently exposes
+    /// the fee switch on Sei only.
+    pub async fn get_min_standard_transfer_fee_amount(&self, amount: U256) -> Result<U256> {
+        self.ensure_standard_transfer_fee_switch_supported()?;
+        let token_messenger = TokenMessengerV2Contract::new(
+            self.token_messenger_v2_contract()?,
+            self.source_provider.clone(),
+        );
+        Ok(token_messenger.get_min_fee_amount(amount).await?)
     }
 
     /// Fetches the live fast-transfer fee and calculates a buffered `maxFee`.
@@ -943,6 +977,13 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         token_address: Address,
     ) -> Result<TxHash> {
         self.validate_transfer_mode()?;
+        if self.transfer_mode.uses_standard_transfer_fee_switch()
+            && self.transfer_mode.max_fee() >= amount
+        {
+            return Err(CctpError::InvalidAmount(
+                "Standard Transfer max_fee must be less than the burn amount".to_string(),
+            ));
+        }
         let token_messenger_address = self.token_messenger_v2_contract()?;
         let destination_domain = self.destination_domain_id()?;
 
@@ -969,6 +1010,16 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                 amount,
                 min_finality_threshold,
             ),
+            TransferMode::StandardWithFee { .. } => token_messenger
+                .deposit_for_burn_with_fee_transaction(
+                    from,
+                    self.recipient,
+                    destination_domain,
+                    token_address,
+                    amount,
+                    max_fee,
+                    min_finality_threshold,
+                ),
             TransferMode::Fast { .. } => token_messenger.deposit_for_burn_fast_transaction(
                 from,
                 self.recipient,
@@ -979,6 +1030,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                 min_finality_threshold,
             ),
             TransferMode::StandardWithHook { hook_data }
+            | TransferMode::StandardWithFeeAndHook { hook_data, .. }
             | TransferMode::FastWithHook { hook_data, .. } => token_messenger
                 .deposit_for_burn_with_hooks_transaction(
                     from,
@@ -2583,7 +2635,7 @@ mod tests {
 
         assert_eq!(zero_fee.max_fee(), Some(U256::ZERO));
 
-        // Standard modes have no fee
+        // Legacy Standard modes have no explicit fee cap.
         let standard = CctpV2::builder()
             .source_chain(NamedChain::Mainnet)
             .destination_chain(NamedChain::Linea)
@@ -2592,6 +2644,18 @@ mod tests {
             .recipient(Address::ZERO)
             .build();
         assert_eq!(standard.max_fee(), None);
+
+        let standard_with_fee = CctpV2::builder()
+            .source_chain(NamedChain::Sei)
+            .destination_chain(NamedChain::Base)
+            .source_provider(provider.clone())
+            .destination_provider(provider.clone())
+            .recipient(Address::ZERO)
+            .transfer_mode(TransferMode::StandardWithFee {
+                max_fee: U256::from(42),
+            })
+            .build();
+        assert_eq!(standard_with_fee.max_fee(), Some(U256::from(42)));
 
         // With max_fee specified
         let with_fee = CctpV2::builder()
@@ -2854,12 +2918,17 @@ mod tests {
                         panic!("burn() does not issue batch requests");
                     };
                     let id = req.id().clone();
+                    let is_eth_call = req.method() == "eth_call";
                     requests.lock().expect("captured-request mutex").push(req);
-                    // Echo back any well-formed tx hash; `burn()` only
-                    // reads it via `pending_tx.tx_hash()` and returns it.
-                    let hash_json =
-                        "\"0x0101010101010101010101010101010101010101010101010101010101010101\"";
-                    let raw = serde_json::value::RawValue::from_string(hash_json.to_string())
+                    let response_json = if is_eth_call {
+                        // ABI-encoded uint256(42), returned by getMinFeeAmount.
+                        "\"0x000000000000000000000000000000000000000000000000000000000000002a\""
+                    } else {
+                        // Echo back any well-formed tx hash; `burn()` only
+                        // reads it via `pending_tx.tx_hash()` and returns it.
+                        "\"0x0101010101010101010101010101010101010101010101010101010101010101\""
+                    };
+                    let raw = serde_json::value::RawValue::from_string(response_json.to_string())
                         .expect("static tx-hash JSON parses");
                     Ok(ResponsePacket::Single(Response {
                         id,
@@ -2920,6 +2989,13 @@ mod tests {
             U256::ZERO,
             None
         )]
+        #[case::standard_with_fee(
+            TransferMode::StandardWithFee { max_fee: U256::from(42_u64) },
+            ExpectedCall::DepositForBurn,
+            2000_u32,
+            U256::from(42_u64),
+            None
+        )]
         #[case::fast(
             TransferMode::Fast { max_fee: U256::from(1500_u64) },
             ExpectedCall::DepositForBurn,
@@ -2933,6 +3009,16 @@ mod tests {
             2000_u32,
             U256::ZERO,
             Some(Bytes::from_static(&[0xab, 0xcd])),
+        )]
+        #[case::standard_with_fee_and_hook(
+            TransferMode::StandardWithFeeAndHook {
+                max_fee: U256::from(42_u64),
+                hook_data: Bytes::from_static(&[0xca, 0xfe]),
+            },
+            ExpectedCall::DepositForBurnWithHook,
+            2000_u32,
+            U256::from(42_u64),
+            Some(Bytes::from_static(&[0xca, 0xfe])),
         )]
         #[case::fast_with_hook(
             TransferMode::FastWithHook {
@@ -2952,7 +3038,11 @@ mod tests {
             #[case] expected_max_fee: U256,
             #[case] expected_hook_data: Option<Bytes>,
         ) {
-            let (bridge, captured) = build_bridge(transfer_mode);
+            let (bridge, captured) = if transfer_mode.uses_standard_transfer_fee_switch() {
+                build_bridge_for_route(NamedChain::Sei, NamedChain::Base, transfer_mode)
+            } else {
+                build_bridge(transfer_mode)
+            };
             let from = Address::repeat_byte(0xaa);
             let token = Address::repeat_byte(0xbb);
             let amount = U256::from(1_000_000_u64);
@@ -3061,6 +3151,105 @@ mod tests {
                 captured.lock().expect("captured-request mutex").is_empty(),
                 "unsupported fast burns must fail before eth_sendTransaction"
             );
+        }
+
+        #[tokio::test]
+        async fn standard_fee_burn_rejects_older_deployment_before_rpc() {
+            let (bridge, captured) = build_bridge(TransferMode::StandardWithFee {
+                max_fee: U256::from(42_u64),
+            });
+
+            let err = bridge
+                .burn(
+                    U256::from(1_000_000_u64),
+                    Address::repeat_byte(0xaa),
+                    Address::repeat_byte(0xbb),
+                )
+                .await
+                .expect_err("Ethereum does not expose the Standard fee switch");
+
+            assert!(matches!(
+                err,
+                CctpError::StandardTransferFeeSwitchUnsupported {
+                    source_chain: NamedChain::Mainnet
+                }
+            ));
+            assert!(
+                captured.lock().expect("captured-request mutex").is_empty(),
+                "unsupported Standard fee burns must fail before RPC"
+            );
+        }
+
+        #[tokio::test]
+        async fn standard_fee_cap_must_be_less_than_burn_amount_before_rpc() {
+            let (bridge, captured) = build_bridge_for_route(
+                NamedChain::Sei,
+                NamedChain::Base,
+                TransferMode::StandardWithFee {
+                    max_fee: U256::from(1_000_000_u64),
+                },
+            );
+
+            let err = bridge
+                .burn(
+                    U256::from(1_000_000_u64),
+                    Address::repeat_byte(0xaa),
+                    Address::repeat_byte(0xbb),
+                )
+                .await
+                .expect_err("the contract requires maxFee < amount");
+            assert!(matches!(err, CctpError::InvalidAmount(_)));
+            assert!(captured.lock().expect("captured-request mutex").is_empty());
+        }
+
+        #[tokio::test]
+        async fn minimum_standard_fee_query_is_gated_by_source_deployment() {
+            let (sei_bridge, captured) =
+                build_bridge_for_route(NamedChain::Sei, NamedChain::Base, TransferMode::Standard);
+            assert_eq!(
+                sei_bridge
+                    .get_min_standard_transfer_fee_amount(U256::from(1_000_000_u64))
+                    .await
+                    .expect("Sei exposes getMinFeeAmount"),
+                U256::from(42_u64)
+            );
+            {
+                let requests = captured.lock().expect("captured-request mutex");
+                assert_eq!(requests.len(), 1);
+                assert_eq!(requests[0].method(), "eth_call");
+                let params: serde_json::Value = serde_json::from_str(
+                    requests[0].params().expect("eth_call carries params").get(),
+                )
+                .expect("eth_call params are valid JSON");
+                let tx_request: TransactionRequest = serde_json::from_value(
+                    params
+                        .as_array()
+                        .and_then(|values| values.first())
+                        .expect("eth_call starts with a transaction request")
+                        .clone(),
+                )
+                .expect("eth_call transaction request decodes");
+                let calldata = tx_request
+                    .input
+                    .input()
+                    .expect("getMinFeeAmount call carries calldata");
+                let decoded = TokenMessengerV2::getMinFeeAmountCall::abi_decode(calldata)
+                    .expect("calldata decodes as getMinFeeAmount");
+                assert_eq!(decoded.amount, U256::from(1_000_000_u64));
+            }
+
+            let (older_bridge, captured) = build_bridge(TransferMode::Standard);
+            let err = older_bridge
+                .get_min_standard_transfer_fee_amount(U256::from(1_000_000_u64))
+                .await
+                .expect_err("older deployments are rejected before eth_call");
+            assert!(matches!(
+                err,
+                CctpError::StandardTransferFeeSwitchUnsupported {
+                    source_chain: NamedChain::Mainnet
+                }
+            ));
+            assert!(captured.lock().expect("captured-request mutex").is_empty());
         }
 
         #[tokio::test]
