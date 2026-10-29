@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.0.0] - 2026-10-29
+
 ### Added
 
+- Added Sui (domain 8) to the v2 protocol parser and Lean correspondence
+  model, expanding protocol parsing to all 31 current CCTP domains while
+  keeping non-EVM Sui routes outside the bridge SDK.
 - Added deployment-gated Standard Transfer fee-switch support. Sei callers can
   query the on-chain `getMinFeeAmount` value and pass an explicit cap through
   `StandardWithFee` or `StandardWithFeeAndHook`; older deployments reject
@@ -23,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Advanced callers that match on the re-exported Alloy `TokenMessengerV2`
+  call enum must handle the new `getMinFeeAmount` selector. This public raw
+  binding expansion requires a major version even though the high-level
+  Standard Transfer fee-switch API is additive.
 - Pinned GitHub Actions runners to `ubuntu-24.04` so CI avoids the scheduled
   `ubuntu-latest` Ubuntu 26 migration until that baseline is validated
   deliberately.

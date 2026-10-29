@@ -191,7 +191,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-cctp-rs = "7"
+cctp-rs = "8"
 ```
 
 ### Basic Example
