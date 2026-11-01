@@ -19,13 +19,14 @@ For the broader architecture review process — including the Terraform-style
 resource graph, expert-panel memo format, and current claim ledger — see
 [`architecture.md`](architecture.md).
 
-## First slice: scope
+## Verified slices: scope
 
 | Invariant | Lean module | Rust module covered |
 |---|---|---|
 | `DomainId` ↔ `u32` is a bijection on exactly the 31 modeled IDs; `is_evm` classification | `CctpSpec/Domain.lean` | `src/protocol/domain_id.rs` |
 | `FinalityThreshold` ↔ `u32` accepts exactly 1000 (fast) and 2000 (standard) | `CctpSpec/Finality.lean` | `src/protocol/finality.rs` |
 | `TransferMode` dispatch: fast variants ⇔ threshold 1000; uncapped standard variants send zero `maxFee`; explicit fee caps and hooks are preserved | `CctpSpec/TransferMode.lean` | `src/bridge/transfer_mode.rs` |
+| Bridge route validity: both chains are supported, source ≠ destination, environments match, and every valid endpoint maps to a modeled `DomainId` | `CctpSpec/Route.lean` | `src/chain/v2.rs`, `src/primitives.rs` (`CctpV2Route`) |
 | Big-endian field codec round-trips; `bytes32` EVM-address words are canonical (12 zero leading bytes) | `CctpSpec/Bytes.lean` | `src/protocol/message.rs` (`decode_address_word`, field codecs) |
 | Canonical v2 message structure: header (148 B), burn body (≥ 228 B), domain-aware body-word validation | `CctpSpec/Message.lean` | `src/protocol/message.rs` (`MessageHeader`, `BurnMessageV2`, `ParsedV2Message`) |
 
@@ -50,6 +51,7 @@ verification/
 ├── CctpSpec/
 │   ├── Bytes.lean          # BE codec + bytes32 address-word canonicality
 │   ├── Domain.lean         # DomainId model + conversion theorems
+│   ├── Route.lean          # bridge chain table + route-validity theorems
 │   ├── Finality.lean       # FinalityThreshold model + conversion theorems
 │   ├── TransferMode.lean   # TransferMode dispatch model + theorems
 │   ├── Message.lean        # header/body/message codec + round-trip/canonicality
@@ -94,7 +96,7 @@ cargo nextest run --test lean_model_correspondence --all-features
 CI (`.github/workflows/lean.yml`) builds the proofs and fails if the
 committed fixtures differ from freshly generated ones, so the fixture file
 cannot drift from the model. The normal Rust CI runs the correspondence
-test, so the production parser cannot drift from the fixtures.
+test, so the production parser and route tables cannot drift from the fixtures.
 
 ## The redundancy layers
 
@@ -112,27 +114,27 @@ Mapped to the checklist in issue #11:
 2. **Lean specification and proof.** The modules above. All proofs are
    `sorry`-free and re-checked by `lake build` in CI.
 3. **Readable reference implementation.** The Lean model doubles as the
-   executable reference: `Message.decode`/`Message.encode` are written for
-   clarity (lists of bytes, explicit offsets, no performance tricks) and
-   actually execute — the fixture generator runs them on every vector.
-4. **Tests and examples.** The generator emits accept/reject vectors with
-   expected field values; `tests/lean_model_correspondence.rs` replays them
-   against the production parser. Vectors are self-checked against the
-   model during generation, so a vector that contradicts the model cannot
-   be committed.
+   executable reference: `Message.decode`/`Message.encode` and
+   `isValidRoute` are written for clarity and actually execute — the fixture
+   generator runs them on every message or chain-pair vector.
+4. **Tests and examples.** The generator emits message accept/reject vectors,
+   exhaustive modeled chain-pair route verdicts, and chain/domain
+   classifications; `tests/lean_model_correspondence.rs` replays them against
+   the production parser and route constructor. Message vectors are
+   self-checked against the model during generation.
 5. **Equivalence/correspondence checking.** The same fixture tests are the
-   equivalence check between the optimized production parser and the
-   reference model, over representative and edge-case inputs (real Circle
-   traffic, max-`uint256` values, non-EVM domains, placeholder nonces,
-   boundary-length and mutated-padding rejects).
+   equivalence check between production Rust and the reference model: finite
+   parser edge cases plus the exhaustive Cartesian product of every modeled
+   bridge/unsupported chain value.
 6. **Security properties.** Canonicality (above) is the security property:
    accepting a non-canonical recipient word is unreachable in the model,
    and the fixtures pin the production parser to the same behavior. The
    zero-nonce footgun is modeled as `hasPlaceholderNonce` and exercised by
    the `solana_source_placeholder_nonce` vector.
-7. **End-to-end interaction invariants.** Out of the proof boundary in
-   this slice (see Roadmap). Route validation, attestation selection, and
-   `mint_if_needed` remain covered by Rust unit/integration tests only.
+7. **End-to-end interaction invariants.** Route construction is now inside
+   the model/correspondence boundary. Attestation selection and
+   `mint_if_needed` remain outside it and are covered by Rust
+   unit/integration tests only (see Roadmap).
 8. **AI-assisted proof workflow.** See below.
 9. **Trusted computing base.** See below.
 10. **Process and documentation.** The proven/tested/assumed table below
@@ -150,6 +152,7 @@ Mapped to the checklist in issue #11:
 | Solana, Sui, Aptos, Starknet, and Stellar are exactly the non-EVM domains | `DomainId.isEvm_eq_false_iff` |
 | `FinalityThreshold` accepts exactly 1000/2000, fast = 1000, standard = 2000 | `FinalityThreshold.fromU32_toU32`, `toU32_of_fromU32`, `toU32_fast`, `toU32_standard` |
 | Fast transfer modes — and only they — request threshold 1000; modes without an explicit cap send zero `maxFee`; hook variants preserve hook data | `TransferMode.finality_wire_value`, `maxFee_eq_zero_of_no_explicit_fee_cap`, `hookData_isSome_iff` |
+| Valid routes have supported endpoints with modeled domains, distinct chains, matching environments, and symmetric validity | `Chain.domainId_isSome_eq_supportsCctpV2`, `valid_route_domains`, `valid_route_source_ne_destination`, `valid_route_same_environment`, `valid_route_symmetric` |
 | Big-endian field encoding round-trips; every byte string is the canonical encoding of its value | `natOfBe_beBytes`, `beBytes_natOfBe` |
 | `bytes32` EVM-address words decode iff canonically zero-padded, and decoding is strict | `decodeAddressWord_encodeAddressWord`, `encodeAddressWord_of_decode` |
 | Full-message parsing requires supported header/body version 1 and EVM padding only where the header's source/destination domains are EVM; non-EVM body words are preserved raw | `MessageHeader.WellFormed`, `BurnBody.WellFormed`, `Message.bodyWordsValid`, `Message.decode_encode`, `Message.encode_of_decode` |
@@ -164,6 +167,8 @@ the existing unit suite):
 | Production `DomainId::from_u32` / `is_evm` / serde names match the model over domains 0–38 and sentinels | `domain_id_conversion_matches_lean_model` |
 | Production `FinalityThreshold::from_u32` matches the model | `finality_threshold_conversion_matches_lean_model` |
 | Production `TransferMode` dispatch matches the model | `transfer_mode_dispatch_matches_lean_model` |
+| Production bridge support, `NamedChain::is_testnet`, and chain→domain mappings match the model; parser-only domains are outside the bridge-chain image | `chain_classification_matches_lean_model` |
+| `CctpV2Route::new` matches the model over every pair of modeled supported and unsupported chains | `route_validity_matches_lean_model` |
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
 | Production parser rejects the model's reject vectors, including unsupported header/body versions, naming the offending field or version | `rejected_messages_fail_to_parse` |
 | Real Circle Iris message (Arbitrum→Base) parses identically in model and production | first accept vector |
@@ -174,14 +179,16 @@ the existing unit suite):
 | Assumption | Notes |
 |---|---|
 | `keccak256` (alloy implementation) is correct | The model does not define hashing; the Rust test checks `message_hash() == keccak256(raw)` using alloy itself. |
+| Alloy's `NamedChain` variants, equality, and `is_testnet()` classification are correct | Lean pins this crate's expected classification; correspondence tests detect drift but do not verify Alloy. |
 | Circle Iris returns the canonical message; the on-chain `MessageSent` event has a zeroed nonce | Modeled only as the `hasPlaceholderNonce` flag; selection of the canonical message lives in `CctpV2Bridge::get_attestation` and is covered by Rust tests. |
-| Route validity, finality timing, fee quotes, relayer behavior, RPC providers | Out of scope for this slice. |
+| Finality timing, fee quotes, relayer behavior, RPC providers | Out of scope for these slices. |
 
 ## Trusted computing base
 
 Everything below is **unverified** and trusted:
 
-- **Alloy** (primitives, providers, contract bindings) and its `keccak256`.
+- **Alloy** (primitives, providers, contract bindings), its `keccak256`, and
+  `alloy_chains::NamedChain` identity/environment behavior.
 - **reqwest / tokio / HTTP stack** and Circle Iris itself.
 - **Chain RPC providers, relayers, and the CCTP contracts' bytecode.**
 - **rustc / LLVM and the Lean 4 compiler, kernel, and `lake`** — a
@@ -253,6 +260,12 @@ When **adding a CCTP domain** (see also AGENTS.md "Adding chain support"):
 4. `cargo nextest run --test lean_model_correspondence` — it fails until
    the Rust `DomainId` table agrees with the model.
 
+When **changing v2 bridge chain support** (`src/chain/v2.rs`): update the
+closed chain table, environment classification, and domain mapping in
+`CctpSpec/Route.lean`; re-run `lake build`; regenerate the fixtures; and run
+the Rust correspondence test. A parser-only domain needs no `Chain` variant
+unless it becomes representable at the bridge route boundary.
+
 When **changing message parsing** (`src/protocol/message.rs`): change the
 model in `CctpSpec/Message.lean` to match, re-prove (`lake build`),
 regenerate fixtures, and update the proven/tested/assumed table if the
@@ -265,14 +278,11 @@ here; the correspondence test keeps passing.
 
 ## Roadmap (next slices, in rough priority order)
 
-1. **Route validity** (`CctpV2Route`): model `supports_cctp_v2`,
-   mainnet/testnet partitioning, and no-self-route; prove route domain IDs
-   always land in the `DomainId` table.
-2. **`UsdcAmount` decimal parsing**: six-decimal grammar, overflow, and
+1. **`UsdcAmount` decimal parsing**: six-decimal grammar, overflow, and
    display round-trip.
-3. **Attestation selection**: state-machine model of
+2. **Attestation selection**: state-machine model of
    event-message vs Iris-canonical-message selection (the zero-nonce
    footgun) across `get_attestation`/`mint_if_needed`.
-4. **Live non-EVM samples**: add captured Circle Iris fixtures for Solana or
+3. **Live non-EVM samples**: add captured Circle Iris fixtures for Solana or
    Starknet once available, so the modeled raw-word behavior is pinned to
    real cross-domain traffic in addition to synthetic vectors.

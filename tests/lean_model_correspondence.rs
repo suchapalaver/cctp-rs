@@ -17,8 +17,9 @@
 //! If a test here fails after a protocol change, update the Lean model and
 //! regenerate the fixtures — see `verification/README.md`.
 
+use alloy_chains::NamedChain;
 use alloy_primitives::{keccak256, Bytes, FixedBytes, U256};
-use cctp_rs::{DomainId, FinalityThreshold, ParsedV2Message, TransferMode};
+use cctp_rs::{CctpV2, CctpV2Route, DomainId, FinalityThreshold, ParsedV2Message, TransferMode};
 use serde::Deserialize;
 
 const VECTORS_JSON: &str = include_str!("fixtures/lean/cctp_v2_vectors.json");
@@ -28,6 +29,8 @@ struct Fixtures {
     domain_vectors: Vec<DomainVector>,
     finality_vectors: Vec<FinalityVector>,
     transfer_mode_vectors: Vec<TransferModeVector>,
+    chain_vectors: Vec<ChainVector>,
+    route_vectors: Vec<RouteVector>,
     accept_message_vectors: Vec<AcceptVector>,
     reject_message_vectors: Vec<RejectVector>,
 }
@@ -39,6 +42,7 @@ struct DomainVector {
     valid: bool,
     name: Option<String>,
     is_evm: Option<bool>,
+    bridge_supported: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +60,22 @@ struct TransferModeVector {
     is_fast: bool,
     max_fee: String,
     hook_data: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ChainVector {
+    chain: String,
+    supports_cctp_v2: bool,
+    is_testnet: bool,
+    domain_id: Option<u32>,
+    domain_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RouteVector {
+    source: String,
+    destination: String,
+    valid: bool,
 }
 
 #[derive(Deserialize)]
@@ -131,6 +151,31 @@ fn serde_name<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value).expect("serializable") {
         serde_json::Value::String(s) => s,
         other => panic!("expected string serialization, got {other}"),
+    }
+}
+
+fn named_chain(name: &str) -> NamedChain {
+    match name {
+        "ethereum_mainnet" => NamedChain::Mainnet,
+        "ethereum_sepolia" => NamedChain::Sepolia,
+        "arbitrum_mainnet" => NamedChain::Arbitrum,
+        "arbitrum_sepolia" => NamedChain::ArbitrumSepolia,
+        "base_mainnet" => NamedChain::Base,
+        "base_sepolia" => NamedChain::BaseSepolia,
+        "optimism_mainnet" => NamedChain::Optimism,
+        "optimism_sepolia" => NamedChain::OptimismSepolia,
+        "avalanche_mainnet" => NamedChain::Avalanche,
+        "avalanche_fuji" => NamedChain::AvalancheFuji,
+        "polygon_mainnet" => NamedChain::Polygon,
+        "polygon_amoy" => NamedChain::PolygonAmoy,
+        "unichain_mainnet" => NamedChain::Unichain,
+        "linea_mainnet" => NamedChain::Linea,
+        "sonic_mainnet" => NamedChain::Sonic,
+        "sei_mainnet" => NamedChain::Sei,
+        "hyper_evm_mainnet" => NamedChain::Hyperliquid,
+        "bnb_smart_chain_mainnet" => NamedChain::BinanceSmartChain,
+        "moonbeam_mainnet" => NamedChain::Moonbeam,
+        other => panic!("unknown Lean chain fixture name: {other}"),
     }
 }
 
@@ -244,6 +289,133 @@ fn transfer_mode_dispatch_matches_lean_model() {
             "mode {}: hook data must match the Lean model",
             vector.mode
         );
+    }
+}
+
+/// The production bridge support, environment, and domain-mapping tables must
+/// match the Lean model for every modeled `NamedChain`. Parser-modeled domains
+/// outside the image of this table remain parse-only.
+#[test]
+fn chain_classification_matches_lean_model() {
+    let fixtures = fixtures();
+    assert!(!fixtures.chain_vectors.is_empty());
+
+    let mut modeled_chains = Vec::with_capacity(fixtures.chain_vectors.len());
+    let mut bridge_domains = Vec::new();
+    for vector in &fixtures.chain_vectors {
+        let chain = named_chain(&vector.chain);
+        assert!(
+            !modeled_chains.contains(&chain),
+            "duplicate modeled chain: {}",
+            vector.chain
+        );
+        modeled_chains.push(chain);
+        assert_eq!(
+            chain.supports_cctp_v2(),
+            vector.supports_cctp_v2,
+            "chain {}: CCTP v2 support",
+            vector.chain
+        );
+        assert_eq!(
+            chain.is_testnet(),
+            vector.is_testnet,
+            "chain {}: environment classification",
+            vector.chain
+        );
+
+        match (vector.domain_id, chain.cctp_v2_domain_id()) {
+            (Some(expected), Ok(domain)) => {
+                assert_eq!(
+                    domain.as_u32(),
+                    expected,
+                    "chain {}: domain ID",
+                    vector.chain
+                );
+                assert_eq!(
+                    serde_name(&domain),
+                    *vector
+                        .domain_name
+                        .as_ref()
+                        .expect("mapped chain carries a domain name"),
+                    "chain {}: domain name",
+                    vector.chain
+                );
+                bridge_domains.push(expected);
+            }
+            (None, Err(_)) => assert!(
+                vector.domain_name.is_none(),
+                "chain {}: unmapped chain must not carry a domain name",
+                vector.chain
+            ),
+            (expected, actual) => panic!(
+                "chain {}: Lean domain mapping {expected:?}, production returned {actual:?}",
+                vector.chain
+            ),
+        }
+    }
+
+    for vector in fixtures.domain_vectors.iter().filter(|vector| vector.valid) {
+        assert_eq!(
+            vector
+                .bridge_supported
+                .expect("valid domain carries bridge classification"),
+            bridge_domains.contains(&vector.value),
+            "domain {}: bridge-backed vs parse-only classification",
+            vector.value
+        );
+    }
+
+    for chain in NamedChain::VARIANTS {
+        if chain.supports_cctp_v2() {
+            assert!(
+                modeled_chains.contains(chain),
+                "production-supported chain {chain:?} is missing from the Lean model"
+            );
+        }
+    }
+}
+
+/// The production fallible route constructor must agree with the Lean model
+/// over the exhaustive Cartesian product of modeled chain values.
+#[test]
+fn route_validity_matches_lean_model() {
+    let fixtures = fixtures();
+    assert_eq!(
+        fixtures.route_vectors.len(),
+        fixtures.chain_vectors.len() * fixtures.chain_vectors.len(),
+        "Lean fixtures must contain the exhaustive chain-pair matrix"
+    );
+
+    for vector in &fixtures.route_vectors {
+        let source = named_chain(&vector.source);
+        let destination = named_chain(&vector.destination);
+        let route = CctpV2Route::new(source, destination);
+
+        assert_eq!(
+            route.is_ok(),
+            vector.valid,
+            "route {} -> {}: Lean valid={}, production returned {route:?}",
+            vector.source,
+            vector.destination,
+            vector.valid
+        );
+
+        if let Ok(route) = route {
+            assert_eq!(route.source_chain(), source);
+            assert_eq!(route.destination_chain(), destination);
+            assert_eq!(
+                route.source_domain_id().expect("valid source domain"),
+                source.cctp_v2_domain_id().expect("supported source domain")
+            );
+            assert_eq!(
+                route
+                    .destination_domain_id()
+                    .expect("valid destination domain"),
+                destination
+                    .cctp_v2_domain_id()
+                    .expect("supported destination domain")
+            );
+        }
     }
 }
 
