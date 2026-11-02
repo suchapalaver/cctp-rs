@@ -33,9 +33,9 @@ alloy-provider = { version = ">=2.4, <2.5.0", default-features = false, features
     "anvil-node",
     "reqwest",
 ] }
-alloy-rpc-types = ">=2.4, <2.5.0"
-alloy-rpc-types-anvil = { version = ">=2.4, <2.5.0", default-features = false }
-alloy-rpc-types-any = { version = ">=2.4, <2.5.0", default-features = false }
+alloy-rpc-types = ">=2.4, <2.6.0"
+alloy-rpc-types-anvil = { version = ">=2.4, <2.6.0", default-features = false }
+alloy-rpc-types-any = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-rpc-types-eth = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-serde = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-signer = { version = ">=2.4, <2.6.0", default-features = false }
