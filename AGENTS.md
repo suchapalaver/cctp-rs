@@ -262,9 +262,11 @@ above.
      list instead.
 6. Add the domain to the Lean model: new `DomainId` constructor plus
    `toU32`/`fromU32`/`jsonName` (and `isEvm` if non-EVM) entries in
-   `verification/CctpSpec/Domain.lean`, then `lake build` and regenerate
-   the fixtures. `tests/lean_model_correspondence.rs` fails until the
-   Rust and Lean tables agree — see `verification/README.md`.
+   `verification/CctpSpec/Domain.lean`. If the chain becomes bridge-supported,
+   also add its support, environment, and domain mapping to
+   `verification/CctpSpec/Route.lean`. Then run `lake build`, regenerate the
+   fixtures, and run `tests/lean_model_correspondence.rs`; correspondence fails
+   until the Rust and Lean tables agree — see `verification/README.md`.
 
 ## Security and configuration
 

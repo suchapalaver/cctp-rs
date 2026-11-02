@@ -253,6 +253,15 @@ def transferModes : List TransferMode := [
   .fastWithHook 98765432109876543210 [0x00]
 ]
 
+/-! ## Route-validity vectors -/
+
+/-- Exhaustive matrix over every modeled chain pair. This covers supported
+routes, self-routes, cross-environment routes, and representative unsupported
+chains without hand-selecting only the expected verdicts. -/
+def routePairs : List (Chain × Chain) :=
+  Chain.all.flatMap fun source =>
+    Chain.all.map fun destination => (source, destination)
+
 /-! ## JSON encoding -/
 
 private def str (s : String) : Json := Json.str s
@@ -264,7 +273,8 @@ private def optFinalityJson : Option FinalityThreshold → Json
 def domainVectorJson (n : Nat) : Json :=
   match DomainId.fromU32 n with
   | some d => Json.mkObj [("u32", toJson n), ("valid", toJson true),
-      ("name", str d.jsonName), ("is_evm", toJson d.isEvm)]
+      ("name", str d.jsonName), ("is_evm", toJson d.isEvm),
+      ("bridge_supported", toJson (Chain.isBridgeDomain d))]
   | none => Json.mkObj [("u32", toJson n), ("valid", toJson false)]
 
 def finalityVectorJson (n : Nat) : Json :=
@@ -282,6 +292,27 @@ def transferModeJson (m : TransferMode) : Json :=
     ("hook_data", match m.hookData? with
       | some h => str (hexOfBytes h)
       | none => Json.null)
+  ]
+
+def chainVectorJson (chain : Chain) : Json :=
+  Json.mkObj [
+    ("chain", str chain.jsonName),
+    ("supports_cctp_v2", toJson chain.supportsCctpV2),
+    ("is_testnet", toJson chain.isTestnet),
+    ("domain_id", match chain.domainId? with
+      | some domain => toJson domain.toU32
+      | none => Json.null),
+    ("domain_name", match chain.domainId? with
+      | some domain => str domain.jsonName
+      | none => Json.null)
+  ]
+
+def routeVectorJson (pair : Chain × Chain) : Json :=
+  let (source, destination) := pair
+  Json.mkObj [
+    ("source", str source.jsonName),
+    ("destination", str destination.jsonName),
+    ("valid", toJson (isValidRoute source destination))
   ]
 
 def headerJson (h : MessageHeader) : Json :=
@@ -359,6 +390,8 @@ def fixturesJson : Except String Json := do
     ("domain_vectors", Json.arr (domainSweep.map domainVectorJson).toArray),
     ("finality_vectors", Json.arr (finalitySweep.map finalityVectorJson).toArray),
     ("transfer_mode_vectors", Json.arr (transferModes.map transferModeJson).toArray),
+    ("chain_vectors", Json.arr (Chain.all.map chainVectorJson).toArray),
+    ("route_vectors", Json.arr (routePairs.map routeVectorJson).toArray),
     ("accept_message_vectors", Json.arr (accepts.map acceptVectorJson).toArray),
     ("reject_message_vectors", Json.arr (rejectVectors.map rejectVectorJson).toArray)
   ]
