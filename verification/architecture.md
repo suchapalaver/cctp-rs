@@ -132,7 +132,8 @@ Failure modes:
 | `CctpV2Route` and chain config | `rust_resource` | implements route validity and supported-chain/domain policy; mirrored by `Route.lean` | Route validity is proved over the Lean model and checked exhaustively against Rust; Alloy `NamedChain` behavior remains trusted. Broader route expansion remains tracked by #34. |
 | `verification/CctpSpec/Route.lean` | `lean_resource` | mirrors bridge chain support, environment, domain mapping, and `CctpV2Route::new` validity | Proves valid endpoints map to modeled domains, differ, share an environment, and remain valid when reversed. |
 | `CctpTransferAsset` and asset-aware bridge helpers | `rust_resource` | implement bridge asset policy and token-address lookup; trust Circle token address tables and asset rollout docs | Rust-tested for USDC/EURC/USYC boundaries; non-USDC Iris fee endpoint drift tracked by #53. |
-| `CctpV2Bridge` attestation/mint lifecycle | `rust_resource` | implements burn/Iris/receive behavior | Not formally modeled yet; tracked by #42. |
+| `CctpV2Bridge` attestation/mint lifecycle | `rust_resource` | implements burn/Iris/receive behavior; mirrored by `Lifecycle.lean`; deterministic HTTP/RPC tests observe the production boundary | Decision safety is modeled and correspondence-tested; external liveness, Iris authenticity, RPC truth, contract execution, and mint confirmation remain trusted. |
+| `verification/CctpSpec/Lifecycle.lean` | `lean_resource` | models placeholder event, canonical attestation selection, destination receipt, mint submission, and relayer-race transitions | Proves mint authorization and terminal-state safety; generates exhaustive state/event and bounded-exhaustive Iris-selection vectors. |
 | Live protocol drift check | `policy_resource` | would observe Circle authority and detect repo drift | Proposed by #29. |
 
 ## Claim ledger
@@ -141,11 +142,11 @@ Use this ledger when reviewing verification-related PRs.
 
 | Claim class | Current answer |
 |---|---|
-| Proven | Domain/finality conversion canonicality, transfer-mode dispatch properties, bridge route validity over the modeled chain table, big-endian codecs, bytes32 EVM address canonicality, and CCTP v2 parser round-trip/canonicality over the Lean model. |
-| Tested | Rust parser and route-table correspondence with Lean-generated fixtures; exhaustive modeled chain-pair route verdicts; parser rejection behavior over modeled edge cases; generated-fixture freshness in CI; Iris fee and allowance helpers against mocked responses; Fast Transfer source capability against the checked-in Circle capability snapshot. |
-| Assumed | Circle docs are current; Iris returns canonical messages, current fees, and current global Fast Transfer allowance; alloy-rs primitives, `keccak256`, and `NamedChain` behavior are correct; contracts, RPC providers, relayers, rustc/LLVM, Lean, Lake, GitHub-hosted Ubuntu 24.04 runners, hardware, and CI behave correctly. |
+| Proven | Domain/finality conversion canonicality, transfer-mode dispatch properties, bridge route validity, attestation/mint decision safety over the modeled lifecycle, big-endian codecs, bytes32 EVM address canonicality, and CCTP v2 parser round-trip/canonicality over the Lean model. |
+| Tested | Rust parser, route-table, and Iris-selection correspondence with Lean-generated fixtures; exhaustive modeled chain-pair correspondence and exhaustive lifecycle state/event fixture coverage; deterministic HTTP/RPC coverage of `get_attestation`, `is_message_received`, and `mint_if_needed`; parser rejection behavior; generated-fixture freshness; fee/allowance helpers; Fast Transfer source capability. |
+| Assumed | Circle docs are current; Iris responses are authentic and its undifferentiated `failed` category is classified correctly; Iris returns current fees and allowance; alloy-rs primitives, `keccak256`, and `NamedChain` behavior are correct; contracts, RPC providers, relayers, transaction inclusion, rustc/LLVM, Lean, Lake, GitHub-hosted runners, hardware, and CI behave correctly. |
 | Stale | Domain coverage wording and tables can lag Circle's published support; future drift automation is tracked by #29 and ongoing protocol currency by #35. Non-USDC Iris fee and allowance endpoint drift is tracked by #53. |
-| Unowned | Whole bridge lifecycle verification was not tracked before #42; direct external expert review notes do not yet have a template beyond this document. |
+| Unowned | Direct external expert review notes do not yet have a template beyond this document. |
 
 ## Expert-panel memos
 
@@ -203,8 +204,10 @@ rises when the model reaches behavior users actually exercise. For this crate,
 the bridge lifecycle is a higher-value operational target than another
 parser-only slice.
 
-Synthesis: use this graph to audit the parser slice as calibration, extend it
-through route validity, then move to the attestation/mint lifecycle (#42).
+Synthesis: the parser, route validity, and attestation/mint decision lifecycle
+now form the initial verification stack. The next proof slice should follow the
+priority order in `verification/README.md` without inflating these safety claims
+into external-liveness or whole-bridge verification.
 
 Action: do not add a new proof slice until the PR description says which
 resources and edges changed.
@@ -244,5 +247,4 @@ verification files, CI policy, or public verification claims:
 - #29: add a Circle CCTP protocol drift check.
 - #34: triage bridge route support for current CCTP EVM domains.
 - #35: maintain protocol currency as an ongoing roadmap item.
-- #42: model the v2 attestation and mint lifecycle.
 - #53: track non-USDC Iris fee and allowance endpoints.

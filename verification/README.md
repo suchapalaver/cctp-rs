@@ -27,6 +27,7 @@ resource graph, expert-panel memo format, and current claim ledger — see
 | `FinalityThreshold` ↔ `u32` accepts exactly 1000 (fast) and 2000 (standard) | `CctpSpec/Finality.lean` | `src/protocol/finality.rs` |
 | `TransferMode` dispatch: fast variants ⇔ threshold 1000; uncapped standard variants send zero `maxFee`; explicit fee caps and hooks are preserved | `CctpSpec/TransferMode.lean` | `src/bridge/transfer_mode.rs` |
 | Bridge route validity: both chains are supported, source ≠ destination, environments match, and every valid endpoint maps to a modeled `DomainId` | `CctpSpec/Route.lean` | `src/chain/v2.rs`, `src/primitives.rs` (`CctpV2Route`) |
+| V2 attestation/mint lifecycle safety: placeholder events cannot authorize mint, usable canonical attestations outrank pending/failed siblings, mint requires an unused destination nonce, and relayer races converge to `AlreadyRelayed` | `CctpSpec/Lifecycle.lean` | `src/bridge/v2.rs` (`get_attestation`, `is_message_received`, `mint_if_needed`) |
 | Big-endian field codec round-trips; `bytes32` EVM-address words are canonical (12 zero leading bytes) | `CctpSpec/Bytes.lean` | `src/protocol/message.rs` (`decode_address_word`, field codecs) |
 | Canonical v2 message structure: header (148 B), burn body (≥ 228 B), domain-aware body-word validation | `CctpSpec/Message.lean` | `src/protocol/message.rs` (`MessageHeader`, `BurnMessageV2`, `ParsedV2Message`) |
 
@@ -52,6 +53,7 @@ verification/
 │   ├── Bytes.lean          # BE codec + bytes32 address-word canonicality
 │   ├── Domain.lean         # DomainId model + conversion theorems
 │   ├── Route.lean          # bridge chain table + route-validity theorems
+│   ├── Lifecycle.lean      # attestation/mint state machine + safety theorems
 │   ├── Finality.lean       # FinalityThreshold model + conversion theorems
 │   ├── TransferMode.lean   # TransferMode dispatch model + theorems
 │   ├── Message.lean        # header/body/message codec + round-trip/canonicality
@@ -96,7 +98,38 @@ cargo nextest run --test lean_model_correspondence --all-features
 CI (`.github/workflows/lean.yml`) builds the proofs and fails if the
 committed fixtures differ from freshly generated ones, so the fixture file
 cannot drift from the model. The normal Rust CI runs the correspondence
-test, so the production parser and route tables cannot drift from the fixtures.
+test, including the library-unit correspondence tests in `bridge::v2`, so the
+production parser, route tables, and Iris selection drift at the covered
+correspondence boundaries fails CI. The broader lifecycle transition model is
+connected to production by the deterministic branch tests described below,
+not by a runtime state object.
+
+## Lifecycle verification technique and boundary
+
+The lifecycle slice uses a staged combination:
+
+1. An executable Lean finite-state model specifies the valid transitions from
+   burn submission through canonical attestation lookup, destination nonce
+   inspection, mint submission, and both permissionless-relayer outcomes.
+2. Lean proves the safety properties over that model. This is deliberately not
+   a liveness proof: it does not promise that Iris, RPC, a relayer, or a
+   transaction will eventually respond.
+3. The generator emits the exhaustive 10-state × 12-event matrix and every
+   Iris selection input through arrays of length two (273 scenarios). Length
+   two covers every pairwise precedence interaction in the production
+   selector; existing Rust tests separately pin first-usable-message data
+   selection.
+4. Rust correspondence tests replay those selection verdicts against the
+   production `select_v2_attestation` helper used by `get_attestation`.
+   Deterministic HTTP and RPC tests exercise the real `get_attestation`,
+   `is_message_received`, and `mint_if_needed` paths.
+
+TLA+ or Alloy would add another model translation without expanding the useful
+state space for this finite decision system, so they are not used in this
+slice. Iris currently exposes `failed` without a machine-readable reason that
+distinguishes expiry. The model represents expiry explicitly as a protocol
+outcome, while production correspondence stops at the observable `failed`
+category. Iris classification and authenticity remain assumed.
 
 ## The redundancy layers
 
@@ -114,14 +147,16 @@ Mapped to the checklist in issue #11:
 2. **Lean specification and proof.** The modules above. All proofs are
    `sorry`-free and re-checked by `lake build` in CI.
 3. **Readable reference implementation.** The Lean model doubles as the
-   executable reference: `Message.decode`/`Message.encode` and
-   `isValidRoute` are written for clarity and actually execute — the fixture
-   generator runs them on every message or chain-pair vector.
+   executable reference: `Message.decode`/`Message.encode`, `isValidRoute`,
+   `lifecycleStep`, and `selectAttestation` are written for clarity and
+   actually execute — the fixture generator runs them on every relevant
+   vector.
 4. **Tests and examples.** The generator emits message accept/reject vectors,
-   exhaustive modeled chain-pair route verdicts, and chain/domain
-   classifications; `tests/lean_model_correspondence.rs` replays them against
-   the production parser and route constructor. Message vectors are
-   self-checked against the model during generation.
+   exhaustive modeled chain-pair route verdicts, lifecycle transitions, Iris
+   selection scenarios, and chain/domain classifications. Rust tests replay
+   them against the production parser, route constructor, and attestation
+   selector. Message vectors are self-checked against the model during
+   generation.
 5. **Equivalence/correspondence checking.** The same fixture tests are the
    equivalence check between production Rust and the reference model: finite
    parser edge cases plus the exhaustive Cartesian product of every modeled
@@ -131,10 +166,10 @@ Mapped to the checklist in issue #11:
    and the fixtures pin the production parser to the same behavior. The
    zero-nonce footgun is modeled as `hasPlaceholderNonce` and exercised by
    the `solana_source_placeholder_nonce` vector.
-7. **End-to-end interaction invariants.** Route construction is now inside
-   the model/correspondence boundary. Attestation selection and
-   `mint_if_needed` remain outside it and are covered by Rust
-   unit/integration tests only (see Roadmap).
+7. **End-to-end interaction invariants.** Route construction and the
+   attestation/mint decision lifecycle are inside the model/correspondence
+   boundary. External liveness, Iris authenticity, RPC truth, deployed
+   contract behavior, and transaction inclusion remain assumed.
 8. **AI-assisted proof workflow.** See below.
 9. **Trusted computing base.** See below.
 10. **Process and documentation.** The proven/tested/assumed table below
@@ -153,6 +188,8 @@ Mapped to the checklist in issue #11:
 | `FinalityThreshold` accepts exactly 1000/2000, fast = 1000, standard = 2000 | `FinalityThreshold.fromU32_toU32`, `toU32_of_fromU32`, `toU32_fast`, `toU32_standard` |
 | Fast transfer modes — and only they — request threshold 1000; modes without an explicit cap send zero `maxFee`; hook variants preserve hook data | `TransferMode.finality_wire_value`, `maxFee_eq_zero_of_no_explicit_fee_cap`, `hookData_isSome_iff` |
 | Valid routes have supported endpoints with modeled domains, distinct chains, matching environments, and symmetric validity | `Chain.domainId_isSome_eq_supportsCctpV2`, `valid_route_domains`, `valid_route_source_ne_destination`, `valid_route_same_environment`, `valid_route_symmetric` |
+| Only a header with the all-zero placeholder nonce enters the source-event state; that state cannot submit mint; mint submission requires the canonical-attestation/unused-destination path; pre-received and race-lost paths converge to already relayed; terminal failure/outcome states cannot transition | `observe_source_event_iff_placeholder`, `placeholder_event_cannot_submit_mint`, `mint_submitted_only_from_required`, `mint_required_only_after_destination_unused`, `already_relayed_paths`, `terminal_states_do_not_transition` |
+| Any usable complete Iris entry selects ready; without one, any pending entry keeps polling | `usable_complete_selects_ready`, `pending_selected_when_no_usable` |
 | Big-endian field encoding round-trips; every byte string is the canonical encoding of its value | `natOfBe_beBytes`, `beBytes_natOfBe` |
 | `bytes32` EVM-address words decode iff canonically zero-padded, and decoding is strict | `decodeAddressWord_encodeAddressWord`, `encodeAddressWord_of_decode` |
 | Full-message parsing requires supported header/body version 1 and EVM padding only where the header's source/destination domains are EVM; non-EVM body words are preserved raw | `MessageHeader.WellFormed`, `BurnBody.WellFormed`, `Message.bodyWordsValid`, `Message.decode_encode`, `Message.encode_of_decode` |
@@ -169,6 +206,9 @@ the existing unit suite):
 | Production `TransferMode` dispatch matches the model | `transfer_mode_dispatch_matches_lean_model` |
 | Production bridge support, `NamedChain::is_testnet`, and chain→domain mappings match the model; parser-only domains are outside the bridge-chain image | `chain_classification_matches_lean_model` |
 | `CctpV2Route::new` matches the model over every pair of modeled supported and unsupported chains | `route_validity_matches_lean_model` |
+| Production Iris selection matches the Lean model for empty, every singleton, and every ordered pair of modeled status/data combinations | `bridge::v2::tests::lifecycle_model_correspondence::iris_selection_matches_lean_model` |
+| Real `is_message_received`/`mint_if_needed` RPC paths short-circuit pre-received messages, submit unused messages, treat a nonce race as `AlreadyRelayed`, and propagate unrelated failures | `bridge::v2::tests::mint_if_needed_lifecycle` |
+| Real `get_attestation` HTTP polling honors complete/pending/failed multi-message selection | `tests/v2_multi_message_attestation.rs` |
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
 | Production parser rejects the model's reject vectors, including unsupported header/body versions, naming the offending field or version | `rejected_messages_fail_to_parse` |
 | Real Circle Iris message (Arbitrum→Base) parses identically in model and production | first accept vector |
@@ -180,7 +220,8 @@ the existing unit suite):
 |---|---|
 | `keccak256` (alloy implementation) is correct | The model does not define hashing; the Rust test checks `message_hash() == keccak256(raw)` using alloy itself. |
 | Alloy's `NamedChain` variants, equality, and `is_testnet()` classification are correct | Lean pins this crate's expected classification; correspondence tests detect drift but do not verify Alloy. |
-| Circle Iris returns the canonical message; the on-chain `MessageSent` event has a zeroed nonce | Modeled only as the `hasPlaceholderNonce` flag; selection of the canonical message lives in `CctpV2Bridge::get_attestation` and is covered by Rust tests. |
+| Circle Iris authentically returns the canonical message; the on-chain `MessageSent` event has a zeroed nonce | The model prevents the placeholder-event state from authorizing mint and tests selection of Iris data, but cannot verify Circle's signature service or the source RPC. |
+| Iris `failed` means expired vs another terminal cause | Iris does not expose a machine-readable reason in the response modeled by this crate. Lean represents expiry explicitly; Rust correspondence maps only the observable `failed` category. |
 | Finality timing, fee quotes, relayer behavior, RPC providers | Out of scope for these slices. |
 
 ## Trusted computing base
@@ -266,6 +307,11 @@ closed chain table, environment classification, and domain mapping in
 the Rust correspondence test. A parser-only domain needs no `Chain` variant
 unless it becomes representable at the bridge route boundary.
 
+When **changing v2 attestation selection or mint race handling**
+(`src/bridge/v2.rs`): update `CctpSpec/Lifecycle.lean`, re-check the theorem
+statements, regenerate fixtures, and run both the lifecycle-filtered library
+tests and the deterministic `v2_multi_message_attestation` integration test.
+
 When **changing message parsing** (`src/protocol/message.rs`): change the
 model in `CctpSpec/Message.lean` to match, re-prove (`lake build`),
 regenerate fixtures, and update the proven/tested/assumed table if the
@@ -280,9 +326,6 @@ here; the correspondence test keeps passing.
 
 1. **`UsdcAmount` decimal parsing**: six-decimal grammar, overflow, and
    display round-trip.
-2. **Attestation selection**: state-machine model of
-   event-message vs Iris-canonical-message selection (the zero-nonce
-   footgun) across `get_attestation`/`mint_if_needed`.
-3. **Live non-EVM samples**: add captured Circle Iris fixtures for Solana or
+2. **Live non-EVM samples**: add captured Circle Iris fixtures for Solana or
    Starknet once available, so the modeled raw-word behavior is pinned to
    real cross-domain traffic in addition to synthetic vectors.

@@ -25,6 +25,12 @@ layers that have different coverage:
 Supports both CCTP v1 (legacy) and v2 (current, fast transfers with
 sub-30s settlement).
 
+The Lean model also covers the v2 bridge route constructor and the
+attestation/mint decision lifecycle. It proves safety properties over an
+executable state machine and generated correspondence vectors; it does not
+prove external liveness, Iris authenticity, RPC truth, or deployed contract
+behavior.
+
 ## When to use what
 
 | Task | Reach for | Notes |
@@ -128,7 +134,9 @@ JSON in `abis/`, and CI/release automation in `.github/workflows/`. The Lean 4
 model of the protocol invariants lives in `verification/` (see
 `verification/README.md`); it generates `tests/fixtures/lean/cctp_v2_vectors.json`,
 which `tests/lean_model_correspondence.rs` replays against the production
-parser.
+parser. Lifecycle correspondence also runs inside the `src/bridge/v2.rs` unit
+suite so it can exercise the private production selector used by
+`get_attestation`.
 
 ## Build, test, and development commands
 
