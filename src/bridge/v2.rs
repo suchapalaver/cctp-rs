@@ -2857,6 +2857,299 @@ mod tests {
         }
     }
 
+    mod lifecycle_model_correspondence {
+        //! Replays the Lean lifecycle slice against the production Iris
+        //! selector. The high-level state machine is intentionally not copied
+        //! into runtime Rust; this test pins the decision boundary that
+        //! `get_attestation` actually executes.
+        use super::*;
+
+        const MODEL_FIXTURES: &str = include_str!("../../tests/fixtures/lean/cctp_v2_vectors.json");
+
+        #[derive(serde::Deserialize)]
+        struct ModelFixtures {
+            lifecycle_transition_vectors: Vec<LifecycleTransitionVector>,
+            attestation_selection_vectors: Vec<AttestationSelectionVector>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct LifecycleTransitionVector {
+            state: String,
+            event: String,
+            next_state: Option<String>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct AttestationSelectionVector {
+            entries: Vec<AttestationEntryVector>,
+            expected: String,
+        }
+
+        #[derive(serde::Deserialize, serde::Serialize)]
+        struct AttestationEntryVector {
+            status: String,
+            has_message: bool,
+            has_attestation: bool,
+        }
+
+        fn status(name: &str) -> AttestationStatus {
+            match name {
+                "complete" => AttestationStatus::Complete,
+                "pending" => AttestationStatus::Pending,
+                "pending_confirmations" => AttestationStatus::PendingConfirmations,
+                "failed" => AttestationStatus::Failed,
+                other => panic!("unknown modeled attestation status: {other}"),
+            }
+        }
+
+        fn production_entry(entry: &AttestationEntryVector) -> V2Message {
+            V2Message {
+                status: status(&entry.status),
+                message: entry.has_message.then(|| Bytes::from_static(&[0x11])),
+                attestation: entry.has_attestation.then(|| Bytes::from_static(&[0x22])),
+            }
+        }
+
+        fn outcome_name(outcome: &V2AttestationOutcome) -> &'static str {
+            match outcome {
+                V2AttestationOutcome::Ready { .. } => "ready",
+                V2AttestationOutcome::Pending => "pending",
+                V2AttestationOutcome::AttestationMissing => "attestation_missing",
+                V2AttestationOutcome::MessageMissing => "message_missing",
+                V2AttestationOutcome::Failed => "failed",
+                V2AttestationOutcome::Empty => "empty",
+            }
+        }
+
+        #[test]
+        fn generated_state_event_matrix_is_exhaustive() {
+            let fixtures: ModelFixtures =
+                serde_json::from_str(MODEL_FIXTURES).expect("Lean lifecycle fixtures parse");
+            assert_eq!(
+                fixtures.lifecycle_transition_vectors.len(),
+                10 * 12,
+                "every modeled state/event pair must have a verdict"
+            );
+
+            let unique_pairs = fixtures
+                .lifecycle_transition_vectors
+                .iter()
+                .map(|vector| (&vector.state, &vector.event))
+                .collect::<std::collections::HashSet<_>>();
+            assert_eq!(unique_pairs.len(), 10 * 12);
+            assert!(fixtures
+                .lifecycle_transition_vectors
+                .iter()
+                .any(|vector| vector.next_state.as_deref() == Some("mint_submitted")));
+            assert!(fixtures
+                .lifecycle_transition_vectors
+                .iter()
+                .any(|vector| vector.next_state.as_deref() == Some("already_relayed")));
+        }
+
+        #[test]
+        fn iris_selection_matches_lean_model() {
+            let fixtures: ModelFixtures =
+                serde_json::from_str(MODEL_FIXTURES).expect("Lean lifecycle fixtures parse");
+            assert_eq!(
+                fixtures.attestation_selection_vectors.len(),
+                1 + 16 + 16 * 16,
+                "empty, every singleton, and every ordered pair must be covered"
+            );
+
+            for vector in &fixtures.attestation_selection_vectors {
+                let messages = vector
+                    .entries
+                    .iter()
+                    .map(production_entry)
+                    .collect::<Vec<_>>();
+                let outcome = select_v2_attestation(&messages);
+                assert_eq!(
+                    outcome_name(&outcome),
+                    vector.expected,
+                    "Lean/Rust selection drift for {}",
+                    serde_json::to_string(&vector.entries)
+                        .unwrap_or_else(|_| "<unprintable scenario>".to_string())
+                );
+
+                if let V2AttestationOutcome::Ready {
+                    message,
+                    attestation,
+                } = outcome
+                {
+                    assert_eq!(message, vec![0x11]);
+                    assert_eq!(attestation, vec![0x22]);
+                }
+            }
+        }
+    }
+
+    mod mint_if_needed_lifecycle {
+        //! Deterministic RPC-level coverage of the permissionless relay race.
+        //! These tests execute `is_message_received` and `mint_if_needed`, not
+        //! a test-only copy of their branches.
+        use super::*;
+        use alloy_json_rpc::{
+            ErrorPayload, RequestPacket, Response, ResponsePacket, ResponsePayload,
+        };
+        use alloy_provider::ProviderBuilder;
+        use alloy_rpc_client::RpcClient;
+        use std::sync::{Arc, Mutex};
+        use std::task::{Context, Poll};
+        use tower::Service;
+
+        #[derive(Clone, Copy)]
+        enum Scenario {
+            AlreadyReceived,
+            MintSucceeds,
+            RelayerWinsRace,
+            MintFails,
+        }
+
+        #[derive(Clone)]
+        struct LifecycleTransport {
+            scenario: Scenario,
+            methods: Arc<Mutex<Vec<String>>>,
+        }
+
+        impl LifecycleTransport {
+            fn new(scenario: Scenario) -> Self {
+                Self {
+                    scenario,
+                    methods: Arc::new(Mutex::new(Vec::new())),
+                }
+            }
+        }
+
+        impl Service<RequestPacket> for LifecycleTransport {
+            type Response = ResponsePacket;
+            type Error = alloy_transport::TransportError;
+            type Future = alloy_transport::TransportFut<'static>;
+
+            fn poll_ready(
+                &mut self,
+                _cx: &mut Context<'_>,
+            ) -> Poll<std::result::Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, req: RequestPacket) -> Self::Future {
+                let scenario = self.scenario;
+                let methods = self.methods.clone();
+                Box::pin(async move {
+                    let RequestPacket::Single(req) = req else {
+                        panic!("lifecycle methods do not issue batch requests");
+                    };
+                    let id = req.id().clone();
+                    let method = req.method().to_string();
+                    methods
+                        .lock()
+                        .expect("captured-method mutex")
+                        .push(method.clone());
+
+                    let payload = match method.as_str() {
+                        "eth_call" => {
+                            let value = if matches!(scenario, Scenario::AlreadyReceived) {
+                                "0x0000000000000000000000000000000000000000000000000000000000000001"
+                            } else {
+                                "0x0000000000000000000000000000000000000000000000000000000000000000"
+                            };
+                            let raw =
+                                serde_json::value::RawValue::from_string(format!("\"{value}\""))
+                                    .expect("static nonce-status JSON parses");
+                            ResponsePayload::Success(raw)
+                        }
+                        "eth_sendTransaction" => match scenario {
+                            Scenario::MintSucceeds => {
+                                let raw = serde_json::value::RawValue::from_string(
+                                    "\"0x0101010101010101010101010101010101010101010101010101010101010101\""
+                                        .to_string(),
+                                )
+                                .expect("static transaction hash JSON parses");
+                                ResponsePayload::Success(raw)
+                            }
+                            Scenario::RelayerWinsRace => ResponsePayload::Failure(ErrorPayload {
+                                code: 3,
+                                message: "execution reverted: nonce already used".into(),
+                                data: None,
+                            }),
+                            Scenario::MintFails => ResponsePayload::Failure(ErrorPayload {
+                                code: 3,
+                                message: "execution reverted: invalid attestation".into(),
+                                data: None,
+                            }),
+                            Scenario::AlreadyReceived => {
+                                panic!("an already-received message must not submit a mint")
+                            }
+                        },
+                        other => panic!("unexpected lifecycle RPC method: {other}"),
+                    };
+
+                    Ok(ResponsePacket::Single(Response { id, payload }))
+                })
+            }
+        }
+
+        fn bridge(
+            scenario: Scenario,
+        ) -> (
+            CctpV2<alloy_provider::RootProvider<Ethereum>>,
+            Arc<Mutex<Vec<String>>>,
+        ) {
+            let transport = LifecycleTransport::new(scenario);
+            let methods = transport.methods.clone();
+            let provider = ProviderBuilder::new()
+                .disable_recommended_fillers()
+                .connect_client(RpcClient::new(transport, true));
+            let bridge = CctpV2::builder()
+                .source_chain(NamedChain::Mainnet)
+                .destination_chain(NamedChain::Linea)
+                .source_provider(provider.clone())
+                .destination_provider(provider)
+                .recipient(Address::ZERO)
+                .build();
+            (bridge, methods)
+        }
+
+        async fn run(scenario: Scenario) -> (Result<MintResult>, Vec<String>) {
+            let (bridge, methods) = bridge(scenario);
+            let result = bridge
+                .mint_if_needed(vec![0x11; 228], vec![0x22; 65], Address::repeat_byte(0xaa))
+                .await;
+            let methods = methods.lock().expect("captured-method mutex").clone();
+            (result, methods)
+        }
+
+        #[tokio::test]
+        async fn pre_received_message_short_circuits_without_mint() {
+            let (result, methods) = run(Scenario::AlreadyReceived).await;
+            assert_eq!(result.unwrap(), MintResult::AlreadyRelayed);
+            assert_eq!(methods, ["eth_call"]);
+        }
+
+        #[tokio::test]
+        async fn unused_message_submits_mint() {
+            let (result, methods) = run(Scenario::MintSucceeds).await;
+            assert!(matches!(result, Ok(MintResult::Minted(_))));
+            assert_eq!(methods, ["eth_call", "eth_sendTransaction"]);
+        }
+
+        #[tokio::test]
+        async fn relayer_race_converges_to_already_relayed() {
+            let (result, methods) = run(Scenario::RelayerWinsRace).await;
+            assert_eq!(result.unwrap(), MintResult::AlreadyRelayed);
+            assert_eq!(methods, ["eth_call", "eth_sendTransaction"]);
+        }
+
+        #[tokio::test]
+        async fn unrelated_mint_failure_is_propagated() {
+            let (result, methods) = run(Scenario::MintFails).await;
+            let err = result.expect_err("unrelated mint failures must not become success");
+            assert!(!err.is_already_relayed());
+            assert_eq!(methods, ["eth_call", "eth_sendTransaction"]);
+        }
+    }
+
     mod burn_dispatch_wire {
         //! End-to-end coverage of `CctpV2::burn`'s dispatch arm.
         //!

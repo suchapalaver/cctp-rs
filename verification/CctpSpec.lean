@@ -9,3 +9,4 @@ import CctpSpec.Route
 import CctpSpec.Finality
 import CctpSpec.TransferMode
 import CctpSpec.Message
+import CctpSpec.Lifecycle

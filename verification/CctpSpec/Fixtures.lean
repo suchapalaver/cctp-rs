@@ -262,6 +262,23 @@ def routePairs : List (Chain × Chain) :=
   Chain.all.flatMap fun source =>
     Chain.all.map fun destination => (source, destination)
 
+/-! ## Bridge lifecycle vectors -/
+
+/-- Exhaustive state/event matrix, including invalid transitions. -/
+def lifecycleTransitions : List (LifecycleState × LifecycleEvent) :=
+  LifecycleState.all.flatMap fun state =>
+    LifecycleEvent.all.map fun event => (state, event)
+
+/-- Exhaustive Iris selection inputs through response arrays of length two.
+Length two is the smallest bound that exercises every precedence interaction:
+usable vs pending, usable vs failed, pending vs failed, and malformed complete
+vs pending. -/
+def attestationSelectionScenarios : List (List AttestationEntry) :=
+  [[]] ++
+  AttestationEntry.all.map (fun entry => [entry]) ++
+  AttestationEntry.all.flatMap fun first =>
+    AttestationEntry.all.map fun second => [first, second]
+
 /-! ## JSON encoding -/
 
 private def str (s : String) : Json := Json.str s
@@ -313,6 +330,35 @@ def routeVectorJson (pair : Chain × Chain) : Json :=
     ("source", str source.jsonName),
     ("destination", str destination.jsonName),
     ("valid", toJson (isValidRoute source destination))
+  ]
+
+def lifecycleTransitionJson (pair : LifecycleState × LifecycleEvent) : Json :=
+  let (state, event) := pair
+  Json.mkObj [
+    ("state", str state.jsonName),
+    ("event", str event.jsonName),
+    ("next_state", match lifecycleStep state event with
+      | some next => str next.jsonName
+      | none => Json.null)
+  ]
+
+private def attestationStatusName : ModelAttestationStatus → String
+  | .complete => "complete"
+  | .pending => "pending"
+  | .pendingConfirmations => "pending_confirmations"
+  | .failed => "failed"
+
+def attestationEntryJson (entry : AttestationEntry) : Json :=
+  Json.mkObj [
+    ("status", str (attestationStatusName entry.status)),
+    ("has_message", toJson entry.hasMessage),
+    ("has_attestation", toJson entry.hasAttestation)
+  ]
+
+def attestationSelectionJson (entries : List AttestationEntry) : Json :=
+  Json.mkObj [
+    ("entries", Json.arr (entries.map attestationEntryJson).toArray),
+    ("expected", str (selectAttestation entries).jsonName)
   ]
 
 def headerJson (h : MessageHeader) : Json :=
@@ -392,6 +438,10 @@ def fixturesJson : Except String Json := do
     ("transfer_mode_vectors", Json.arr (transferModes.map transferModeJson).toArray),
     ("chain_vectors", Json.arr (Chain.all.map chainVectorJson).toArray),
     ("route_vectors", Json.arr (routePairs.map routeVectorJson).toArray),
+    ("lifecycle_transition_vectors",
+      Json.arr (lifecycleTransitions.map lifecycleTransitionJson).toArray),
+    ("attestation_selection_vectors",
+      Json.arr (attestationSelectionScenarios.map attestationSelectionJson).toArray),
     ("accept_message_vectors", Json.arr (accepts.map acceptVectorJson).toArray),
     ("reject_message_vectors", Json.arr (rejectVectors.map rejectVectorJson).toArray)
   ]
