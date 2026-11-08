@@ -33,10 +33,12 @@ jobs:
         run: cargo audit
 
       - name: Run cargo-audit with JSON output
+        if: always()
         run: cargo audit --json > audit-results.json
         continue-on-error: true
 
       - name: Upload audit results
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: security-audit-results

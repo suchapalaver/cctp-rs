@@ -28,6 +28,9 @@ ignore = [
     "RUSTSEC-2024-0436", # paste unmaintained (transitive via alloy-sol-macro)
     # crypto-bigint 0.5.5 is pinned through Alloy/k256 0.13; remove via #96.
     "RUSTSEC-2026-0387",
+    # pin-utils 0.1.0 is unmaintained through Alloy/wasmtimer with no patched
+    # release; remove after the upstream timer migration tracked by #107.
+    "RUSTSEC-2026-0441",
 ]
 
 [sources]
