@@ -22,11 +22,14 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
+      - name: Test freshness policy
+        run: python3 -B -m unittest discover -s scripts/tests -p 'test_*.py'
+
+      - name: Require recently refreshed committed inputs
+        run: python3 -B scripts/check_nix_flake_freshness.py --max-age-days 30
+
       - name: Refresh flake inputs in the runner workspace
         run: nix flake update
 
       - name: Validate the refreshed flake
         run: nix flake check --all-systems
-
-      - name: Require the committed lockfile to be current
-        run: git diff --exit-code -- flake.lock

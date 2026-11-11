@@ -170,11 +170,12 @@ suite so it can exercise the private production selector used by
   path is broken.
 - The `Nix Flake Freshness` workflow is separate from locked CI. It updates
   flake inputs only in the ephemeral runner workspace, validates the refreshed
-  flake, and fails when `flake.lock` would change. Treat a failure as a prompt
-  for a signed topic-branch lockfile refresh; the workflow deliberately does
-  not create unsigned automation commits. The flake declares x86_64 and
-  aarch64 Linux plus aarch64 Darwin outputs; nixos-unstable dropped
-  x86_64-darwin in 26.11.
+  flake, and fails when the newest committed direct input is over 30 days old
+  or the refreshed graph is incompatible. Ordinary upstream movement does not
+  fail the workflow. Treat a stale-input failure as a prompt for a signed
+  topic-branch lockfile refresh; the workflow deliberately does not create
+  unsigned automation commits. The flake declares x86_64 and aarch64 Linux
+  plus aarch64 Darwin outputs; nixos-unstable dropped x86_64-darwin in 26.11.
 - The `CCTP Protocol Drift` workflow is separate from locked CI. It runs on a
   schedule or manually, fetches Circle's supported blockchains Markdown page,
   and flags domain, token, V1 legacy-only, and capability drift. Treat failures
