@@ -52,7 +52,7 @@
     {
       "blockchain": "Cronos",
       "fast_transfer": null,
-      "forwarding_service": false,
+      "forwarding_service": true,
       "standard_transfer": true,
       "upfront_fees": false
     },
@@ -129,7 +129,7 @@
     {
       "blockchain": "Plasma",
       "fast_transfer": null,
-      "forwarding_service": false,
+      "forwarding_service": true,
       "standard_transfer": true,
       "upfront_fees": false
     },
@@ -206,7 +206,7 @@
     {
       "blockchain": "X Layer",
       "fast_transfer": true,
-      "forwarding_service": false,
+      "forwarding_service": true,
       "standard_transfer": true,
       "upfront_fees": false
     },
