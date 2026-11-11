@@ -129,6 +129,7 @@ path = [
     ".github/pull_request_template.md",
     ".github/workflows/lean.yml",
     ".github/workflows/live-fee-smoke.yml",
+    ".github/workflows/nix-flake-freshness.yml",
     ".github/workflows/protocol-drift.yml",
     ".github/workflows/release.yml",
     ".github/workflows/security.yml",
