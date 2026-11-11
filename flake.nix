@@ -16,13 +16,23 @@
   };
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+    let
+      # nixos-unstable dropped x86_64-darwin in 26.11. Keep the declared
+      # outputs aligned with platforms that the selected Nixpkgs can evaluate.
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+    in
+    flake-utils.lib.eachSystem supportedSystems (system:
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
 
+        cargoManifest = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
         nativeBuildInputs = with pkgs; [
@@ -39,7 +49,7 @@
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "cctp-rs";
-          version = "2.1.3";
+          version = cargoManifest.package.version;
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
 
