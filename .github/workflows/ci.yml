@@ -129,7 +129,7 @@ jobs:
           tool: cargo-audit
 
       - name: Run security audit
-        run: cargo audit
+        run: cargo audit --deny unsound
 
   docs:
     name: Documentation
