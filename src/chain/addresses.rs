@@ -56,17 +56,103 @@ pub const POLYGON_AMOY_USDC_ADDRESS: Address = address!("41E94Eb019C0762f9Bfcf9F
 /// Unichain mainnet native USDC token address.
 pub const UNICHAIN_USDC_ADDRESS: Address = address!("078D782b760474a361dDA0AF3839290b0EF57AD6");
 
+/// Unichain Sepolia native test USDC token address.
+pub const UNICHAIN_SEPOLIA_USDC_ADDRESS: Address =
+    address!("31d0220469e10c4E71834a79b1f276d740d3768F");
+
 /// Linea mainnet native USDC token address.
 pub const LINEA_USDC_ADDRESS: Address = address!("176211869cA2b568f2A7D4EE941E073a821EE1ff");
+
+/// Linea Sepolia native test USDC token address.
+pub const LINEA_SEPOLIA_USDC_ADDRESS: Address =
+    address!("FEce4462D57bD51A6A552365A011b95f0E16d9B7");
 
 /// Sonic mainnet native USDC token address.
 pub const SONIC_USDC_ADDRESS: Address = address!("29219dd400f2Bf60E5a23d13Be72B486D4038894");
 
+/// Sonic testnet native test USDC token address.
+pub const SONIC_TESTNET_USDC_ADDRESS: Address =
+    address!("0BA304580ee7c9a980CF72e55f5Ed2E9fd30Bc51");
+
 /// Sei mainnet native USDC token address.
 pub const SEI_USDC_ADDRESS: Address = address!("e15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392");
 
+/// Sei testnet native test USDC token address.
+pub const SEI_TESTNET_USDC_ADDRESS: Address = address!("4fCF1784B31630811181f670Aea7A7bEF803eaED");
+
 /// HyperEVM mainnet native USDC token address.
 pub const HYPEREVM_USDC_ADDRESS: Address = address!("b88339CB7199b77E23DB6E890353E22632Ba630f");
+
+/// HyperEVM testnet native test USDC token address.
+pub const HYPEREVM_TESTNET_USDC_ADDRESS: Address =
+    address!("2B3370eE501B4a559b57D449569354196457D8Ab");
+
+/// World Chain mainnet native USDC token address.
+pub const WORLD_CHAIN_USDC_ADDRESS: Address = address!("79A02482A880bCe3F13E09da970dC34dB4cD24D1");
+
+/// World Chain Sepolia native USDC token address.
+pub const WORLD_CHAIN_SEPOLIA_USDC_ADDRESS: Address =
+    address!("66145f38cBAC35Ca6F1Dfb4914dF98F1614aeA88");
+
+/// Monad mainnet native USDC token address.
+pub const MONAD_USDC_ADDRESS: Address = address!("754704Bc059F8C67012fEd69BC8A327a5aafb603");
+
+/// Monad testnet native USDC token address.
+pub const MONAD_TESTNET_USDC_ADDRESS: Address =
+    address!("534b2f3A21130d7a60830c2Df862319e593943A3");
+
+/// XDC mainnet native USDC token address.
+pub const XDC_USDC_ADDRESS: Address = address!("fA2958CB79b0491CC627c1557F441eF849Ca8eb1");
+
+/// XDC Apothem native test USDC token address.
+pub const XDC_TESTNET_USDC_ADDRESS: Address = address!("b5AB69F7bBada22B28e79C8FFAECe55eF1c771D4");
+
+/// Ink mainnet native USDC token address.
+pub const INK_USDC_ADDRESS: Address = address!("2D270e6886d130D724215A266106e6832161EAEd");
+
+/// Ink Sepolia native test USDC token address.
+pub const INK_SEPOLIA_USDC_ADDRESS: Address = address!("Fabab97dCE620294D2B0b0e46C68964e326300Ac");
+
+/// Plume mainnet native USDC token address.
+pub const PLUME_USDC_ADDRESS: Address = address!("222365EF19F7947e5484218551B56bb3965Aa7aF");
+
+/// Plume testnet native test USDC token address.
+pub const PLUME_TESTNET_USDC_ADDRESS: Address =
+    address!("cB5f30e335672893c7eb944B374c196392C19D18");
+
+/// Arc mainnet native USDC token address.
+pub const ARC_USDC_ADDRESS: Address = address!("3600000000000000000000000000000000000000");
+
+/// Arc testnet native test USDC token address.
+pub const ARC_TESTNET_USDC_ADDRESS: Address = address!("3600000000000000000000000000000000000000");
+
+/// Injective EVM mainnet native USDC token address.
+pub const INJECTIVE_USDC_ADDRESS: Address = address!("a00C59fF5a080D2b954d0c75e46E22a0c371235a");
+
+/// Injective EVM testnet native test USDC token address.
+pub const INJECTIVE_TESTNET_USDC_ADDRESS: Address =
+    address!("0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d");
+
+/// Pharos mainnet native USDC token address.
+pub const PHAROS_USDC_ADDRESS: Address = address!("C879C018dB60520F4355C26eD1a6D572cdAC1815");
+
+/// Pharos testnet native test USDC token address.
+pub const PHAROS_TESTNET_USDC_ADDRESS: Address =
+    address!("cfC8330f4BCAB529c625D12781b1C19466A9Fc8B");
+
+/// Cronos mainnet native USDC token address.
+pub const CRONOS_USDC_ADDRESS: Address = address!("3D7F2C478aAfdB65542BCB44bCeeC05849999d2D");
+
+/// Cronos testnet native test USDC token address.
+pub const CRONOS_TESTNET_USDC_ADDRESS: Address =
+    address!("Eb33dc5fac03833e132593659e1dE7256aB59794");
+
+/// Plasma mainnet native USDC token address.
+pub const PLASMA_USDC_ADDRESS: Address = address!("2d661C89D812261039AF9764eceaAee884f5F67F");
+
+/// Plasma testnet native test USDC token address.
+pub const PLASMA_TESTNET_USDC_ADDRESS: Address =
+    address!("E67Fb267022cBA8064Dd388CC2FED724F3120D9D");
 
 // Native EURC token addresses for Circle's initial CCTP EURC rollout.
 //

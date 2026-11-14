@@ -19,7 +19,7 @@ Circle software, and protocol currency work is tracked publicly in the
 ## Features
 
 - 🚀 **Type-safe** contract interactions using Alloy
-- 🔄 **Bridge SDK** for 11 v2-capable EVM mainnet chains plus 6 USDC
+- 🔄 **Bridge SDK** for 21 v2-capable EVM mainnet chains plus 21 USDC
   testnets, with EURC helpers for Ethereum <-> Base; **protocol parser**
   currently implements all 31 domain IDs in Circle's current CCTP
   domain table
@@ -54,12 +54,16 @@ Chains returning `true` from `NamedChain::supports_cctp_v2()`:
 #### Mainnet
 
 - Ethereum, Arbitrum, Base, Optimism, Avalanche, Polygon, Unichain
-- Linea, Sonic, Sei, HyperEVM (v2-only chains)
+- Linea, Sonic, Sei, HyperEVM, World Chain, Monad, XDC, Ink, Plume, Arc,
+  Injective EVM, Pharos, Cronos, Plasma (v2-only chains)
 
 #### Testnet
 
 - Sepolia, Arbitrum Sepolia, Base Sepolia, Optimism Sepolia
-- Avalanche Fuji, Polygon Amoy
+- Avalanche Fuji, Polygon Amoy, Unichain Sepolia, Linea Sepolia
+- Sonic Testnet, Sei Testnet, HyperEVM Testnet
+- World Chain Sepolia, Monad Testnet, XDC Apothem, Ink Sepolia, Plume Testnet
+- Arc Testnet, Injective Testnet, Pharos Testnet, Cronos Testnet, Plasma Testnet
 
 ### Bridge SDK — supported assets
 
@@ -79,24 +83,53 @@ token addresses. The raw `burn`, `approve`, `ensure_approval`, and
 `transfer` methods still accept explicit ERC-20 addresses for advanced
 contract workflows.
 
-### Protocol parser — additional domains
+### CCTP domain route-support matrix
 
-`DomainId` and `ParsedV2MessageSummary` recognize the following CCTP
-v2 domains, but the bridge SDK does **not** currently accept them as
-source or destination — `NamedChain::supports_cctp_v2()` returns
-`false` and the bridge builder will reject them:
+Every row below is a Standard Transfer source and destination in Circle's
+current table. Fast is a source capability; Forwarding is a destination
+capability. `CctpV2::supports_fast_transfer()` and
+`supports_forwarding_service()` expose those directional capabilities for
+bridge-enabled chains. Official testnets inherit their mainnet row except where
+Circle documents an exception.
 
-- Solana (5, non-EVM), Sui (8, non-EVM), Aptos (9, non-EVM), Codex (12),
-  World Chain (14), Monad (15), BNB Smart Chain (17, USYC only),
-  XDC (18), Ink (21), Plume (22), Starknet (25, non-EVM),
-  Arc (26), Stellar (27, non-EVM), EDGE (28),
-  Injective (29), Morph (30), Pharos (31), Cronos (32),
-  Plasma (33), X Layer (37)
+| Domain | Chain | Alloy `NamedChain` | Fast | Forwarding | Bridge SDK decision |
+|---:|---|---|:---:|:---:|---|
+| 0 | Ethereum | Yes | Yes | Yes | Enabled |
+| 1 | Avalanche | Yes | N/A | Yes | Enabled |
+| 2 | OP Mainnet | Yes | Yes | Yes | Enabled |
+| 3 | Arbitrum | Yes | Yes | Yes | Enabled |
+| 5 | Solana | No EVM variant | Yes | Yes | Parser-only: non-EVM address and transaction model |
+| 6 | Base | Yes | Yes | Yes | Enabled |
+| 7 | Polygon PoS | Yes | N/A | Yes | Enabled |
+| 8 | Sui | No EVM variant | N/A | No | Parser-only: non-EVM address and transaction model |
+| 9 | Aptos | No EVM variant | N/A | No | Parser-only: non-EVM address and transaction model |
+| 10 | Unichain | Yes | Yes | Yes | Enabled |
+| 11 | Linea | Yes | Yes | Yes | Enabled |
+| 12 | Codex | Missing | Yes | Yes | Parser-only: blocked by missing `NamedChain` variant |
+| 13 | Sonic | Yes | N/A | Yes | Enabled |
+| 14 | World Chain | Yes | Yes | Yes | Enabled |
+| 15 | Monad | Yes | N/A | Yes | Enabled |
+| 16 | Sei | Yes | N/A | Yes | Enabled |
+| 17 | BNB Smart Chain | Yes | N/A | No | Parser-only: Circle supports USYC, not USDC |
+| 18 | XDC | Yes | N/A | Yes | Enabled |
+| 19 | HyperEVM | Yes | N/A | Yes | Enabled |
+| 21 | Ink | Yes | Yes | Yes | Enabled |
+| 22 | Plume | Yes | Yes | Yes | Enabled |
+| 25 | Starknet | No EVM variant | Yes | No | Parser-only: non-EVM address and transaction model |
+| 26 | Arc | Yes | N/A | Yes | Enabled |
+| 27 | Stellar | No EVM variant | N/A | No | Parser-only: distinct address/precision and inbound forwarding requirements |
+| 28 | EDGE | Missing | Yes | Yes | Parser-only: missing `NamedChain`; contracts are also non-unified |
+| 29 | Injective | Yes | N/A | No | Enabled |
+| 30 | Morph | Missing | Yes | No | Parser-only: blocked by missing `NamedChain` variant |
+| 31 | Pharos | Yes | N/A | No | Enabled |
+| 32 | Cronos | Yes | N/A | Yes | Enabled |
+| 33 | Plasma | Yes | N/A | Yes | Enabled |
+| 37 | X Layer | Missing | Yes | Yes | Parser-only: blocked by missing `NamedChain` variant |
 
-Use this list when you need to *inspect* messages crossing these
-domains (for indexing, analytics, or wallet UIs) without routing
-through them. To extend bridge SDK support to one of these domains,
-follow [AGENTS.md → Adding chain support](AGENTS.md#adding-chain-support).
+Parser-only domains remain available through `DomainId` and
+`ParsedV2MessageSummary` for indexing, analytics, and wallet inspection. The
+bridge builder rejects them. To change a decision, follow
+[AGENTS.md → Adding chain support](AGENTS.md#adding-chain-support).
 
 ### Protocol currency roadmap
 
@@ -687,7 +720,7 @@ cargo run --example v2_fast_transfer
 
 The `v2_integration_validation` example validates:
 
-- Chain support matrix (11 v2-capable mainnet chain families plus 6 testnets)
+- Chain support matrix (21 v2-capable mainnet chain families plus 21 testnets)
 - Domain ID mappings against Circle's official values
 - Contract address consistency (unified v2 addresses)
 - Bridge configuration variations (standard, fast, hooks)

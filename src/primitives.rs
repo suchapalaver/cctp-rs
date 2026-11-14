@@ -391,10 +391,35 @@ fn usdc_evm_token_address(chain: NamedChain) -> Option<Address> {
         NamedChain::Polygon => addresses::POLYGON_USDC_ADDRESS,
         NamedChain::PolygonAmoy => addresses::POLYGON_AMOY_USDC_ADDRESS,
         NamedChain::Unichain => addresses::UNICHAIN_USDC_ADDRESS,
+        NamedChain::UnichainSepolia => addresses::UNICHAIN_SEPOLIA_USDC_ADDRESS,
         NamedChain::Linea => addresses::LINEA_USDC_ADDRESS,
+        NamedChain::LineaSepolia => addresses::LINEA_SEPOLIA_USDC_ADDRESS,
         NamedChain::Sonic => addresses::SONIC_USDC_ADDRESS,
+        NamedChain::SonicTestnet => addresses::SONIC_TESTNET_USDC_ADDRESS,
         NamedChain::Sei => addresses::SEI_USDC_ADDRESS,
+        NamedChain::SeiTestnet => addresses::SEI_TESTNET_USDC_ADDRESS,
         NamedChain::Hyperliquid => addresses::HYPEREVM_USDC_ADDRESS,
+        NamedChain::HyperliquidTestnet => addresses::HYPEREVM_TESTNET_USDC_ADDRESS,
+        NamedChain::World => addresses::WORLD_CHAIN_USDC_ADDRESS,
+        NamedChain::WorldSepolia => addresses::WORLD_CHAIN_SEPOLIA_USDC_ADDRESS,
+        NamedChain::Monad => addresses::MONAD_USDC_ADDRESS,
+        NamedChain::MonadTestnet => addresses::MONAD_TESTNET_USDC_ADDRESS,
+        NamedChain::XdcMainnet => addresses::XDC_USDC_ADDRESS,
+        NamedChain::XdcTestnet => addresses::XDC_TESTNET_USDC_ADDRESS,
+        NamedChain::Ink => addresses::INK_USDC_ADDRESS,
+        NamedChain::InkSepolia => addresses::INK_SEPOLIA_USDC_ADDRESS,
+        NamedChain::Plume => addresses::PLUME_USDC_ADDRESS,
+        NamedChain::PlumeTestnet => addresses::PLUME_TESTNET_USDC_ADDRESS,
+        NamedChain::Arc => addresses::ARC_USDC_ADDRESS,
+        NamedChain::ArcTestnet => addresses::ARC_TESTNET_USDC_ADDRESS,
+        NamedChain::Injective => addresses::INJECTIVE_USDC_ADDRESS,
+        NamedChain::InjectiveTestnet => addresses::INJECTIVE_TESTNET_USDC_ADDRESS,
+        NamedChain::Pharos => addresses::PHAROS_USDC_ADDRESS,
+        NamedChain::PharosTestnet => addresses::PHAROS_TESTNET_USDC_ADDRESS,
+        NamedChain::Cronos => addresses::CRONOS_USDC_ADDRESS,
+        NamedChain::CronosTestnet => addresses::CRONOS_TESTNET_USDC_ADDRESS,
+        NamedChain::Plasma => addresses::PLASMA_USDC_ADDRESS,
+        NamedChain::PlasmaTestnet => addresses::PLASMA_TESTNET_USDC_ADDRESS,
         _ => return None,
     })
 }
@@ -631,6 +656,18 @@ mod tests {
                 .expect("Polygon Amoy USDC address"),
             addresses::POLYGON_AMOY_USDC_ADDRESS
         );
+        assert_eq!(
+            CctpTransferAsset::Usdc
+                .v2_bridge_token_address(NamedChain::World)
+                .expect("World Chain USDC address"),
+            addresses::WORLD_CHAIN_USDC_ADDRESS
+        );
+        assert_eq!(
+            CctpTransferAsset::Usdc
+                .v2_bridge_token_address(NamedChain::XdcTestnet)
+                .expect("XDC testnet USDC address"),
+            addresses::XDC_TESTNET_USDC_ADDRESS
+        );
     }
 
     #[test]
@@ -663,6 +700,23 @@ mod tests {
         assert_eq!(
             route.destination_domain_id().expect("destination domain"),
             DomainId::HyperEvm
+        );
+
+        let expanded_route = CctpV2Route::for_asset(
+            NamedChain::World,
+            NamedChain::Plasma,
+            CctpTransferAsset::Usdc,
+        )
+        .expect("World Chain -> Plasma USDC route");
+        assert_eq!(
+            expanded_route.source_domain_id().expect("source domain"),
+            DomainId::WorldChain
+        );
+        assert_eq!(
+            expanded_route
+                .destination_domain_id()
+                .expect("destination domain"),
+            DomainId::Plasma
         );
     }
 

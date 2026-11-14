@@ -8,9 +8,10 @@
 //! confirmation times, and domain ID mappings for all supported CCTP chains.
 //!
 //! - `CctpV1`: Original 7 chain families
-//! - `CctpV2`: 11 v2-capable chain families (the v1 set plus Linea, Sonic,
-//!   Sei, HyperEVM). Fast Transfer is a source-chain capability on a subset of
-//!   those families. The protocol parser (`DomainId`, `ParsedV2Message`)
+//! - `CctpV2`: 21 v2-capable chain families (the 7-family v1 set plus 14
+//!   v2-only families). Fast Transfer and Forwarding Service are directional
+//!   capabilities on subsets of those families. The protocol parser
+//!   (`DomainId`, `ParsedV2Message`)
 //!   recognizes all 31 domain IDs in Circle's current CCTP domain table,
 //!   independently of bridge SDK support.
 

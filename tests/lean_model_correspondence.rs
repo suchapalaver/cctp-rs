@@ -19,7 +19,10 @@
 
 use alloy_chains::NamedChain;
 use alloy_primitives::{keccak256, Bytes, FixedBytes, U256};
-use cctp_rs::{CctpV2, CctpV2Route, DomainId, FinalityThreshold, ParsedV2Message, TransferMode};
+use cctp_rs::{
+    CctpTransferAsset, CctpV2, CctpV2Route, DomainId, FinalityThreshold, ParsedV2Message,
+    TransferMode,
+};
 use serde::Deserialize;
 
 const VECTORS_JSON: &str = include_str!("fixtures/lean/cctp_v2_vectors.json");
@@ -169,10 +172,35 @@ fn named_chain(name: &str) -> NamedChain {
         "polygon_mainnet" => NamedChain::Polygon,
         "polygon_amoy" => NamedChain::PolygonAmoy,
         "unichain_mainnet" => NamedChain::Unichain,
+        "unichain_sepolia" => NamedChain::UnichainSepolia,
         "linea_mainnet" => NamedChain::Linea,
+        "linea_sepolia" => NamedChain::LineaSepolia,
         "sonic_mainnet" => NamedChain::Sonic,
+        "sonic_testnet" => NamedChain::SonicTestnet,
         "sei_mainnet" => NamedChain::Sei,
+        "sei_testnet" => NamedChain::SeiTestnet,
         "hyper_evm_mainnet" => NamedChain::Hyperliquid,
+        "hyper_evm_testnet" => NamedChain::HyperliquidTestnet,
+        "world_mainnet" => NamedChain::World,
+        "world_sepolia" => NamedChain::WorldSepolia,
+        "monad_mainnet" => NamedChain::Monad,
+        "monad_testnet" => NamedChain::MonadTestnet,
+        "xdc_mainnet" => NamedChain::XdcMainnet,
+        "xdc_testnet" => NamedChain::XdcTestnet,
+        "ink_mainnet" => NamedChain::Ink,
+        "ink_sepolia" => NamedChain::InkSepolia,
+        "plume_mainnet" => NamedChain::Plume,
+        "plume_testnet" => NamedChain::PlumeTestnet,
+        "arc_mainnet" => NamedChain::Arc,
+        "arc_testnet" => NamedChain::ArcTestnet,
+        "injective_mainnet" => NamedChain::Injective,
+        "injective_testnet" => NamedChain::InjectiveTestnet,
+        "pharos_mainnet" => NamedChain::Pharos,
+        "pharos_testnet" => NamedChain::PharosTestnet,
+        "cronos_mainnet" => NamedChain::Cronos,
+        "cronos_testnet" => NamedChain::CronosTestnet,
+        "plasma_mainnet" => NamedChain::Plasma,
+        "plasma_testnet" => NamedChain::PlasmaTestnet,
         "bnb_smart_chain_mainnet" => NamedChain::BinanceSmartChain,
         "moonbeam_mainnet" => NamedChain::Moonbeam,
         other => panic!("unknown Lean chain fixture name: {other}"),
@@ -292,9 +320,9 @@ fn transfer_mode_dispatch_matches_lean_model() {
     }
 }
 
-/// The production bridge support, environment, and domain-mapping tables must
-/// match the Lean model for every modeled `NamedChain`. Parser-modeled domains
-/// outside the image of this table remain parse-only.
+/// The production bridge support, USDC address, environment, and domain-mapping
+/// tables must match the Lean model for every modeled `NamedChain`.
+/// Parser-modeled domains outside the image of this table remain parse-only.
 #[test]
 fn chain_classification_matches_lean_model() {
     let fixtures = fixtures();
@@ -314,6 +342,14 @@ fn chain_classification_matches_lean_model() {
             chain.supports_cctp_v2(),
             vector.supports_cctp_v2,
             "chain {}: CCTP v2 support",
+            vector.chain
+        );
+        assert_eq!(
+            CctpTransferAsset::Usdc
+                .v2_bridge_token_address(chain)
+                .is_ok(),
+            vector.supports_cctp_v2,
+            "chain {}: bridge support and USDC address coverage must agree",
             vector.chain
         );
         assert_eq!(
