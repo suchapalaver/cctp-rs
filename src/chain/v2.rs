@@ -5,7 +5,8 @@
 //! CCTP v2 chain configuration trait
 //!
 //! This module defines the `CctpV2` trait which provides v2-specific
-//! chain capabilities including Fast Transfer support, hooks, and
+//! chain capabilities including Fast Transfer and Forwarding Service support,
+//! hooks, and
 //! v2 contract addresses.
 
 use alloy_chains::NamedChain;
@@ -55,9 +56,9 @@ pub enum FastTransferFee {
 /// - **Fast Transfer**: Chains that support fast transfer (finality threshold 1000)
 /// - **Dynamic Fees**: Some chains charge fees for fast transfer (0-14 bps)
 /// - **v2 Contracts**: Updated contract addresses for `TokenMessengerV2` and `MessageTransmitterV2`
-/// - **Expanded Chains**: Bridge SDK routes 11 v2-capable chain families
-///   (the 7 v1 families plus Linea, Sonic, Sei, HyperEVM) with testnets,
-///   versus the 7 v1 chain families. Note that this trait covers bridge
+/// - **Expanded Chains**: Bridge SDK routes 21 v2-capable chain families
+///   (the 7 v1 families plus 14 v2-only families) across mainnet and selected
+///   testnets, versus the 7 v1 chain families. Note that this trait covers bridge
 ///   SDK reach; the protocol parser (`DomainId`, `ParsedV2Message`) can decode
 ///   all 31 domain IDs in Circle's current CCTP domain table
 ///   independently of bridge support.
@@ -85,6 +86,16 @@ pub trait CctpV2 {
     /// chain's Standard Transfer attestation is already fast enough that the
     /// lower finality threshold provides no meaningful improvement.
     fn supports_fast_transfer(&self) -> Result<bool>;
+
+    /// Returns true if Circle's Forwarding Service accepts this chain as a
+    /// destination.
+    ///
+    /// This is a destination-chain capability. It does not imply that this
+    /// crate submits Forwarding Service requests; callers can use it to avoid
+    /// presenting unsupported forwarded routes.
+    fn supports_forwarding_service(&self) -> Result<bool> {
+        Ok(false)
+    }
 
     /// Returns true if this source deployment exposes Circle's Standard
     /// Transfer fee switch and its `getMinFeeAmount(uint256)` selector.
@@ -147,7 +158,7 @@ pub trait CctpV2 {
     /// - Ethereum: ~20 seconds (2 block confirmations)
     /// - Supported L2s: ~8 seconds (1 block confirmation)
     ///
-    /// See: <https://developers.circle.com/stablecoins/required-block-confirmations>
+    /// See: <https://developers.circle.com/cctp/concepts/finality-and-block-confirmations>
     ///
     /// Returns [`CctpError::FastTransferUnsupported`] when Circle marks Fast
     /// Transfer N/A for this source chain.
@@ -160,11 +171,11 @@ pub trait CctpV2 {
     ///
     /// Typical times:
     /// - Ethereum + L2s settling to Ethereum: 13-19 minutes (~65 ETH blocks)
-    /// - Avalanche, Polygon: 5-20 seconds (native finality)
-    /// - Sei, Sonic: ~5 seconds (high-performance chains)
+    /// - Avalanche, Polygon, and Sonic: ~8 seconds (native finality)
+    /// - Sei: ~5 seconds (high-performance chain)
     /// - Linea: 6-32 hours (zkEVM proof generation)
     ///
-    /// See: <https://developers.circle.com/stablecoins/required-block-confirmations>
+    /// See: <https://developers.circle.com/cctp/concepts/finality-and-block-confirmations>
     fn standard_transfer_confirmation_time_seconds(&self) -> Result<u64>;
 }
 
@@ -186,12 +197,37 @@ impl CctpV2 for NamedChain {
                 | Self::Polygon
                 | Self::PolygonAmoy
                 | Self::Unichain
+                | Self::UnichainSepolia
                 // v2-only priority chains
                 // (BNB Smart Chain / domain 17 omitted: USYC-only on this domain)
                 | Self::Linea
+                | Self::LineaSepolia
                 | Self::Sonic
+                | Self::SonicTestnet
                 | Self::Sei
+                | Self::SeiTestnet
                 | Self::Hyperliquid
+                | Self::HyperliquidTestnet
+                | Self::World
+                | Self::WorldSepolia
+                | Self::Monad
+                | Self::MonadTestnet
+                | Self::XdcMainnet
+                | Self::XdcTestnet
+                | Self::Ink
+                | Self::InkSepolia
+                | Self::Plume
+                | Self::PlumeTestnet
+                | Self::Arc
+                | Self::ArcTestnet
+                | Self::Injective
+                | Self::InjectiveTestnet
+                | Self::Pharos
+                | Self::PharosTestnet
+                | Self::Cronos
+                | Self::CronosTestnet
+                | Self::Plasma
+                | Self::PlasmaTestnet
         )
     }
 
@@ -214,7 +250,29 @@ impl CctpV2 for NamedChain {
                 | Self::Optimism
                 | Self::OptimismSepolia
                 | Self::Unichain
+                | Self::UnichainSepolia
                 | Self::Linea
+                | Self::LineaSepolia
+                | Self::World
+                | Self::WorldSepolia
+                | Self::Ink
+                | Self::InkSepolia
+                | Self::Plume
+                | Self::PlumeTestnet
+        ))
+    }
+
+    fn supports_forwarding_service(&self) -> Result<bool> {
+        if !self.supports_cctp_v2() {
+            return Err(CctpError::UnsupportedChain(*self));
+        }
+
+        // Forwarding Service is a destination-chain capability. Of the bridge
+        // chains currently modeled here, Circle marks only Injective and
+        // Pharos unavailable.
+        Ok(!matches!(
+            self,
+            Self::Injective | Self::InjectiveTestnet | Self::Pharos | Self::PharosTestnet
         ))
     }
 
@@ -223,7 +281,7 @@ impl CctpV2 for NamedChain {
             return Err(CctpError::UnsupportedChain(*self));
         }
 
-        Ok(matches!(self, Self::Sei))
+        Ok(matches!(self, Self::Sei | Self::SeiTestnet))
     }
 
     fn fast_transfer_fee_bps(&self) -> Result<FastTransferFee> {
@@ -278,12 +336,22 @@ impl CctpV2 for NamedChain {
             Self::Arbitrum | Self::ArbitrumSepolia => DomainId::Arbitrum,
             Self::Base | Self::BaseSepolia => DomainId::Base,
             Self::Polygon | Self::PolygonAmoy => DomainId::Polygon,
-            Self::Unichain => DomainId::Unichain,
+            Self::Unichain | Self::UnichainSepolia => DomainId::Unichain,
             // v2-only priority chains
-            Self::Linea => DomainId::Linea,
-            Self::Sonic => DomainId::Sonic,
-            Self::Sei => DomainId::Sei,
-            Self::Hyperliquid => DomainId::HyperEvm,
+            Self::Linea | Self::LineaSepolia => DomainId::Linea,
+            Self::Sonic | Self::SonicTestnet => DomainId::Sonic,
+            Self::Sei | Self::SeiTestnet => DomainId::Sei,
+            Self::Hyperliquid | Self::HyperliquidTestnet => DomainId::HyperEvm,
+            Self::World | Self::WorldSepolia => DomainId::WorldChain,
+            Self::Monad | Self::MonadTestnet => DomainId::Monad,
+            Self::XdcMainnet | Self::XdcTestnet => DomainId::Xdc,
+            Self::Ink | Self::InkSepolia => DomainId::Ink,
+            Self::Plume | Self::PlumeTestnet => DomainId::Plume,
+            Self::Arc | Self::ArcTestnet => DomainId::ArcTestnet,
+            Self::Injective | Self::InjectiveTestnet => DomainId::Injective,
+            Self::Pharos | Self::PharosTestnet => DomainId::Pharos,
+            Self::Cronos | Self::CronosTestnet => DomainId::Cronos,
+            Self::Plasma | Self::PlasmaTestnet => DomainId::Plasma,
             // This is unreachable due to supports_cctp_v2() check above
             _ => return Err(CctpError::UnsupportedChain(*self)),
         })
@@ -297,7 +365,8 @@ impl CctpV2 for NamedChain {
         }
 
         // Fast Transfer attestation times (1-2 block confirmations)
-        // Based on Circle docs: https://developers.circle.com/stablecoins/required-block-confirmations
+        // Based on Circle docs:
+        // https://developers.circle.com/cctp/concepts/finality-and-block-confirmations
         Ok(match self {
             // Ethereum: ~20 seconds (2 block confirmations)
             Self::Mainnet | Self::Sepolia => 20,
@@ -308,9 +377,16 @@ impl CctpV2 for NamedChain {
             // Optimism: ~8 seconds (1 block confirmation)
             Self::Optimism | Self::OptimismSepolia => 8,
             // Unichain: ~8 seconds (1 block confirmation)
-            Self::Unichain => 8,
+            Self::Unichain | Self::UnichainSepolia => 8,
             // Linea: ~8 seconds (vs 6-32 hours for Standard!)
-            Self::Linea => 8,
+            Self::Linea | Self::LineaSepolia => 8,
+            // Other Fast-capable EVM L2s: ~8 seconds (1 block confirmation)
+            Self::World
+            | Self::WorldSepolia
+            | Self::Ink
+            | Self::InkSepolia
+            | Self::Plume
+            | Self::PlumeTestnet => 8,
             _ => return Err(CctpError::UnsupportedChain(*self)),
         })
     }
@@ -321,26 +397,42 @@ impl CctpV2 for NamedChain {
         }
 
         // Standard Transfer attestation times (full finality)
-        // Based on Circle docs: https://developers.circle.com/stablecoins/required-block-confirmations
+        // Based on Circle docs:
+        // https://developers.circle.com/cctp/concepts/finality-and-block-confirmations
         Ok(match self {
             // Ethereum L1 + L2s settling to Ethereum: 13-19 minutes (~65 ETH blocks)
             Self::Mainnet | Self::Sepolia => 19 * 60,
             Self::Arbitrum | Self::ArbitrumSepolia => 19 * 60,
             Self::Base | Self::BaseSepolia => 19 * 60,
             Self::Optimism | Self::OptimismSepolia => 19 * 60,
-            Self::Unichain => 19 * 60,
-            // Avalanche: ~20 seconds (native finality)
-            Self::Avalanche | Self::AvalancheFuji => 20,
-            // Polygon: ~8 minutes (PoS finality)
-            Self::Polygon | Self::PolygonAmoy => 8 * 60,
+            Self::Unichain | Self::UnichainSepolia => 19 * 60,
+            Self::World | Self::WorldSepolia => 19 * 60,
+            Self::Plume | Self::PlumeTestnet => 19 * 60,
+            // Avalanche and Polygon: ~8 seconds (native finality)
+            Self::Avalanche | Self::AvalancheFuji => 8,
+            Self::Polygon | Self::PolygonAmoy => 8,
             // Linea: 6-32 hours (zkEVM proof generation) - use conservative 8 hours
-            Self::Linea => 8 * 60 * 60,
-            // Sonic: ~5 seconds (high-performance chain, native finality)
-            Self::Sonic => 5,
+            Self::Linea | Self::LineaSepolia => 8 * 60 * 60,
+            // Sonic: ~8 seconds (native finality)
+            Self::Sonic | Self::SonicTestnet => 8,
             // Sei: ~5 seconds (parallel EVM, native finality)
-            Self::Sei => 5,
+            Self::Sei | Self::SeiTestnet => 5,
             // HyperEVM: ~5 seconds (1 block confirmation, native finality)
-            Self::Hyperliquid => 5,
+            Self::Hyperliquid | Self::HyperliquidTestnet => 5,
+            // Monad: ~5 seconds (1 block confirmation)
+            Self::Monad | Self::MonadTestnet => 5,
+            // XDC: ~10 seconds (3 block confirmations)
+            Self::XdcMainnet | Self::XdcTestnet => 10,
+            // Ink: ~30 minutes (~65 Ethereum blocks)
+            Self::Ink | Self::InkSepolia => 30 * 60,
+            // Arc and Cronos: ~0.5 seconds; round up to one second.
+            Self::Arc | Self::ArcTestnet | Self::Cronos | Self::CronosTestnet => 1,
+            // Injective EVM: ~0.65 seconds; round up to one second.
+            Self::Injective | Self::InjectiveTestnet => 1,
+            // Pharos: ~7 seconds (1 block confirmation)
+            Self::Pharos | Self::PharosTestnet => 7,
+            // Plasma: ~1 second (3 block confirmations)
+            Self::Plasma | Self::PlasmaTestnet => 1,
             _ => return Err(CctpError::UnsupportedChain(*self)),
         })
     }
@@ -356,10 +448,25 @@ mod tests {
     #[case(NamedChain::Mainnet, true)]
     #[case(NamedChain::Arbitrum, true)]
     #[case(NamedChain::Base, true)]
+    #[case(NamedChain::UnichainSepolia, true)]
     #[case(NamedChain::Linea, true)]
+    #[case(NamedChain::LineaSepolia, true)]
     #[case(NamedChain::Sonic, true)]
+    #[case(NamedChain::SonicTestnet, true)]
     #[case(NamedChain::Sei, true)]
+    #[case(NamedChain::SeiTestnet, true)]
     #[case(NamedChain::Hyperliquid, true)]
+    #[case(NamedChain::HyperliquidTestnet, true)]
+    #[case(NamedChain::World, true)]
+    #[case(NamedChain::Monad, true)]
+    #[case(NamedChain::XdcMainnet, true)]
+    #[case(NamedChain::Ink, true)]
+    #[case(NamedChain::Plume, true)]
+    #[case(NamedChain::Arc, true)]
+    #[case(NamedChain::Injective, true)]
+    #[case(NamedChain::Pharos, true)]
+    #[case(NamedChain::Cronos, true)]
+    #[case(NamedChain::Plasma, true)]
     #[case(NamedChain::BinanceSmartChain, false)]
     #[case(NamedChain::Moonbeam, false)]
     fn test_v2_chain_support(#[case] chain: NamedChain, #[case] expected: bool) {
@@ -376,14 +483,39 @@ mod tests {
     #[case(NamedChain::Optimism, true)]
     #[case(NamedChain::OptimismSepolia, true)]
     #[case(NamedChain::Unichain, true)]
+    #[case(NamedChain::UnichainSepolia, true)]
     #[case(NamedChain::Linea, true)]
+    #[case(NamedChain::LineaSepolia, true)]
     #[case(NamedChain::Avalanche, false)]
     #[case(NamedChain::AvalancheFuji, false)]
     #[case(NamedChain::Polygon, false)]
     #[case(NamedChain::PolygonAmoy, false)]
     #[case(NamedChain::Sonic, false)]
+    #[case(NamedChain::SonicTestnet, false)]
     #[case(NamedChain::Sei, false)]
+    #[case(NamedChain::SeiTestnet, false)]
     #[case(NamedChain::Hyperliquid, false)]
+    #[case(NamedChain::HyperliquidTestnet, false)]
+    #[case(NamedChain::World, true)]
+    #[case(NamedChain::WorldSepolia, true)]
+    #[case(NamedChain::Monad, false)]
+    #[case(NamedChain::MonadTestnet, false)]
+    #[case(NamedChain::XdcMainnet, false)]
+    #[case(NamedChain::XdcTestnet, false)]
+    #[case(NamedChain::Ink, true)]
+    #[case(NamedChain::InkSepolia, true)]
+    #[case(NamedChain::Plume, true)]
+    #[case(NamedChain::PlumeTestnet, true)]
+    #[case(NamedChain::Arc, false)]
+    #[case(NamedChain::ArcTestnet, false)]
+    #[case(NamedChain::Injective, false)]
+    #[case(NamedChain::InjectiveTestnet, false)]
+    #[case(NamedChain::Pharos, false)]
+    #[case(NamedChain::PharosTestnet, false)]
+    #[case(NamedChain::Cronos, false)]
+    #[case(NamedChain::CronosTestnet, false)]
+    #[case(NamedChain::Plasma, false)]
+    #[case(NamedChain::PlasmaTestnet, false)]
     fn fast_transfer_is_a_source_chain_capability(
         #[case] chain: NamedChain,
         #[case] expected: bool,
@@ -405,10 +537,35 @@ mod tests {
     #[case(NamedChain::Polygon, false)]
     #[case(NamedChain::PolygonAmoy, false)]
     #[case(NamedChain::Unichain, false)]
+    #[case(NamedChain::UnichainSepolia, false)]
     #[case(NamedChain::Linea, false)]
+    #[case(NamedChain::LineaSepolia, false)]
     #[case(NamedChain::Sonic, false)]
+    #[case(NamedChain::SonicTestnet, false)]
     #[case(NamedChain::Sei, true)]
+    #[case(NamedChain::SeiTestnet, true)]
     #[case(NamedChain::Hyperliquid, false)]
+    #[case(NamedChain::HyperliquidTestnet, false)]
+    #[case(NamedChain::World, false)]
+    #[case(NamedChain::WorldSepolia, false)]
+    #[case(NamedChain::Monad, false)]
+    #[case(NamedChain::MonadTestnet, false)]
+    #[case(NamedChain::XdcMainnet, false)]
+    #[case(NamedChain::XdcTestnet, false)]
+    #[case(NamedChain::Ink, false)]
+    #[case(NamedChain::InkSepolia, false)]
+    #[case(NamedChain::Plume, false)]
+    #[case(NamedChain::PlumeTestnet, false)]
+    #[case(NamedChain::Arc, false)]
+    #[case(NamedChain::ArcTestnet, false)]
+    #[case(NamedChain::Injective, false)]
+    #[case(NamedChain::InjectiveTestnet, false)]
+    #[case(NamedChain::Pharos, false)]
+    #[case(NamedChain::PharosTestnet, false)]
+    #[case(NamedChain::Cronos, false)]
+    #[case(NamedChain::CronosTestnet, false)]
+    #[case(NamedChain::Plasma, false)]
+    #[case(NamedChain::PlasmaTestnet, false)]
     fn standard_transfer_fee_switch_is_a_source_deployment_capability(
         #[case] chain: NamedChain,
         #[case] expected: bool,
@@ -427,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn fast_transfer_support_matches_circle_capability_snapshot() {
+    fn bridge_capabilities_match_circle_snapshot() {
         let snapshot: serde_json::Value = serde_json::from_str(include_str!(
             "../../scripts/fixtures/circle_cctp_protocol_snapshot.json"
         ))
@@ -447,6 +604,16 @@ mod tests {
             ("Sonic", NamedChain::Sonic),
             ("Sei", NamedChain::Sei),
             ("HyperEVM", NamedChain::Hyperliquid),
+            ("World Chain", NamedChain::World),
+            ("Monad", NamedChain::Monad),
+            ("XDC", NamedChain::XdcMainnet),
+            ("Ink", NamedChain::Ink),
+            ("Plume", NamedChain::Plume),
+            ("Arc", NamedChain::Arc),
+            ("Injective", NamedChain::Injective),
+            ("Pharos", NamedChain::Pharos),
+            ("Cronos", NamedChain::Cronos),
+            ("Plasma", NamedChain::Plasma),
         ];
 
         for (published_name, chain) in supported_mainnets {
@@ -465,9 +632,19 @@ mod tests {
                 published_support,
                 "{chain} must match Circle's source-chain Fast Transfer capability"
             );
+
+            let published_forwarding = row["forwarding_service"]
+                .as_bool()
+                .unwrap_or_else(|| panic!("invalid Forwarding Service value for {published_name}"));
+            assert_eq!(
+                chain.supports_forwarding_service().unwrap(),
+                published_forwarding,
+                "{chain} must match Circle's destination-chain Forwarding Service capability"
+            );
         }
 
         assert!(NamedChain::Moonbeam.supports_fast_transfer().is_err());
+        assert!(NamedChain::Moonbeam.supports_forwarding_service().is_err());
     }
 
     #[rstest]
@@ -477,13 +654,21 @@ mod tests {
     #[case(NamedChain::Base)]
     #[case(NamedChain::Optimism)]
     #[case(NamedChain::Unichain)]
+    #[case(NamedChain::UnichainSepolia)]
     // Fast-capable v2-only mainnets
     #[case(NamedChain::Linea)]
+    #[case(NamedChain::LineaSepolia)]
+    #[case(NamedChain::World)]
+    #[case(NamedChain::Ink)]
+    #[case(NamedChain::Plume)]
     // Fast-capable v1 testnets that also support v2
     #[case(NamedChain::Sepolia)]
     #[case(NamedChain::ArbitrumSepolia)]
     #[case(NamedChain::BaseSepolia)]
     #[case(NamedChain::OptimismSepolia)]
+    #[case(NamedChain::WorldSepolia)]
+    #[case(NamedChain::InkSepolia)]
+    #[case(NamedChain::PlumeTestnet)]
     fn fast_transfer_fee_is_unknown_until_sourced(#[case] chain: NamedChain) {
         // Per-chain values are not sourced yet, so every fast-capable
         // chain must report Unknown — never a placeholder Known(0)
@@ -511,8 +696,25 @@ mod tests {
     #[case(NamedChain::Avalanche)]
     #[case(NamedChain::Polygon)]
     #[case(NamedChain::Sonic)]
+    #[case(NamedChain::SonicTestnet)]
     #[case(NamedChain::Sei)]
+    #[case(NamedChain::SeiTestnet)]
     #[case(NamedChain::Hyperliquid)]
+    #[case(NamedChain::HyperliquidTestnet)]
+    #[case(NamedChain::Monad)]
+    #[case(NamedChain::MonadTestnet)]
+    #[case(NamedChain::XdcMainnet)]
+    #[case(NamedChain::XdcTestnet)]
+    #[case(NamedChain::Arc)]
+    #[case(NamedChain::ArcTestnet)]
+    #[case(NamedChain::Injective)]
+    #[case(NamedChain::InjectiveTestnet)]
+    #[case(NamedChain::Pharos)]
+    #[case(NamedChain::PharosTestnet)]
+    #[case(NamedChain::Cronos)]
+    #[case(NamedChain::CronosTestnet)]
+    #[case(NamedChain::Plasma)]
+    #[case(NamedChain::PlasmaTestnet)]
     fn fast_transfer_metadata_rejects_n_a_source(#[case] chain: NamedChain) {
         assert!(matches!(
             chain.fast_transfer_fee_bps(),
@@ -549,6 +751,14 @@ mod tests {
         assert_eq!(
             NamedChain::Hyperliquid.cctp_v2_domain_id().unwrap(),
             DomainId::HyperEvm
+        );
+        assert_eq!(
+            NamedChain::WorldSepolia.cctp_v2_domain_id().unwrap(),
+            DomainId::WorldChain
+        );
+        assert_eq!(
+            NamedChain::Plasma.cctp_v2_domain_id().unwrap(),
+            DomainId::Plasma
         );
     }
 
@@ -593,6 +803,12 @@ mod tests {
                 .unwrap(),
             8
         );
+        assert_eq!(
+            NamedChain::World
+                .fast_transfer_confirmation_time_seconds()
+                .unwrap(),
+            8
+        );
     }
 
     #[test]
@@ -617,19 +833,19 @@ mod tests {
                 .unwrap(),
             19 * 60
         );
-        // Avalanche: 20 seconds (native finality)
+        // Avalanche: 8 seconds (native finality)
         assert_eq!(
             NamedChain::Avalanche
                 .standard_transfer_confirmation_time_seconds()
                 .unwrap(),
-            20
+            8
         );
-        // Polygon: 8 minutes
+        // Polygon: 8 seconds
         assert_eq!(
             NamedChain::Polygon
                 .standard_transfer_confirmation_time_seconds()
                 .unwrap(),
-            8 * 60
+            8
         );
         // Linea: 8 hours (zkEVM proof generation)
         assert_eq!(
@@ -638,12 +854,12 @@ mod tests {
                 .unwrap(),
             8 * 60 * 60
         );
-        // High-performance chains: same as fast (already fast natively)
+        // High-performance chains are already fast natively.
         assert_eq!(
             NamedChain::Sonic
                 .standard_transfer_confirmation_time_seconds()
                 .unwrap(),
-            5
+            8
         );
         assert_eq!(
             NamedChain::Sei
@@ -656,6 +872,27 @@ mod tests {
                 .standard_transfer_confirmation_time_seconds()
                 .unwrap(),
             5
+        );
+    }
+
+    #[rstest]
+    #[case(NamedChain::World, 19 * 60)]
+    #[case(NamedChain::Monad, 5)]
+    #[case(NamedChain::XdcMainnet, 10)]
+    #[case(NamedChain::Ink, 30 * 60)]
+    #[case(NamedChain::Plume, 19 * 60)]
+    #[case(NamedChain::Arc, 1)]
+    #[case(NamedChain::Injective, 1)]
+    #[case(NamedChain::Pharos, 7)]
+    #[case(NamedChain::Cronos, 1)]
+    #[case(NamedChain::Plasma, 1)]
+    fn expanded_chain_standard_confirmation_times(
+        #[case] chain: NamedChain,
+        #[case] expected_seconds: u64,
+    ) {
+        assert_eq!(
+            chain.standard_transfer_confirmation_time_seconds().unwrap(),
+            expected_seconds
         );
     }
 }

@@ -19,6 +19,18 @@ fn main() -> Result<(), CctpError> {
         usdc_route.source_token_address(CctpTransferAsset::Usdc)?
     );
 
+    let expanded_usdc_route = CctpV2Route::for_asset(
+        NamedChain::World,
+        NamedChain::Plasma,
+        CctpTransferAsset::Usdc,
+    )?;
+    println!(
+        "USDC route {} -> {} resolves destination token {}",
+        expanded_usdc_route.source_chain(),
+        expanded_usdc_route.destination_chain(),
+        expanded_usdc_route.destination_token_address(CctpTransferAsset::Usdc)?
+    );
+
     let eurc_route = CctpV2Route::for_asset(
         NamedChain::Mainnet,
         NamedChain::Base,

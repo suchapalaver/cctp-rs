@@ -12,15 +12,17 @@ layers that have different coverage:
   burns modeled CCTP assets and relays attestations end-to-end.
   Source/destination chains must return `true` from
   `NamedChain::supports_cctp_v2()` (v2) or `CctpV1::is_supported()`
-  (v1). Current coverage: USDC across 11 v2-capable chain families
-  (7 v1 chain families plus Linea, Sonic, Sei, HyperEVM) with their
-  testnets, plus EURC on Circle's initial Ethereum <-> Base routes.
+  (v1). Current coverage: USDC across 21 v2-capable mainnet chain families
+  and 21 testnet networks (7 v1 families plus 14 v2-only families: Linea,
+  Sonic, Sei, HyperEVM, World Chain, Monad, XDC, Ink, Plume, Arc, Injective,
+  Pharos, Cronos, and Plasma), plus EURC on Circle's initial Ethereum <-> Base
+  routes.
 - **Protocol parser** (`DomainId`, `ParsedV2Message`,
   `ParsedV2MessageSummary`) — recognizes all 31 domain IDs in Circle's
   current CCTP domain table, including non-EVM domains (Solana, Sui,
   Aptos, Starknet, Stellar). Parsing is independent of whether the bridge SDK
   can route to or from a given domain; see the README's
-  "Protocol parser — additional domains" section for the parse-only list.
+  "CCTP domain route-support matrix" for the parse-only decisions.
 
 Supports both CCTP v1 (legacy) and v2 (current, fast transfers with
 sub-30s settlement).
@@ -83,12 +85,17 @@ behavior.
   `StandardWithFeeAndHook`) only when the source capability check succeeds.
   Legacy `Standard` modes continue to send a zero `maxFee`.
 - **Fast Transfer capability belongs to the source chain.** Ethereum,
-  Arbitrum, Base, OP Mainnet, Unichain, and Linea are Fast-capable sources in
-  the current bridge set. Circle marks Avalanche, HyperEVM, Polygon PoS, Sei,
-  and Sonic N/A because Standard Transfer is already fast. They remain valid
-  Standard Transfer sources and Fast Transfer destinations. Check
+  Arbitrum, Base, OP Mainnet, Unichain, Linea, World Chain, Ink, and Plume are
+  Fast-capable sources in the current bridge set. Circle marks the other
+  bridge-enabled chains N/A when Standard Transfer is already fast. They remain
+  valid Standard Transfer sources and Fast Transfer destinations. Check
   `supports_fast_transfer()` before offering a fast mode; fast-only metadata
   and burns return `FastTransferUnsupported` for N/A sources before RPC.
+- **Forwarding Service capability belongs to the destination chain.** Use
+  `supports_forwarding_service()` before offering a forwarded route. This SDK
+  exposes Circle's capability metadata but does not submit Forwarding Service
+  requests; Injective and Pharos are valid direct bridge destinations even
+  though Circle does not support forwarding to them.
 - **Parser address projections are domain-aware.** `ParsedV2MessageSummary`
   always exposes canonical 32-byte `*_bytes` fields. EVM-shaped `Address`
   projections are `None` for non-EVM source or destination domains so tooling
@@ -268,14 +275,13 @@ above.
      table") and updates the README's protocol currency roadmap.
    - If `NamedChain::supports_cctp_v2()` returns `true` for the new
      chain, bump the v2-capable chain family count in this file
-     (currently "11 v2-capable chain families (7 v1 chain families
-     plus …)") and the bridge SDK mainnet/testnet count in the
+     (currently "21 v2-capable chain families (7 v1 chain families
+     plus 14 v2-only families)") and the bridge SDK mainnet/testnet count in the
      README's "Features" line, then add the chain to the
      "Mainnet" or "Testnet" list under `Bridge SDK — supported
      chains`.
    - If the new domain is parse-only (no `supports_cctp_v2()` entry),
-     add it to the README's `Protocol parser — additional domains`
-     list instead.
+     add it to the README's `CCTP domain route-support matrix` instead.
 6. Add the domain to the Lean model: new `DomainId` constructor plus
    `toU32`/`fromU32`/`jsonName` (and `isEvm` if non-EVM) entries in
    `verification/CctpSpec/Domain.lean`. If the chain becomes bridge-supported,

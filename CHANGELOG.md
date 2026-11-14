@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Expanded USDC CCTP v2 bridge routing from 11 to 21 mainnet chain families
+  and from 6 to 21 testnet networks, adding World Chain, Monad, XDC, Ink,
+  Plume, Arc, Injective EVM, Pharos, Cronos, and Plasma with Circle-published
+  token addresses and confirmation metadata.
+- Added `CctpV2::supports_forwarding_service()` for Circle's directional
+  destination capability and a 31-domain route-support matrix documenting
+  enabled, parser-only, token-blocked, and non-EVM decisions.
+
+### Changed
+
+- Extended the Lean route model and generated Rust correspondence vectors to
+  cover every newly enabled bridge network and official testnet.
+
+### Fixed
+
+- Updated CCTP v2 Standard Transfer estimates for Avalanche, Polygon PoS, and
+  Sonic to Circle's current ~8-second finality guidance.
+
 ## [8.0.0] - 2026-10-29
 
 ### Added

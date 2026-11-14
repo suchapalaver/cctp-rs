@@ -32,10 +32,35 @@ inductive Chain where
   | polygonMainnet
   | polygonAmoy
   | unichainMainnet
+  | unichainSepolia
   | lineaMainnet
+  | lineaSepolia
   | sonicMainnet
+  | sonicTestnet
   | seiMainnet
+  | seiTestnet
   | hyperEvmMainnet
+  | hyperEvmTestnet
+  | worldMainnet
+  | worldSepolia
+  | monadMainnet
+  | monadTestnet
+  | xdcMainnet
+  | xdcTestnet
+  | inkMainnet
+  | inkSepolia
+  | plumeMainnet
+  | plumeTestnet
+  | arcMainnet
+  | arcTestnet
+  | injectiveMainnet
+  | injectiveTestnet
+  | pharosMainnet
+  | pharosTestnet
+  | cronosMainnet
+  | cronosTestnet
+  | plasmaMainnet
+  | plasmaTestnet
   | bnbSmartChainMainnet
   | moonbeamMainnet
 deriving DecidableEq, Repr
@@ -57,10 +82,35 @@ def jsonName : Chain → String
   | .polygonMainnet => "polygon_mainnet"
   | .polygonAmoy => "polygon_amoy"
   | .unichainMainnet => "unichain_mainnet"
+  | .unichainSepolia => "unichain_sepolia"
   | .lineaMainnet => "linea_mainnet"
+  | .lineaSepolia => "linea_sepolia"
   | .sonicMainnet => "sonic_mainnet"
+  | .sonicTestnet => "sonic_testnet"
   | .seiMainnet => "sei_mainnet"
+  | .seiTestnet => "sei_testnet"
   | .hyperEvmMainnet => "hyper_evm_mainnet"
+  | .hyperEvmTestnet => "hyper_evm_testnet"
+  | .worldMainnet => "world_mainnet"
+  | .worldSepolia => "world_sepolia"
+  | .monadMainnet => "monad_mainnet"
+  | .monadTestnet => "monad_testnet"
+  | .xdcMainnet => "xdc_mainnet"
+  | .xdcTestnet => "xdc_testnet"
+  | .inkMainnet => "ink_mainnet"
+  | .inkSepolia => "ink_sepolia"
+  | .plumeMainnet => "plume_mainnet"
+  | .plumeTestnet => "plume_testnet"
+  | .arcMainnet => "arc_mainnet"
+  | .arcTestnet => "arc_testnet"
+  | .injectiveMainnet => "injective_mainnet"
+  | .injectiveTestnet => "injective_testnet"
+  | .pharosMainnet => "pharos_mainnet"
+  | .pharosTestnet => "pharos_testnet"
+  | .cronosMainnet => "cronos_mainnet"
+  | .cronosTestnet => "cronos_testnet"
+  | .plasmaMainnet => "plasma_mainnet"
+  | .plasmaTestnet => "plasma_testnet"
   | .bnbSmartChainMainnet => "bnb_smart_chain_mainnet"
   | .moonbeamMainnet => "moonbeam_mainnet"
 
@@ -69,8 +119,14 @@ def all : List Chain :=
   [.ethereumMainnet, .ethereumSepolia, .arbitrumMainnet, .arbitrumSepolia,
    .baseMainnet, .baseSepolia, .optimismMainnet, .optimismSepolia,
    .avalancheMainnet, .avalancheFuji, .polygonMainnet, .polygonAmoy,
-   .unichainMainnet, .lineaMainnet, .sonicMainnet, .seiMainnet,
-   .hyperEvmMainnet, .bnbSmartChainMainnet, .moonbeamMainnet]
+   .unichainMainnet, .unichainSepolia, .lineaMainnet, .lineaSepolia,
+   .sonicMainnet, .sonicTestnet, .seiMainnet, .seiTestnet,
+   .hyperEvmMainnet, .hyperEvmTestnet, .worldMainnet, .worldSepolia, .monadMainnet,
+   .monadTestnet, .xdcMainnet, .xdcTestnet, .inkMainnet, .inkSepolia,
+   .plumeMainnet, .plumeTestnet, .arcMainnet, .arcTestnet,
+   .injectiveMainnet, .injectiveTestnet, .pharosMainnet, .pharosTestnet,
+   .cronosMainnet, .cronosTestnet, .plasmaMainnet, .plasmaTestnet,
+   .bnbSmartChainMainnet, .moonbeamMainnet]
 
 theorem mem_all (chain : Chain) : chain ∈ all := by
   cases chain <;> decide
@@ -83,7 +139,10 @@ def supportsCctpV2 : Chain → Bool
 /-- Mirrors `NamedChain::is_testnet()` for the modeled values. -/
 def isTestnet : Chain → Bool
   | .ethereumSepolia | .arbitrumSepolia | .baseSepolia | .optimismSepolia
-  | .avalancheFuji | .polygonAmoy => true
+  | .avalancheFuji | .polygonAmoy | .unichainSepolia | .lineaSepolia
+  | .sonicTestnet | .seiTestnet | .hyperEvmTestnet | .worldSepolia | .monadTestnet
+  | .xdcTestnet | .inkSepolia | .plumeTestnet | .arcTestnet
+  | .injectiveTestnet | .pharosTestnet | .cronosTestnet | .plasmaTestnet => true
   | _ => false
 
 /-- Mirrors `NamedChain::cctp_v2_domain_id()`. Unsupported bridge chains have
@@ -95,11 +154,21 @@ def domainId? : Chain → Option DomainId
   | .optimismMainnet | .optimismSepolia => some .optimism
   | .avalancheMainnet | .avalancheFuji => some .avalanche
   | .polygonMainnet | .polygonAmoy => some .polygon
-  | .unichainMainnet => some .unichain
-  | .lineaMainnet => some .linea
-  | .sonicMainnet => some .sonic
-  | .seiMainnet => some .sei
-  | .hyperEvmMainnet => some .hyperEvm
+  | .unichainMainnet | .unichainSepolia => some .unichain
+  | .lineaMainnet | .lineaSepolia => some .linea
+  | .sonicMainnet | .sonicTestnet => some .sonic
+  | .seiMainnet | .seiTestnet => some .sei
+  | .hyperEvmMainnet | .hyperEvmTestnet => some .hyperEvm
+  | .worldMainnet | .worldSepolia => some .worldChain
+  | .monadMainnet | .monadTestnet => some .monad
+  | .xdcMainnet | .xdcTestnet => some .xdc
+  | .inkMainnet | .inkSepolia => some .ink
+  | .plumeMainnet | .plumeTestnet => some .plume
+  | .arcMainnet | .arcTestnet => some .arcTestnet
+  | .injectiveMainnet | .injectiveTestnet => some .injective
+  | .pharosMainnet | .pharosTestnet => some .pharos
+  | .cronosMainnet | .cronosTestnet => some .cronos
+  | .plasmaMainnet | .plasmaTestnet => some .plasma
   | .bnbSmartChainMainnet | .moonbeamMainnet => none
 
 /-- The support table and domain table have exactly the same domain. -/

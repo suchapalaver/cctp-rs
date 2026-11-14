@@ -115,7 +115,7 @@ Failure modes:
 | Resource | Kind | Important edges | Status |
 |---|---|---|---|
 | Circle CCTP technical guide | `provider` | trusted by message parser, finality, Iris, nonce, and hook claims | Trusted authority; not controlled here. |
-| Circle CCTP fee and capability guides | `provider` | trusted by fee, fee-switch, and source-capability claims | Trusted authority; capability drift checked by the protocol snapshot, with remaining fee work tracked by #33 and #35. |
+| Circle CCTP fee and capability guides | `provider` | trusted by fee, fee-switch, Fast source, and Forwarding destination capability claims | Trusted authority; capability drift checked by the protocol snapshot, with remaining fee work tracked by #33 and #35. |
 | `src/protocol/domain_id.rs` | `rust_resource` | implements Circle domain IDs; mirrored by `Domain.lean`; documented by README/rustdoc | Tested against Lean fixtures; current domain-table drift handled by the parser/model/doc graph. |
 | `verification/CctpSpec/Domain.lean` | `lean_resource` | mirrors Rust domain table; proves conversion canonicality | Proven for all currently modeled IDs. |
 | `verification/CctpSpec/Finality.lean` | `lean_resource` | mirrors `FinalityThreshold`; proves accepted wire values | Proven for 1000 and 2000. |
@@ -129,12 +129,12 @@ Failure modes:
 | `README.md`, rustdoc, `AGENTS.md` | `claim_resource` | document public SDK and verification claims | Must link back to `verification/README.md` and this file when claims change. |
 | GitHub-hosted Ubuntu 24.04 runners | `provider` | trusted by CI, Lean, release, protocol drift, live smoke, security, and dependency-refresh workflows | Explicit runner baseline; changes should be reviewed as CI maintenance. |
 | Iris fee and Fast Transfer allowance helpers | `rust_resource` | observe Circle Iris fee and allowance endpoints; document Fast vs Standard transfer preflight | Mock-tested for decoding and HTTP errors; live smoke tests are opt-in. |
-| `CctpV2Route` and chain config | `rust_resource` | implements route validity and supported-chain/domain policy; mirrored by `Route.lean` | Route validity is proved over the Lean model and checked exhaustively against Rust; Alloy `NamedChain` behavior remains trusted. Broader route expansion remains tracked by #34. |
+| `CctpV2Route` and chain config | `rust_resource` | implements route validity, directional capabilities, and supported-chain/domain policy; route validity is mirrored by `Route.lean` | The 21-mainnet/21-testnet bridge table is checked exhaustively against the Lean model; Fast and Forwarding capabilities are snapshot-tested against Circle. Alloy `NamedChain` behavior remains trusted; parse-only decisions are recorded in the README matrix. |
 | `verification/CctpSpec/Route.lean` | `lean_resource` | mirrors bridge chain support, environment, domain mapping, and `CctpV2Route::new` validity | Proves valid endpoints map to modeled domains, differ, share an environment, and remain valid when reversed. |
 | `CctpTransferAsset` and asset-aware bridge helpers | `rust_resource` | implement bridge asset policy and token-address lookup; trust Circle token address tables and asset rollout docs | Rust-tested for USDC/EURC/USYC boundaries; non-USDC Iris fee endpoint drift tracked by #53. |
 | `CctpV2Bridge` attestation/mint lifecycle | `rust_resource` | implements burn/Iris/receive behavior; mirrored by `Lifecycle.lean`; deterministic HTTP/RPC tests observe the production boundary | Decision safety is modeled and correspondence-tested; external liveness, Iris authenticity, RPC truth, contract execution, and mint confirmation remain trusted. |
 | `verification/CctpSpec/Lifecycle.lean` | `lean_resource` | models placeholder event, canonical attestation selection, destination receipt, mint submission, and relayer-race transitions | Proves mint authorization and terminal-state safety; generates exhaustive state/event and bounded-exhaustive Iris-selection vectors. |
-| Live protocol drift check | `policy_resource` | would observe Circle authority and detect repo drift | Proposed by #29. |
+| Live protocol drift check | `policy_resource` | observes Circle authority and detects domain, token, and capability drift | Implemented as scheduled/manual CI with a checked-in snapshot. |
 
 ## Claim ledger
 
@@ -143,9 +143,9 @@ Use this ledger when reviewing verification-related PRs.
 | Claim class | Current answer |
 |---|---|
 | Proven | Domain/finality conversion canonicality, transfer-mode dispatch properties, bridge route validity, attestation/mint decision safety over the modeled lifecycle, big-endian codecs, bytes32 EVM address canonicality, and CCTP v2 parser round-trip/canonicality over the Lean model. |
-| Tested | Rust parser, route-table, and Iris-selection correspondence with Lean-generated fixtures; exhaustive modeled chain-pair correspondence and exhaustive lifecycle state/event fixture coverage; deterministic HTTP/RPC coverage of `get_attestation`, `is_message_received`, and `mint_if_needed`; parser rejection behavior; generated-fixture freshness; fee/allowance helpers; Fast Transfer source capability. |
+| Tested | Rust parser, route-table, and Iris-selection correspondence with Lean-generated fixtures; exhaustive modeled chain-pair correspondence and exhaustive lifecycle state/event fixture coverage; deterministic HTTP/RPC coverage of `get_attestation`, `is_message_received`, and `mint_if_needed`; parser rejection behavior; generated-fixture freshness; fee/allowance helpers; Fast Transfer source and Forwarding Service destination capabilities. |
 | Assumed | Circle docs are current; Iris responses are authentic and its undifferentiated `failed` category is classified correctly; Iris returns current fees and allowance; alloy-rs primitives, `keccak256`, and `NamedChain` behavior are correct; contracts, RPC providers, relayers, transaction inclusion, rustc/LLVM, Lean, Lake, GitHub-hosted runners, hardware, and CI behave correctly. |
-| Stale | Domain coverage wording and tables can lag Circle's published support; future drift automation is tracked by #29 and ongoing protocol currency by #35. Non-USDC Iris fee and allowance endpoint drift is tracked by #53. |
+| Stale | Domain coverage wording and tables can lag Circle's published support; scheduled drift detection and the #35 roadmap own that risk. Non-USDC Iris fee and allowance endpoint drift is tracked by #53. |
 | Unowned | Direct external expert review notes do not yet have a template beyond this document. |
 
 ## Expert-panel memos
@@ -244,7 +244,5 @@ verification files, CI policy, or public verification claims:
 
 ## Follow-up map
 
-- #29: add a Circle CCTP protocol drift check.
-- #34: triage bridge route support for current CCTP EVM domains.
 - #35: maintain protocol currency as an ongoing roadmap item.
 - #53: track non-USDC Iris fee and allowance endpoints.

@@ -8,8 +8,8 @@
 //! Circle's Cross-Chain Transfer Protocol smart contracts.
 //!
 //! - v1: Original CCTP contracts (7 chain families)
-//! - v2: Enhanced contracts with Fast Transfer, hooks, and 11 v2-capable
-//!   chain families (the v1 set plus Linea, Sonic, Sei, HyperEVM). The
+//! - v2: Enhanced contracts with Fast Transfer, hooks, and 21 v2-capable
+//!   chain families (the 7-family v1 set plus 14 v2-only families). The
 //!   protocol parser handles all 31 domain IDs in Circle's current CCTP
 //!   domain table, independently of bridge SDK support.
 //!
