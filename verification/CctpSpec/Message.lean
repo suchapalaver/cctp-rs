@@ -284,9 +284,10 @@ def decode (bs : List UInt8) : Option BurnBody :=
 def hasHooks (b : BurnBody) : Bool :=
   !b.hookData.isEmpty
 
-/-- True when the body is configured for fast transfer (`max_fee > 0`).
-Mirrors `BurnMessageV2::is_fast_transfer`. -/
-def isFastTransfer (b : BurnBody) : Bool :=
+/-- True when the body carries a nonzero fee cap. Fee presence is independent
+of the full message's requested finality. Mirrors
+`BurnMessageV2::has_nonzero_max_fee`. -/
+def hasNonzeroMaxFee (b : BurnBody) : Bool :=
   b.maxFee != 0
 
 theorem length_encode (b : BurnBody) (wf : b.WellFormed) :
@@ -403,6 +404,26 @@ def bodyWordsValid (h : MessageHeader) (b : BurnBody) : Bool :=
 
 def WellFormed (m : Message) : Prop :=
   m.header.WellFormed ∧ m.body.WellFormed ∧ bodyWordsValid m.header m.body = true
+
+/-- True exactly when the header requests Fast Transfer finality. The body fee
+cap is independent: Fast may use zero and fee-switch Standard may be nonzero.
+Mirrors `ParsedV2Message::is_fast_transfer`. -/
+def isFastTransfer (m : Message) : Bool :=
+  match m.header.requestedFinality with
+  | some .fast => true
+  | _ => false
+
+theorem isFastTransfer_iff_requested_fast (m : Message) :
+    m.isFastTransfer = true ↔ m.header.requestedFinality = some .fast := by
+  cases h : m.header.requestedFinality with
+  | none => simp [isFastTransfer, h]
+  | some threshold =>
+    cases threshold <;> simp [isFastTransfer, h]
+
+/-- Changing any burn-body field, including `maxFee`, cannot change the
+message's transfer kind. -/
+theorem isFastTransfer_body_independent (m : Message) (body : BurnBody) :
+    ({ m with body := body } : Message).isFastTransfer = m.isFastTransfer := rfl
 
 /-- Encodes the full message. Mirrors `ParsedV2Message::encode`. -/
 def encode (m : Message) : List UInt8 :=

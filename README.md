@@ -450,6 +450,16 @@ canonical `*_bytes` fields always carry the 32-byte wire value, while EVM
 address fields such as `sender`, `mint_recipient`, and `message_sender` are
 optional and omitted for non-EVM domains.
 
+Transfer kind is derived from the header's requested finality threshold, not
+from the burn body's `max_fee`: Fast Transfer may use a zero fee cap, while a
+fee-switch Standard Transfer may use a nonzero cap. Use
+`ParsedV2Message::is_fast_transfer()` for a full parsed message and
+`BurnMessageV2::has_nonzero_max_fee()` only when inspecting fee presence; use
+`BurnMessageV2::new_with_max_fee()` to construct a fee-capped body. The legacy
+body-only `BurnMessageV2::is_fast_transfer()` and `new_with_fast_transfer()`
+APIs remain available as source-compatible aliases, but their body-only
+semantics cannot determine finality.
+
 ```rust
 use cctp_rs::{CctpV2Bridge, ParsedV2MessageSummary, PollingConfig};
 

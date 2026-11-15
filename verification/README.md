@@ -29,7 +29,7 @@ resource graph, expert-panel memo format, and current claim ledger — see
 | Bridge route validity: both chains are supported, source ≠ destination, environments match, and every valid endpoint maps to a modeled `DomainId`; executable Fast/Forwarding and USDC/EURC support tables feed the independent authority check | `CctpSpec/Route.lean` | `src/chain/v2.rs`, `src/primitives.rs` (`CctpV2Route`, `CctpTransferAsset`) |
 | V2 attestation/mint lifecycle safety: placeholder events cannot authorize mint, usable canonical attestations outrank pending/failed siblings, mint requires an unused destination nonce, and relayer races converge to `AlreadyRelayed` | `CctpSpec/Lifecycle.lean` | `src/bridge/v2.rs` (`get_attestation`, `is_message_received`, `mint_if_needed`) |
 | Big-endian field codec round-trips; `bytes32` EVM-address words are canonical (12 zero leading bytes) | `CctpSpec/Bytes.lean` | `src/protocol/message.rs` (`decode_address_word`, field codecs) |
-| Canonical v2 message structure: header (148 B), burn body (≥ 228 B), domain-aware body-word validation | `CctpSpec/Message.lean` | `src/protocol/message.rs` (`MessageHeader`, `BurnMessageV2`, `ParsedV2Message`) |
+| Canonical v2 message structure: header (148 B), burn body (≥ 228 B), domain-aware body-word validation; transfer kind comes only from requested header finality and is independent of body `maxFee` | `CctpSpec/Message.lean` | `src/protocol/message.rs` (`MessageHeader`, `BurnMessageV2`, `ParsedV2Message`) |
 
 The two central theorems, proved at header, body, and full-message level:
 
@@ -230,6 +230,7 @@ Mapped to the checklist in issue #11:
 | Big-endian field encoding round-trips; every byte string is the canonical encoding of its value | `natOfBe_beBytes`, `beBytes_natOfBe` |
 | `bytes32` EVM-address words decode iff canonically zero-padded, and decoding is strict | `decodeAddressWord_encodeAddressWord`, `encodeAddressWord_of_decode` |
 | Full-message parsing requires supported header/body version 1 and EVM padding only where the header's source/destination domains are EVM; non-EVM body words are preserved raw | `MessageHeader.WellFormed`, `BurnBody.WellFormed`, `Message.bodyWordsValid`, `Message.decode_encode`, `Message.encode_of_decode` |
+| Full-message Fast Transfer classification is exactly requested header finality 1000 and cannot change with any burn-body field, including `maxFee` | `Message.isFastTransfer_iff_requested_fast`, `Message.isFastTransfer_body_independent` |
 | Header, burn body, and full message decode∘encode = id on well-formed version-1 values | `MessageHeader.decode_encode`, `BurnBody.decode_encode`, `Message.decode_encode` |
 | Accepted raw bytes re-encode byte-for-byte (strict canonical parser); parser injective on accepted inputs | `MessageHeader.encode_of_decode`, `BurnBody.encode_of_decode`, `Message.encode_of_decode`, `Message.decode_injective` |
 
@@ -247,6 +248,7 @@ the existing unit suite):
 | Real `is_message_received`/`mint_if_needed` RPC paths short-circuit pre-received messages, submit unused messages, treat a nonce race as `AlreadyRelayed`, and propagate unrelated failures | `bridge::v2::tests::mint_if_needed_lifecycle` |
 | Real `get_attestation` HTTP polling honors complete/pending/failed multi-message selection | `tests/v2_multi_message_attestation.rs` |
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
+| Production header, full-message, and summary Fast Transfer flags agree with Lean for zero-fee Fast and nonzero-fee Standard messages | `zero_fee_fast_ethereum_to_base`, `fee_switch_standard_sei_to_base` vectors in `accepted_messages_parse_to_lean_model_fields` |
 | Production parser rejects the model's reject vectors, including unsupported header/body versions, naming the offending field or version | `rejected_messages_fail_to_parse` |
 | Real Circle Iris message (Arbitrum→Base) parses identically in model and production | first accept vector |
 | Non-EVM source/destination body words are retained as `bytes32`, with EVM address projections omitted from summaries where misleading | `solana_source_placeholder_nonce`, `starknet_destination_caller_set`, and `stellar_source_standard_transfer` vectors; `src/protocol/message.rs` unit tests |

@@ -114,6 +114,20 @@ def fastWithHookMessage : Message :=
     body := mkBody 1 (evmWord usdcAddr2) (evmWord addrB) 2500000 (evmWord addrA) 150 25 12345678
       (ofHex "deadbeefcafe") }
 
+/-- Fast finality with no fee cap: finality, not fee presence, determines the
+transfer kind. -/
+def zeroFeeFastMessage : Message :=
+  { header := mkHeader 1 .ethereum .base (repeatByte 0x44 32) (evmWord addrA)
+      (evmWord addrB) zeroWord 1000 1000
+    body := mkBody 1 (evmWord usdcAddr2) (evmWord addrB) 1000000 (evmWord addrA) 0 0 0 [] }
+
+/-- Standard finality with a deployment fee cap: a nonzero maxFee does not
+turn the message into Fast Transfer. -/
+def feeSwitchStandardMessage : Message :=
+  { header := mkHeader 1 .sei .base (repeatByte 0x55 32) (evmWord addrA)
+      (evmWord addrB) zeroWord 2000 2000
+    body := mkBody 1 (evmWord usdcAddr2) (evmWord addrB) 1000000 (evmWord addrA) 42 0 0 [] }
+
 def solanaSourceMessage : Message :=
   { header := mkHeader 1 .solana .base zeroWord (repeatByte 0xab 32)
       (evmWord addrB) zeroWord 2000 2000
@@ -172,6 +186,12 @@ def acceptVectors : Except String (List AcceptVector) := do
     ⟨"fast_with_hook_ethereum_to_linea",
       "Fast finality requested and executed, destination caller set, fee fields populated, hook data present.",
       fastWithHookMessage⟩,
+    ⟨"zero_fee_fast_ethereum_to_base",
+      "Fast finality with zero maxFee; transfer kind comes from the header threshold.",
+      zeroFeeFastMessage⟩,
+    ⟨"fee_switch_standard_sei_to_base",
+      "Standard finality with nonzero maxFee; fee presence must not imply Fast Transfer.",
+      feeSwitchStandardMessage⟩,
     ⟨"solana_source_placeholder_nonce",
       "Non-EVM source domain: raw 32-byte sender word without EVM padding, all-zero placeholder nonce, permissionless.",
       solanaSourceMessage⟩,
@@ -400,7 +420,7 @@ def derivedJson (m : Message) : Json :=
     ("is_permissionless", toJson m.header.isPermissionless),
     ("requested_finality", optFinalityJson m.header.requestedFinality),
     ("attested_finality", optFinalityJson m.header.attestedFinality),
-    ("is_fast_transfer", toJson m.body.isFastTransfer),
+    ("is_fast_transfer", toJson m.isFastTransfer),
     ("has_hooks", toJson m.body.hasHooks)
   ]
 

@@ -339,6 +339,16 @@ impl MessageHeader {
         FinalityThreshold::from_u32(self.min_finality_threshold)
     }
 
+    /// Returns true when the message requests Fast Transfer finality.
+    ///
+    /// The header's requested finality is authoritative for transfer kind.
+    /// A nonzero burn-body `maxFee` is not sufficient evidence because
+    /// Standard Transfer fee-switch messages may also carry a fee cap.
+    #[must_use]
+    pub fn is_fast_transfer(&self) -> bool {
+        matches!(self.requested_finality(), Some(FinalityThreshold::Fast))
+    }
+
     /// Returns the finality threshold that Circle actually used for the attestation.
     #[must_use]
     pub fn attested_finality(&self) -> Option<FinalityThreshold> {
@@ -376,7 +386,10 @@ pub struct BurnMessageV2 {
     pub amount: U256,
     /// Canonical 32-byte sender word from the source domain.
     pub message_sender: FixedBytes<32>,
-    /// Maximum fee the sender is willing to pay (for Fast Transfers)
+    /// Maximum fee the sender is willing to pay.
+    ///
+    /// This is independent of requested finality: Fast Transfer and
+    /// fee-switch Standard Transfer messages may both carry a fee cap.
     pub max_fee: U256,
     /// Actual fee that was charged
     pub fee_executed: U256,
@@ -412,8 +425,11 @@ impl BurnMessageV2 {
         }
     }
 
-    /// Creates a new burn message with fast transfer settings
-    pub fn new_with_fast_transfer(
+    /// Creates a new burn message body with a fee cap.
+    ///
+    /// The containing [`MessageHeader`] determines whether the full message
+    /// requests Fast or Standard finality.
+    pub fn new_with_max_fee(
         burn_token: Address,
         mint_recipient: Address,
         amount: U256,
@@ -431,6 +447,21 @@ impl BurnMessageV2 {
             expiration_block: U256::ZERO,
             hook_data: Bytes::new(),
         }
+    }
+
+    /// Compatibility constructor retaining the legacy name.
+    ///
+    /// This only sets the burn body's fee cap; it cannot select Fast Transfer
+    /// without a containing header that requests Fast finality. New code
+    /// should prefer [`Self::new_with_max_fee`].
+    pub fn new_with_fast_transfer(
+        burn_token: Address,
+        mint_recipient: Address,
+        amount: U256,
+        message_sender: Address,
+        max_fee: U256,
+    ) -> Self {
+        Self::new_with_max_fee(burn_token, mint_recipient, amount, message_sender, max_fee)
     }
 
     /// Creates a new burn message with hook data
@@ -460,7 +491,7 @@ impl BurnMessageV2 {
         self
     }
 
-    /// Sets the maximum fee for fast transfer
+    /// Sets the maximum fee cap without changing the containing header's finality.
     pub fn with_max_fee(mut self, max_fee: U256) -> Self {
         self.max_fee = max_fee;
         self
@@ -595,9 +626,25 @@ impl BurnMessageV2 {
         !self.hook_data.is_empty()
     }
 
-    /// Returns true if this message is configured for fast transfer (`max_fee` > 0)
-    pub fn is_fast_transfer(&self) -> bool {
+    /// Returns true when this body carries a nonzero fee cap.
+    ///
+    /// Fee presence does not identify the transfer's finality mode: Fast
+    /// Transfer can use a zero cap, while Standard Transfer fee-switch
+    /// messages can use a nonzero cap. Inspect the containing
+    /// [`ParsedV2Message`] or [`MessageHeader`] for transfer kind.
+    #[must_use]
+    pub fn has_nonzero_max_fee(&self) -> bool {
         self.max_fee > U256::ZERO
+    }
+
+    /// Compatibility alias for [`Self::has_nonzero_max_fee`].
+    ///
+    /// Despite its legacy name, this method reports only fee presence and does
+    /// **not** reliably identify Fast Transfer. Use
+    /// [`ParsedV2Message::is_fast_transfer`] or
+    /// [`MessageHeader::is_fast_transfer`] instead.
+    pub fn is_fast_transfer(&self) -> bool {
+        self.has_nonzero_max_fee()
     }
 }
 
@@ -663,6 +710,15 @@ impl ParsedV2Message {
         alloy_primitives::keccak256(self.encode())
     }
 
+    /// Returns true when the header requests Fast Transfer finality.
+    ///
+    /// This deliberately ignores `body.max_fee`, which is an independent fee
+    /// cap used by both Fast Transfer and fee-switch Standard Transfer modes.
+    #[must_use]
+    pub fn is_fast_transfer(&self) -> bool {
+        self.header.is_fast_transfer()
+    }
+
     /// Returns a compact summary that is convenient to serialize from tools.
     ///
     /// The canonical `bytes32` header fields are exposed as `sender_bytes`,
@@ -724,7 +780,7 @@ impl ParsedV2Message {
             hook_data: self.body.hook_data.clone(),
             hook_data_len_bytes: self.body.hook_data.len(),
             has_hooks: self.body.has_hooks(),
-            is_fast_transfer: self.body.is_fast_transfer(),
+            is_fast_transfer: self.is_fast_transfer(),
         }
     }
 }
@@ -920,27 +976,22 @@ mod tests {
         assert_eq!(msg.expiration_block, U256::ZERO);
         assert!(msg.hook_data.is_empty());
         assert!(!msg.has_hooks());
-        assert!(!msg.is_fast_transfer());
+        assert!(!msg.has_nonzero_max_fee());
     }
 
     #[test]
-    fn test_burn_message_v2_fast_transfer() {
+    fn test_burn_message_v2_with_max_fee() {
         let burn_token = address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF");
         let mint_recipient = address!("742d35Cc6634C0532925a3b844Bc9e7595f8fA0d");
         let amount = U256::from(1000000u64);
         let sender = address!("1234567890abcdef1234567890abcdef12345678");
         let max_fee = U256::from(100u64);
 
-        let msg = BurnMessageV2::new_with_fast_transfer(
-            burn_token,
-            mint_recipient,
-            amount,
-            sender,
-            max_fee,
-        );
+        let msg =
+            BurnMessageV2::new_with_max_fee(burn_token, mint_recipient, amount, sender, max_fee);
 
         assert_eq!(msg.max_fee, max_fee);
-        assert!(msg.is_fast_transfer());
+        assert!(msg.has_nonzero_max_fee());
         assert!(!msg.has_hooks());
     }
 
@@ -962,7 +1013,7 @@ mod tests {
 
         assert_eq!(msg.hook_data, hook_data);
         assert!(msg.has_hooks());
-        assert!(!msg.is_fast_transfer());
+        assert!(!msg.has_nonzero_max_fee());
     }
 
     #[test]
@@ -977,14 +1028,14 @@ mod tests {
             .with_hook_data(Bytes::from(vec![1, 2, 3]))
             .with_expiration_block(U256::from(1000u64));
 
-        assert!(msg.is_fast_transfer());
+        assert!(msg.has_nonzero_max_fee());
         assert!(msg.has_hooks());
         assert_eq!(msg.expiration_block, U256::from(1000u64));
     }
 
     #[test]
     fn test_burn_message_v2_encode_decode_roundtrip() {
-        let message = BurnMessageV2::new_with_fast_transfer(
+        let message = BurnMessageV2::new_with_max_fee(
             address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
             address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
             U256::from(1_000_000u64),
@@ -1024,7 +1075,7 @@ mod tests {
     }
 
     fn canonical_burn_body_bytes() -> Vec<u8> {
-        BurnMessageV2::new_with_fast_transfer(
+        BurnMessageV2::new_with_max_fee(
             address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
             address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
             U256::from(1_000_000u64),
@@ -1192,6 +1243,42 @@ mod tests {
             Some(FinalityThreshold::Standard)
         );
         assert_eq!(header.destination_caller_address(), None);
+    }
+
+    #[test]
+    fn test_transfer_kind_uses_requested_finality_not_max_fee() {
+        let message = |finality: FinalityThreshold, max_fee: U256| ParsedV2Message {
+            header: MessageHeader::new(
+                1,
+                DomainId::Ethereum,
+                DomainId::Base,
+                FixedBytes::from([0x11; 32]),
+                address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
+                address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+                FixedBytes::ZERO,
+                finality.as_u32(),
+                finality.as_u32(),
+            ),
+            body: BurnMessageV2::new(
+                address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
+                address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
+                U256::from(1_000_000u64),
+                address!("1234567890abcdef1234567890abcdef12345678"),
+            )
+            .with_max_fee(max_fee),
+        };
+
+        let zero_fee_fast = message(FinalityThreshold::Fast, U256::ZERO);
+        assert!(zero_fee_fast.header.is_fast_transfer());
+        assert!(zero_fee_fast.is_fast_transfer());
+        assert!(!zero_fee_fast.body.has_nonzero_max_fee());
+        assert!(zero_fee_fast.summary().is_fast_transfer);
+
+        let fee_switch_standard = message(FinalityThreshold::Standard, U256::from(42u64));
+        assert!(!fee_switch_standard.header.is_fast_transfer());
+        assert!(!fee_switch_standard.is_fast_transfer());
+        assert!(fee_switch_standard.body.has_nonzero_max_fee());
+        assert!(!fee_switch_standard.summary().is_fast_transfer);
     }
 
     #[test]
