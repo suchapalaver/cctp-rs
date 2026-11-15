@@ -18,6 +18,15 @@ DEFAULT_SUPPORTED_PAGE = (
     "https://developers.circle.com/cctp/concepts/"
     "supported-chains-and-domains.md"
 )
+DEFAULT_CONTRACT_ADDRESSES_PAGE = (
+    "https://developers.circle.com/cctp/references/contract-addresses.md"
+)
+DEFAULT_USDC_ADDRESSES_PAGE = (
+    "https://developers.circle.com/stablecoins/usdc-contract-addresses.md"
+)
+DEFAULT_EURC_ADDRESSES_PAGE = (
+    "https://developers.circle.com/stablecoins/eurc-contract-addresses.md"
+)
 DEFAULT_SNAPSHOT = Path("scripts/fixtures/circle_cctp_protocol_snapshot.json")
 DEFAULT_DOMAIN_RS = Path("src/protocol/domain_id.rs")
 DEFAULT_README = Path("README.md")
@@ -64,6 +73,21 @@ def main() -> int:
         help="Circle supported blockchains page URL, or a local Markdown fixture.",
     )
     parser.add_argument(
+        "--contract-addresses-page",
+        default=DEFAULT_CONTRACT_ADDRESSES_PAGE,
+        help="Circle CCTP contract-address page URL, or a local Markdown fixture.",
+    )
+    parser.add_argument(
+        "--usdc-addresses-page",
+        default=DEFAULT_USDC_ADDRESSES_PAGE,
+        help="Circle USDC address page URL, or a local Markdown fixture.",
+    )
+    parser.add_argument(
+        "--eurc-addresses-page",
+        default=DEFAULT_EURC_ADDRESSES_PAGE,
+        help="Circle EURC address page URL, or a local Markdown fixture.",
+    )
+    parser.add_argument(
         "--snapshot",
         type=Path,
         default=DEFAULT_SNAPSHOT,
@@ -92,20 +116,43 @@ def main() -> int:
         type=Path,
         help="Write the parsed current Circle surface as JSON, then continue.",
     )
+    parser.add_argument(
+        "--refresh-snapshot",
+        action="store_true",
+        help=(
+            "Replace the snapshot's published Circle fields with the freshly "
+            "parsed surface while preserving reviewed SDK policy metadata."
+        ),
+    )
+    parser.add_argument(
+        "--as-of",
+        help="Explicit YYYY-MM-DD provenance date required with --refresh-snapshot.",
+    )
     args = parser.parse_args()
 
     try:
-        supported_page = read_text_source(args.supported_page)
+        source_text = {
+            "supported_chains": read_text_source(args.supported_page),
+            "cctp_contracts": read_text_source(args.contract_addresses_page),
+            "usdc_addresses": read_text_source(args.usdc_addresses_page),
+            "eurc_addresses": read_text_source(args.eurc_addresses_page),
+        }
     except (HTTPError, URLError, TimeoutError, OSError) as exc:
         print(
-            "temporary failure: could not fetch Circle's supported "
-            f"blockchains page: {exc}",
+            f"temporary failure: could not fetch Circle authority pages: {exc}",
             file=sys.stderr,
         )
         return TEMP_FAILURE_EXIT
 
     try:
-        published = parse_supported_page(supported_page, args.supported_page)
+        published = parse_supported_page(
+            source_text["supported_chains"], args.supported_page
+        )
+        published["address_tables"] = parse_address_tables(
+            source_text["cctp_contracts"],
+            source_text["usdc_addresses"],
+            source_text["eurc_addresses"],
+        )
         snapshot = json.loads(args.snapshot.read_text(encoding="utf-8"))
         local_domains = parse_rust_domain_table(
             args.domain_rs.read_text(encoding="utf-8")
@@ -115,6 +162,28 @@ def main() -> int:
     except (OSError, json.JSONDecodeError, ParseError, TypeError, ValueError) as exc:
         print(f"parse failure: {exc}", file=sys.stderr)
         return DRIFT_EXIT
+
+    if args.refresh_snapshot:
+        if not args.as_of or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.as_of):
+            print(
+                "parse failure: --refresh-snapshot requires --as-of YYYY-MM-DD",
+                file=sys.stderr,
+            )
+            return DRIFT_EXIT
+        snapshot.update(published)
+        snapshot["captured_at"] = args.as_of
+        sources = snapshot.get("authority_sources")
+        if isinstance(sources, dict):
+            for source in sources.values():
+                if (
+                    isinstance(source, dict)
+                    and source.get("kind") == "published_authority"
+                ):
+                    source["retrieved_on"] = args.as_of
+        args.snapshot.write_text(
+            json.dumps(snapshot, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
     if args.dump_current:
         args.dump_current.write_text(
@@ -147,6 +216,12 @@ def main() -> int:
     print(
         "- Capability rows: "
         f"{len(published['capabilities'])} standard/fast/upfront/forwarding entries"
+    )
+    address_tables = published["address_tables"]
+    print(
+        "- Address rows: "
+        f"{sum(len(rows) for rows in address_tables.values())} "
+        "CCTP v2 and stablecoin entries"
     )
     return 0
 
@@ -232,6 +307,97 @@ def parse_supported_page(text: str, source: str) -> dict[str, object]:
     }
 
 
+def parse_address_tables(
+    contract_text: str,
+    usdc_text: str,
+    eurc_text: str,
+) -> dict[str, list[dict[str, object]]]:
+    """Parse the independently published address tables used by the SDK."""
+
+    return {
+        "cctp_v2_token_messenger_mainnet": parse_contract_address_table(
+            subsection(section(contract_text, "Mainnet contract addresses"), "TokenMessengerV2")
+        ),
+        "cctp_v2_message_transmitter_mainnet": parse_contract_address_table(
+            subsection(
+                section(contract_text, "Mainnet contract addresses"),
+                "MessageTransmitterV2",
+            )
+        ),
+        "cctp_v2_token_messenger_testnet": parse_contract_address_table(
+            subsection(section(contract_text, "Testnet contract addresses"), "TokenMessengerV2")
+        ),
+        "cctp_v2_message_transmitter_testnet": parse_contract_address_table(
+            subsection(
+                section(contract_text, "Testnet contract addresses"),
+                "MessageTransmitterV2",
+            )
+        ),
+        "usdc_mainnet": parse_token_address_table(section(usdc_text, "Mainnet")),
+        "usdc_testnet": parse_token_address_table(section(usdc_text, "Testnet")),
+        "eurc_mainnet": parse_token_address_table(section(eurc_text, "Mainnet")),
+        "eurc_testnet": parse_token_address_table(section(eurc_text, "Testnet")),
+    }
+
+
+def subsection(text: str, heading: str) -> str:
+    match = re.search(rf"^### {re.escape(heading)}\s*$", text, flags=re.MULTILINE)
+    if not match:
+        raise ParseError(f"missing subsection: {heading}")
+    tail = text[match.end() :]
+    next_heading = re.search(r"^### ", tail, flags=re.MULTILINE)
+    if next_heading:
+        return tail[: next_heading.start()]
+    return tail
+
+
+def parse_contract_address_table(text: str) -> list[dict[str, object]]:
+    columns, rows = parse_markdown_table(text)
+    if len(columns) != 3 or columns[0] != "Blockchain" or columns[2] != "Address":
+        raise ParseError(f"contract-address table columns changed: {columns!r}")
+
+    parsed = [
+        {
+            "blockchain": row[columns[0]],
+            "domain": parse_int(row[columns[1]], "contract-address domain"),
+            "address": normalize_evm_address(row[columns[2]]),
+        }
+        for row in rows
+    ]
+    parsed.sort(key=lambda row: (int(row["domain"]), name_key(row["blockchain"])))
+    return parsed
+
+
+def parse_token_address_table(text: str) -> list[dict[str, object]]:
+    columns, rows = parse_markdown_table(text)
+    if len(columns) != 2 or not columns[0].startswith("Blockchain"):
+        raise ParseError(f"token-address table columns changed: {columns!r}")
+
+    parsed = [
+        {
+            "blockchain": row[columns[0]],
+            "address": normalize_token_address(row[columns[1]]),
+        }
+        for row in rows
+    ]
+    parsed.sort(key=lambda row: name_key(row["blockchain"]))
+    return parsed
+
+
+def normalize_evm_address(value: str) -> str:
+    normalized = normalize_cell(value).lower()
+    if not re.fullmatch(r"0x[0-9a-f]{40}", normalized):
+        raise ParseError(f"invalid EVM address: {value!r}")
+    return normalized
+
+
+def normalize_token_address(value: str) -> str:
+    normalized = normalize_cell(value)
+    if re.fullmatch(r"0x[0-9a-fA-F]{40}", normalized):
+        return normalized.lower()
+    return normalized
+
+
 def section(text: str, heading: str) -> str:
     match = re.search(rf"^## {re.escape(heading)}\s*$", text, flags=re.MULTILINE)
     if not match:
@@ -269,7 +435,7 @@ def parse_markdown_table(text: str) -> tuple[list[str], list[dict[str, str]]]:
 
 def normalize_cell(value: str) -> str:
     value = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", value)
-    value = value.replace("`", "")
+    value = value.replace("`", "").replace("**", "")
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -424,6 +590,38 @@ def compare_snapshot(
             f"Circle token availability changed from {snapshot['tokens']} "
             f"to {published['tokens']}"
         )
+    compare_address_tables(
+        published["address_tables"], snapshot.get("address_tables"), issues
+    )
+
+
+def compare_address_tables(
+    published_tables: object,
+    snapshot_tables: object,
+    issues: list[str],
+) -> None:
+    if not isinstance(published_tables, dict) or not isinstance(snapshot_tables, dict):
+        issues.append("authority snapshot is missing canonical address tables")
+        return
+
+    published_keys = set(published_tables)
+    snapshot_keys = set(snapshot_tables)
+    for key in sorted(published_keys - snapshot_keys):
+        issues.append(f"new authority address table: {key}")
+    for key in sorted(snapshot_keys - published_keys):
+        issues.append(f"removed authority address table: {key}")
+    for key in sorted(published_keys & snapshot_keys):
+        published_rows = canonical_json_rows(published_tables[key])
+        snapshot_rows = canonical_json_rows(snapshot_tables[key])
+        if published_rows != snapshot_rows:
+            issues.append(f"Circle {key} address table changed")
+
+
+def canonical_json_rows(rows: object) -> list[str]:
+    return sorted(
+        json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in cast_rows(rows)
+    )
 
 
 def compare_domain_rows(

@@ -26,7 +26,7 @@ resource graph, expert-panel memo format, and current claim ledger — see
 | `DomainId` ↔ `u32` is a bijection on exactly the 31 modeled IDs; `is_evm` classification | `CctpSpec/Domain.lean` | `src/protocol/domain_id.rs` |
 | `FinalityThreshold` ↔ `u32` accepts exactly 1000 (fast) and 2000 (standard) | `CctpSpec/Finality.lean` | `src/protocol/finality.rs` |
 | `TransferMode` dispatch: fast variants ⇔ threshold 1000; uncapped standard variants send zero `maxFee`; explicit fee caps and hooks are preserved | `CctpSpec/TransferMode.lean` | `src/bridge/transfer_mode.rs` |
-| Bridge route validity: both chains are supported, source ≠ destination, environments match, and every valid endpoint maps to a modeled `DomainId` | `CctpSpec/Route.lean` | `src/chain/v2.rs`, `src/primitives.rs` (`CctpV2Route`) |
+| Bridge route validity: both chains are supported, source ≠ destination, environments match, and every valid endpoint maps to a modeled `DomainId`; executable Fast/Forwarding and USDC/EURC support tables feed the independent authority check | `CctpSpec/Route.lean` | `src/chain/v2.rs`, `src/primitives.rs` (`CctpV2Route`, `CctpTransferAsset`) |
 | V2 attestation/mint lifecycle safety: placeholder events cannot authorize mint, usable canonical attestations outrank pending/failed siblings, mint requires an unused destination nonce, and relayer races converge to `AlreadyRelayed` | `CctpSpec/Lifecycle.lean` | `src/bridge/v2.rs` (`get_attestation`, `is_message_received`, `mint_if_needed`) |
 | Big-endian field codec round-trips; `bytes32` EVM-address words are canonical (12 zero leading bytes) | `CctpSpec/Bytes.lean` | `src/protocol/message.rs` (`decode_address_word`, field codecs) |
 | Canonical v2 message structure: header (148 B), burn body (≥ 228 B), domain-aware body-word validation | `CctpSpec/Message.lean` | `src/protocol/message.rs` (`MessageHeader`, `BurnMessageV2`, `ParsedV2Message`) |
@@ -103,6 +103,42 @@ production parser, route tables, and Iris selection drift at the covered
 correspondence boundaries fails CI. The broader lifecycle transition model is
 connected to production by the deterministic branch tests described below,
 not by a runtime state object.
+
+## Independent authority oracle
+
+Lean-generated fixtures establish that Rust agrees with the model, but they
+cannot detect shared wrongness when both implementations encode the same bad
+interpretation. `scripts/fixtures/circle_cctp_protocol_snapshot.json` is a
+separate, versioned authority artifact captured from Circle's published domain,
+capability, CCTP contract-address, USDC-address, and EURC-address tables. It is
+not generated from Lean, Rust tables, or Lean correspondence fixtures.
+
+`tests/authority_oracle.rs` consumes that artifact twice through separate test
+paths:
+
+1. It compares the authority domain and reviewed network mappings with Lean's
+   executable `domain_vectors` and `chain_vectors` output.
+2. It compares the same authority data directly with production Rust domain,
+   bridge-support, environment, capability, token-address, and CCTP v2
+   contract-address APIs.
+
+Normal CI uses only the committed snapshot and remains deterministic and
+offline. The scheduled/manual protocol-drift workflow independently fetches
+all four Circle pages and fails when their canonical tables differ. Maintainers
+can review and refresh the published portion explicitly:
+
+```sh
+python3 scripts/check_cctp_protocol_drift.py
+python3 scripts/check_cctp_protocol_drift.py \
+  --refresh-snapshot --as-of YYYY-MM-DD
+cargo test --test authority_oracle --all-features
+```
+
+The snapshot distinguishes published authority from maintainer policy with
+field-level provenance. This layer reduces Lean/Rust common-mode table errors;
+it does not prove that Circle's documentation is correct, that the reviewed SDK
+scope is the only safe policy, or that deployed bytecode matches published
+addresses.
 
 ## Lifecycle verification technique and boundary
 
@@ -188,6 +224,7 @@ Mapped to the checklist in issue #11:
 | `FinalityThreshold` accepts exactly 1000/2000, fast = 1000, standard = 2000 | `FinalityThreshold.fromU32_toU32`, `toU32_of_fromU32`, `toU32_fast`, `toU32_standard` |
 | Fast transfer modes — and only they — request threshold 1000; modes without an explicit cap send zero `maxFee`; hook variants preserve hook data | `TransferMode.finality_wire_value`, `maxFee_eq_zero_of_no_explicit_fee_cap`, `hookData_isSome_iff` |
 | Valid routes have supported endpoints with modeled domains, distinct chains, matching environments, and symmetric validity | `Chain.domainId_isSome_eq_supportsCctpV2`, `valid_route_domains`, `valid_route_source_ne_destination`, `valid_route_same_environment`, `valid_route_symmetric` |
+| USDC support has exactly the bridge-support boundary; EURC support cannot escape that boundary | `Chain.supportsUsdc_eq_supportsCctpV2`, `Chain.supportsEurc_implies_supportsCctpV2` |
 | Only a header with the all-zero placeholder nonce enters the source-event state; that state cannot submit mint; mint submission requires the canonical-attestation/unused-destination path; pre-received and race-lost paths converge to already relayed; terminal failure/outcome states cannot transition | `observe_source_event_iff_placeholder`, `placeholder_event_cannot_submit_mint`, `mint_submitted_only_from_required`, `mint_required_only_after_destination_unused`, `already_relayed_paths`, `terminal_states_do_not_transition` |
 | Any usable complete Iris entry selects ready; without one, any pending entry keeps polling | `usable_complete_selects_ready`, `pending_selected_when_no_usable` |
 | Big-endian field encoding round-trips; every byte string is the canonical encoding of its value | `natOfBe_beBytes`, `beBytes_natOfBe` |
@@ -213,6 +250,7 @@ the existing unit suite):
 | Production parser rejects the model's reject vectors, including unsupported header/body versions, naming the offending field or version | `rejected_messages_fail_to_parse` |
 | Real Circle Iris message (Arbitrum→Base) parses identically in model and production | first accept vector |
 | Non-EVM source/destination body words are retained as `bytes32`, with EVM address projections omitted from summaries where misleading | `solana_source_placeholder_nonce`, `starknet_destination_caller_set`, and `stellar_source_standard_transfer` vectors; `src/protocol/message.rs` unit tests |
+| Lean executable domain/network tables and production Rust independently match the committed Circle authority snapshot, including bidirectional membership, environments, bridge/parse-only classification, capabilities, USDC/EURC addresses, and v2 contract addresses | `tests/authority_oracle.rs`; mismatch-injection test proves each comparator rejects a changed input |
 
 **Assumed** (outside the model; documented, not checked here):
 
@@ -223,6 +261,7 @@ the existing unit suite):
 | Circle Iris authentically returns the canonical message; the on-chain `MessageSent` event has a zeroed nonce | The model prevents the placeholder-event state from authorizing mint and tests selection of Iris data, but cannot verify Circle's signature service or the source RPC. |
 | Iris `failed` means expired vs another terminal cause | Iris does not expose a machine-readable reason in the response modeled by this crate. Lean represents expiry explicitly; Rust correspondence maps only the observable `failed` category. |
 | Finality timing, fee quotes, relayer behavior, RPC providers | Out of scope for these slices. |
+| Circle's published tables and the reviewed SDK-policy mapping are correct | The independent oracle makes this assumption explicit and detects repository drift from the captured authority; it cannot establish that the authority or its human interpretation matches deployed reality. |
 
 ## Trusted computing base
 
@@ -236,8 +275,10 @@ Everything below is **unverified** and trusted:
   miscompilation or kernel bug is outside every layer here.
 - **The correspondence gap**: Lean models *a specification of* the Rust
   code, not the Rust code. The fixture tests narrow this gap empirically;
-  they cannot close it. A behavior both the model and the parser get wrong
-  the same way will not be caught.
+  they cannot close it. The independent authority oracle catches shared
+  domain/network/capability/address-table mistakes relative to the captured
+  authority, but shared semantic mistakes outside that artifact remain
+  possible.
 - **Hardware, OS, CI infrastructure.**
 
 ## Formal-verification failure modes (and mitigations)

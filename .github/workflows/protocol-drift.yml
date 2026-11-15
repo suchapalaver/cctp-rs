@@ -3,7 +3,8 @@ name: CCTP Protocol Drift
 on:
   workflow_dispatch:
   schedule:
-    # Weekly signal that Circle's published CCTP tables still match the crate.
+    # Weekly signal that Circle's published protocol and address tables still
+    # match the reviewed offline authority snapshot.
     - cron: "30 12 * * 2"
 
 permissions:

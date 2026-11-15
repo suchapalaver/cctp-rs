@@ -145,6 +145,45 @@ def isTestnet : Chain → Bool
   | .injectiveTestnet | .pharosTestnet | .cronosTestnet | .plasmaTestnet => true
   | _ => false
 
+/-- Mirrors the SDK's source-chain Fast Transfer capability table. Circle
+marks the remaining supported sources N/A because Standard Transfer is already
+fast enough there. -/
+def supportsFastTransfer : Chain → Bool
+  | .ethereumMainnet | .ethereumSepolia
+  | .arbitrumMainnet | .arbitrumSepolia
+  | .baseMainnet | .baseSepolia
+  | .optimismMainnet | .optimismSepolia
+  | .unichainMainnet | .unichainSepolia
+  | .lineaMainnet | .lineaSepolia
+  | .worldMainnet | .worldSepolia
+  | .inkMainnet | .inkSepolia
+  | .plumeMainnet | .plumeTestnet => true
+  | _ => false
+
+/-- Mirrors Circle's destination-chain Forwarding Service capability table for
+the bridge-supported families. -/
+def supportsForwardingService : Chain → Bool
+  | .injectiveMainnet | .injectiveTestnet
+  | .pharosMainnet | .pharosTestnet
+  | .bnbSmartChainMainnet | .moonbeamMainnet => false
+  | _ => true
+
+/-- USDC is modeled on every supported bridge network. -/
+def supportsUsdc (chain : Chain) : Bool := chain.supportsCctpV2
+
+/-- EURC bridge support is deliberately restricted to Circle's initial
+Ethereum ↔ Base rollout, including the corresponding testnets. -/
+def supportsEurc : Chain → Bool
+  | .ethereumMainnet | .ethereumSepolia | .baseMainnet | .baseSepolia => true
+  | _ => false
+
+theorem supportsUsdc_eq_supportsCctpV2 (chain : Chain) :
+    chain.supportsUsdc = chain.supportsCctpV2 := rfl
+
+theorem supportsEurc_implies_supportsCctpV2 {chain : Chain}
+    (h : chain.supportsEurc = true) : chain.supportsCctpV2 = true := by
+  cases chain <;> simp_all [supportsEurc, supportsCctpV2]
+
 /-- Mirrors `NamedChain::cctp_v2_domain_id()`. Unsupported bridge chains have
 no route-domain mapping even if the protocol parser recognizes their domain. -/
 def domainId? : Chain → Option DomainId

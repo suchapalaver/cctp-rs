@@ -1,4 +1,954 @@
 {
+  "address_tables": {
+    "cctp_v2_message_transmitter_mainnet": [
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Ethereum",
+        "domain": 0
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Avalanche",
+        "domain": 1
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "OP Mainnet",
+        "domain": 2
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Arbitrum",
+        "domain": 3
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Base",
+        "domain": 6
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Polygon PoS",
+        "domain": 7
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Unichain",
+        "domain": 10
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Linea",
+        "domain": 11
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Codex",
+        "domain": 12
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Sonic",
+        "domain": 13
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "World Chain",
+        "domain": 14
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Monad",
+        "domain": 15
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Sei",
+        "domain": 16
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "XDC",
+        "domain": 18
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "HyperEVM",
+        "domain": 19
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Ink",
+        "domain": 21
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Plume",
+        "domain": 22
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Arc",
+        "domain": 26
+      },
+      {
+        "address": "0x5b61381fc9e58e70efc13a4a97516997019198ee",
+        "blockchain": "EDGE",
+        "domain": 28
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Injective",
+        "domain": 29
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Morph",
+        "domain": 30
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Pharos",
+        "domain": 31
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Cronos",
+        "domain": 32
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "Plasma",
+        "domain": 33
+      },
+      {
+        "address": "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+        "blockchain": "X Layer",
+        "domain": 37
+      }
+    ],
+    "cctp_v2_message_transmitter_testnet": [
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Ethereum Sepolia",
+        "domain": 0
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Avalanche Fuji",
+        "domain": 1
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "OP Sepolia",
+        "domain": 2
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Arbitrum Sepolia",
+        "domain": 3
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Base Sepolia",
+        "domain": 6
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Polygon PoS Amoy",
+        "domain": 7
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Unichain Sepolia",
+        "domain": 10
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Linea Sepolia",
+        "domain": 11
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Codex Testnet",
+        "domain": 12
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Sonic Testnet",
+        "domain": 13
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "World Chain Sepolia",
+        "domain": 14
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Monad Testnet",
+        "domain": 15
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Sei Testnet",
+        "domain": 16
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "XDC Apothem",
+        "domain": 18
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "HyperEVM Testnet",
+        "domain": 19
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Ink Testnet",
+        "domain": 21
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Plume Testnet",
+        "domain": 22
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Arc Testnet",
+        "domain": 26
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "EDGE Testnet",
+        "domain": 28
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Injective Testnet",
+        "domain": 29
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Morph Hoodi Testnet",
+        "domain": 30
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Pharos Testnet",
+        "domain": 31
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Cronos Testnet",
+        "domain": 32
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "Plasma Testnet",
+        "domain": 33
+      },
+      {
+        "address": "0xe737e5cebeeba77efe34d4aa090756590b1ce275",
+        "blockchain": "X Layer Testnet",
+        "domain": 37
+      }
+    ],
+    "cctp_v2_token_messenger_mainnet": [
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Ethereum",
+        "domain": 0
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Avalanche",
+        "domain": 1
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "OP Mainnet",
+        "domain": 2
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Arbitrum",
+        "domain": 3
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Base",
+        "domain": 6
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Polygon PoS",
+        "domain": 7
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Unichain",
+        "domain": 10
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Linea",
+        "domain": 11
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Codex",
+        "domain": 12
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Sonic",
+        "domain": 13
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "World Chain",
+        "domain": 14
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Monad",
+        "domain": 15
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Sei",
+        "domain": 16
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "XDC",
+        "domain": 18
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "HyperEVM",
+        "domain": 19
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Ink",
+        "domain": 21
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Plume",
+        "domain": 22
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Arc",
+        "domain": 26
+      },
+      {
+        "address": "0x98706a006bc632df31cadfcbd43f38887ce2ca5c",
+        "blockchain": "EDGE",
+        "domain": 28
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Injective",
+        "domain": 29
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Morph",
+        "domain": 30
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Pharos",
+        "domain": 31
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Cronos",
+        "domain": 32
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "Plasma",
+        "domain": 33
+      },
+      {
+        "address": "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d",
+        "blockchain": "X Layer",
+        "domain": 37
+      }
+    ],
+    "cctp_v2_token_messenger_testnet": [
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Ethereum Sepolia",
+        "domain": 0
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Avalanche Fuji",
+        "domain": 1
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "OP Sepolia",
+        "domain": 2
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Arbitrum Sepolia",
+        "domain": 3
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Base Sepolia",
+        "domain": 6
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Polygon PoS Amoy",
+        "domain": 7
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Unichain Sepolia",
+        "domain": 10
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Linea Sepolia",
+        "domain": 11
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Codex Testnet",
+        "domain": 12
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Sonic Testnet",
+        "domain": 13
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "World Chain Sepolia",
+        "domain": 14
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Monad Testnet",
+        "domain": 15
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Sei Testnet",
+        "domain": 16
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "XDC Apothem",
+        "domain": 18
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "HyperEVM Testnet",
+        "domain": 19
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Ink Testnet",
+        "domain": 21
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Plume Testnet",
+        "domain": 22
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Arc Testnet",
+        "domain": 26
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "EDGE Testnet",
+        "domain": 28
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Injective Testnet",
+        "domain": 29
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Morph Hoodi Testnet",
+        "domain": 30
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Pharos Testnet",
+        "domain": 31
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Cronos Testnet",
+        "domain": 32
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "Plasma Testnet",
+        "domain": 33
+      },
+      {
+        "address": "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
+        "blockchain": "X Layer Testnet",
+        "domain": 37
+      }
+    ],
+    "eurc_mainnet": [
+      {
+        "address": "0xbef5f6d51cb62b58e6a8f77868681825c6fe21c1",
+        "blockchain": "Arc"
+      },
+      {
+        "address": "0xc891eb4cbdeff6e073e859e987815ed1505c2acd",
+        "blockchain": "Avalanche C-Chain"
+      },
+      {
+        "address": "0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42",
+        "blockchain": "Base"
+      },
+      {
+        "address": "0xa6de01a2d62c6b5f3525d768f34d276652c554c8",
+        "blockchain": "Cronos"
+      },
+      {
+        "address": "0x1abaea1f7c830bd89acc67ec4af516284b1bc33c",
+        "blockchain": "Ethereum"
+      },
+      {
+        "address": "0x3ee196e78d4d4248b849b8e1c7f44c5457fafd2c",
+        "blockchain": "Plasma"
+      },
+      {
+        "address": "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr",
+        "blockchain": "Solana"
+      },
+      {
+        "address": "EURC-GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2",
+        "blockchain": "Stellar"
+      },
+      {
+        "address": "0x1c60ba0a0ed1019e8eb035e6daf4155a5ce2380b",
+        "blockchain": "World Chain"
+      }
+    ],
+    "eurc_testnet": [
+      {
+        "address": "0x89b50855aa3be2f677cd6303cec089b5f319d72a",
+        "blockchain": "Arc Testnet"
+      },
+      {
+        "address": "0x5e44db7996c682e92a960b65ac713a54ad815c6b",
+        "blockchain": "Avalanche Fuji"
+      },
+      {
+        "address": "0x808456652fdb597867f38412077a9182bf77359f",
+        "blockchain": "Base Sepolia"
+      },
+      {
+        "address": "0x31f7538adb53cf16350e6b0c89d03d91b7d12c46",
+        "blockchain": "Cronos Testnet"
+      },
+      {
+        "address": "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4",
+        "blockchain": "Ethereum Sepolia"
+      },
+      {
+        "address": "0x98afa0f93dd993b736399f9074edcebd1985a330",
+        "blockchain": "Plasma Testnet"
+      },
+      {
+        "address": "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr",
+        "blockchain": "Solana Devnet"
+      },
+      {
+        "address": "EURC-GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO",
+        "blockchain": "Stellar Testnet"
+      },
+      {
+        "address": "0xe479eca5740ac65d6e1823bea2f1c08bc14e954f",
+        "blockchain": "World Chain Sepolia"
+      }
+    ],
+    "usdc_mainnet": [
+      {
+        "address": "31566704",
+        "blockchain": "Algorand"
+      },
+      {
+        "address": "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b",
+        "blockchain": "Aptos"
+      },
+      {
+        "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+        "blockchain": "Arbitrum"
+      },
+      {
+        "address": "0x3600000000000000000000000000000000000000",
+        "blockchain": "Arc"
+      },
+      {
+        "address": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+        "blockchain": "Avalanche C-Chain"
+      },
+      {
+        "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        "blockchain": "Base"
+      },
+      {
+        "address": "0xceba9300f2b948710d2653dd7b07f33a8b32118c",
+        "blockchain": "Celo"
+      },
+      {
+        "address": "0xd996633a415985dbd7d6d12f4a4343e31f5037cf",
+        "blockchain": "Codex"
+      },
+      {
+        "address": "0x3d7f2c478aafdb65542bcb44bceec05849999d2d",
+        "blockchain": "Cronos"
+      },
+      {
+        "address": "0x98d2919b9a214e6fa5384ac81e6864ba686ad74c",
+        "blockchain": "EDGE"
+      },
+      {
+        "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "blockchain": "Ethereum"
+      },
+      {
+        "address": "0.0.456858",
+        "blockchain": "Hedera"
+      },
+      {
+        "address": "0xb88339cb7199b77e23db6e890353e22632ba630f",
+        "blockchain": "HyperEVM"
+      },
+      {
+        "address": "0xa00c59ff5a080d2b954d0c75e46e22a0c371235a",
+        "blockchain": "Injective"
+      },
+      {
+        "address": "0x2d270e6886d130d724215a266106e6832161eaed",
+        "blockchain": "Ink"
+      },
+      {
+        "address": "0x176211869ca2b568f2a7d4ee941e073a821ee1ff",
+        "blockchain": "Linea"
+      },
+      {
+        "address": "0x754704bc059f8c67012fed69bc8a327a5aafb603",
+        "blockchain": "Monad"
+      },
+      {
+        "address": "0xcfb1186f4e93d60e60a8bdd997427d1f33bc372b",
+        "blockchain": "Morph"
+      },
+      {
+        "address": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "blockchain": "NEAR"
+      },
+      {
+        "address": "uusdc",
+        "blockchain": "Noble"
+      },
+      {
+        "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+        "blockchain": "OP Mainnet"
+      },
+      {
+        "address": "0xc879c018db60520f4355c26ed1a6d572cdac1815",
+        "blockchain": "Pharos"
+      },
+      {
+        "address": "0x2d661c89d812261039af9764eceaaee884f5f67f",
+        "blockchain": "Plasma"
+      },
+      {
+        "address": "0x222365ef19f7947e5484218551b56bb3965aa7af",
+        "blockchain": "Plume"
+      },
+      {
+        "address": "1337",
+        "blockchain": "Polkadot Asset Hub"
+      },
+      {
+        "address": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+        "blockchain": "Polygon PoS"
+      },
+      {
+        "address": "0xe15fc38f6d8c56af07bbcbe3baf5708a2bf42392",
+        "blockchain": "Sei"
+      },
+      {
+        "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "blockchain": "Solana"
+      },
+      {
+        "address": "0x29219dd400f2bf60e5a23d13be72b486d4038894",
+        "blockchain": "Sonic"
+      },
+      {
+        "address": "0x033068F6539f8e6e6b131e6B2B814e6c34A5224bC66947c47DaB9dFeE93b35fb",
+        "blockchain": "Starknet"
+      },
+      {
+        "address": "USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+        "blockchain": "Stellar"
+      },
+      {
+        "address": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+        "blockchain": "Sui"
+      },
+      {
+        "address": "0x078d782b760474a361dda0af3839290b0ef57ad6",
+        "blockchain": "Unichain"
+      },
+      {
+        "address": "0x79a02482a880bce3f13e09da970dc34db4cd24d1",
+        "blockchain": "World Chain"
+      },
+      {
+        "address": "0xb6ceceab302e2e4948951ee7843fc24e92933061",
+        "blockchain": "X Layer"
+      },
+      {
+        "address": "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1",
+        "blockchain": "XDC"
+      },
+      {
+        "address": "5553444300000000000000000000000000000000.rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE",
+        "blockchain": "XRPL"
+      },
+      {
+        "address": "0x1d17cbcf0d6d143135ae902365d2e5e2a16538d4",
+        "blockchain": "ZKsync Era"
+      }
+    ],
+    "usdc_testnet": [
+      {
+        "address": "10458941",
+        "blockchain": "Algorand Testnet"
+      },
+      {
+        "address": "0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832",
+        "blockchain": "Aptos Testnet"
+      },
+      {
+        "address": "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+        "blockchain": "Arbitrum Sepolia"
+      },
+      {
+        "address": "0x3600000000000000000000000000000000000000",
+        "blockchain": "Arc Testnet"
+      },
+      {
+        "address": "0x5425890298aed601595a70ab815c96711a31bc65",
+        "blockchain": "Avalanche Fuji"
+      },
+      {
+        "address": "0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+        "blockchain": "Base Sepolia"
+      },
+      {
+        "address": "0x01c5c0122039549ad1493b8220cabedd739bc44e",
+        "blockchain": "Celo Sepolia"
+      },
+      {
+        "address": "0x6d7f141b6819c2c9cc2f818e6ad549e7ca090f8f",
+        "blockchain": "Codex Testnet"
+      },
+      {
+        "address": "0xeb33dc5fac03833e132593659e1de7256ab59794",
+        "blockchain": "Cronos Testnet"
+      },
+      {
+        "address": "0x2d9f7cad728051aa35ecdc472a14cf8cdf5cfd6b",
+        "blockchain": "EDGE Testnet"
+      },
+      {
+        "address": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
+        "blockchain": "Ethereum Sepolia"
+      },
+      {
+        "address": "0.0.429274",
+        "blockchain": "Hedera Testnet"
+      },
+      {
+        "address": "0x2b3370ee501b4a559b57d449569354196457d8ab",
+        "blockchain": "HyperEVM Testnet"
+      },
+      {
+        "address": "0x0c382e685bbeefe5d3d9c29e29e341fee8e84c5d",
+        "blockchain": "Injective Testnet"
+      },
+      {
+        "address": "0xfabab97dce620294d2b0b0e46c68964e326300ac",
+        "blockchain": "Ink Testnet"
+      },
+      {
+        "address": "0xfece4462d57bd51a6a552365a011b95f0e16d9b7",
+        "blockchain": "Linea Sepolia"
+      },
+      {
+        "address": "0x534b2f3a21130d7a60830c2df862319e593943a3",
+        "blockchain": "Monad Testnet"
+      },
+      {
+        "address": "0x7433b41c6c5e1d58d4da99483609520255ab661b",
+        "blockchain": "Morph Hoodi Testnet"
+      },
+      {
+        "address": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+        "blockchain": "NEAR Testnet"
+      },
+      {
+        "address": "uusdc",
+        "blockchain": "Noble Testnet"
+      },
+      {
+        "address": "0x5fd84259d66cd46123540766be93dfe6d43130d7",
+        "blockchain": "OP Sepolia"
+      },
+      {
+        "address": "0xcfc8330f4bcab529c625d12781b1c19466a9fc8b",
+        "blockchain": "Pharos Testnet"
+      },
+      {
+        "address": "0xe67fb267022cba8064dd388cc2fed724f3120d9d",
+        "blockchain": "Plasma Testnet"
+      },
+      {
+        "address": "0xcb5f30e335672893c7eb944b374c196392c19d18",
+        "blockchain": "Plume Testnet"
+      },
+      {
+        "address": "Asset ID 31337",
+        "blockchain": "Polkadot Westmint"
+      },
+      {
+        "address": "0x41e94eb019c0762f9bfcf9fb1e58725bfb0e7582",
+        "blockchain": "Polygon PoS Amoy"
+      },
+      {
+        "address": "0x4fcf1784b31630811181f670aea7a7bef803eaed",
+        "blockchain": "Sei Testnet"
+      },
+      {
+        "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+        "blockchain": "Solana Devnet"
+      },
+      {
+        "address": "0xa4879fed32ecbef99399e5cbc247e533421c4ec6",
+        "blockchain": "Sonic Blaze Testnet"
+      },
+      {
+        "address": "0x0ba304580ee7c9a980cf72e55f5ed2e9fd30bc51",
+        "blockchain": "Sonic Testnet"
+      },
+      {
+        "address": "0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343",
+        "blockchain": "Starknet Sepolia"
+      },
+      {
+        "address": "USDC-GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+        "blockchain": "Stellar Testnet"
+      },
+      {
+        "address": "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC",
+        "blockchain": "Sui Testnet"
+      },
+      {
+        "address": "0x31d0220469e10c4e71834a79b1f276d740d3768f",
+        "blockchain": "Unichain Sepolia"
+      },
+      {
+        "address": "0x66145f38cbac35ca6f1dfb4914df98f1614aea88",
+        "blockchain": "World Chain Sepolia"
+      },
+      {
+        "address": "0xdec90b78111ba2fc6fc6d84d8b9ec159a2d4b9b3",
+        "blockchain": "X Layer Testnet"
+      },
+      {
+        "address": "0xb5ab69f7bbada22b28e79c8ffaece55ef1c771d4",
+        "blockchain": "XDC Apothem"
+      },
+      {
+        "address": "5553444300000000000000000000000000000000.rHuGNhqTG32mfmAvWA8hUyWRLV3tCSwKQt",
+        "blockchain": "XRPL Testnet"
+      },
+      {
+        "address": "0xae045de5638162fa134807cb558e15a3f5a7f853",
+        "blockchain": "ZKsync Era Testnet"
+      }
+    ]
+  },
+  "authority_sources": {
+    "circle_cctp_contracts": {
+      "kind": "published_authority",
+      "retrieved_on": "2026-11-14",
+      "url": "https://developers.circle.com/cctp/references/contract-addresses.md"
+    },
+    "circle_eurc_addresses": {
+      "kind": "published_authority",
+      "retrieved_on": "2026-11-14",
+      "url": "https://developers.circle.com/stablecoins/eurc-contract-addresses.md"
+    },
+    "circle_supported_chains": {
+      "kind": "published_authority",
+      "retrieved_on": "2026-11-14",
+      "url": "https://developers.circle.com/cctp/concepts/supported-chains-and-domains.md"
+    },
+    "circle_usdc_addresses": {
+      "kind": "published_authority",
+      "retrieved_on": "2026-11-14",
+      "url": "https://developers.circle.com/stablecoins/usdc-contract-addresses.md"
+    },
+    "sdk_bridge_policy": {
+      "kind": "maintainer_policy",
+      "references": [
+        "https://github.com/suchapalaver/cctp-rs/issues/34",
+        "https://github.com/suchapalaver/cctp-rs/pull/120"
+      ]
+    }
+  },
+  "bridge_domain_ids": [
+    0,
+    1,
+    2,
+    3,
+    6,
+    7,
+    10,
+    11,
+    13,
+    14,
+    15,
+    16,
+    18,
+    19,
+    21,
+    22,
+    26,
+    29,
+    31,
+    32,
+    33
+  ],
   "capabilities": [
     {
       "blockchain": "Aptos",
@@ -225,6 +1175,7 @@
     "Source (Upfront fees)",
     "Forwarding Service"
   ],
+  "captured_at": "2026-11-14",
   "current_cctp_domain_count": 31,
   "domains": [
     {
@@ -350,6 +1301,465 @@
     {
       "blockchain": "X Layer",
       "domain": 37
+    }
+  ],
+  "eurc_bridge_networks": [
+    "ethereum_mainnet",
+    "ethereum_sepolia",
+    "base_mainnet",
+    "base_sepolia"
+  ],
+  "field_provenance": {
+    "/address_tables/cctp_v2_*": "circle_cctp_contracts",
+    "/address_tables/eurc_*": "circle_eurc_addresses",
+    "/address_tables/usdc_*": "circle_usdc_addresses",
+    "/bridge_domain_ids": "sdk_bridge_policy",
+    "/capabilities": "circle_supported_chains",
+    "/domains": "circle_supported_chains",
+    "/eurc_bridge_networks": "sdk_bridge_policy",
+    "/non_evm_domain_ids": "circle_cctp_contracts",
+    "/sdk_domain_names": "sdk_bridge_policy",
+    "/sdk_networks": "sdk_bridge_policy",
+    "/tokens": "circle_supported_chains",
+    "/v1_legacy_only_domains": "circle_supported_chains"
+  },
+  "non_evm_domain_ids": [
+    5,
+    8,
+    9,
+    25,
+    27
+  ],
+  "schema_version": 2,
+  "sdk_domain_names": {
+    "0": "ethereum",
+    "1": "avalanche",
+    "10": "unichain",
+    "11": "linea",
+    "12": "codex",
+    "13": "sonic",
+    "14": "world_chain",
+    "15": "monad",
+    "16": "sei",
+    "17": "bnb_smart_chain",
+    "18": "xdc",
+    "19": "hyper_evm",
+    "2": "optimism",
+    "21": "ink",
+    "22": "plume",
+    "25": "starknet",
+    "26": "arc",
+    "27": "stellar",
+    "28": "edge",
+    "29": "injective",
+    "3": "arbitrum",
+    "30": "morph",
+    "31": "pharos",
+    "32": "cronos",
+    "33": "plasma",
+    "37": "x_layer",
+    "5": "solana",
+    "6": "base",
+    "7": "polygon",
+    "8": "sui",
+    "9": "aptos"
+  },
+  "sdk_networks": [
+    {
+      "bridge_supported": true,
+      "capability_name": "Ethereum",
+      "contract_name": "Ethereum",
+      "domain": 0,
+      "environment": "mainnet",
+      "key": "ethereum_mainnet",
+      "token_name": "Ethereum"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Ethereum",
+      "contract_name": "Ethereum Sepolia",
+      "domain": 0,
+      "environment": "testnet",
+      "key": "ethereum_sepolia",
+      "token_name": "Ethereum Sepolia"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Arbitrum",
+      "contract_name": "Arbitrum",
+      "domain": 3,
+      "environment": "mainnet",
+      "key": "arbitrum_mainnet",
+      "token_name": "Arbitrum"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Arbitrum",
+      "contract_name": "Arbitrum Sepolia",
+      "domain": 3,
+      "environment": "testnet",
+      "key": "arbitrum_sepolia",
+      "token_name": "Arbitrum Sepolia"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Base",
+      "contract_name": "Base",
+      "domain": 6,
+      "environment": "mainnet",
+      "key": "base_mainnet",
+      "token_name": "Base"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Base",
+      "contract_name": "Base Sepolia",
+      "domain": 6,
+      "environment": "testnet",
+      "key": "base_sepolia",
+      "token_name": "Base Sepolia"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "OP Mainnet",
+      "contract_name": "OP Mainnet",
+      "domain": 2,
+      "environment": "mainnet",
+      "key": "optimism_mainnet",
+      "token_name": "OP Mainnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "OP Mainnet",
+      "contract_name": "OP Sepolia",
+      "domain": 2,
+      "environment": "testnet",
+      "key": "optimism_sepolia",
+      "token_name": "OP Sepolia"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Avalanche",
+      "contract_name": "Avalanche",
+      "domain": 1,
+      "environment": "mainnet",
+      "key": "avalanche_mainnet",
+      "token_name": "Avalanche C-Chain"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Avalanche",
+      "contract_name": "Avalanche Fuji",
+      "domain": 1,
+      "environment": "testnet",
+      "key": "avalanche_fuji",
+      "token_name": "Avalanche Fuji"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Polygon PoS",
+      "contract_name": "Polygon PoS",
+      "domain": 7,
+      "environment": "mainnet",
+      "key": "polygon_mainnet",
+      "token_name": "Polygon PoS"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Polygon PoS",
+      "contract_name": "Polygon PoS Amoy",
+      "domain": 7,
+      "environment": "testnet",
+      "key": "polygon_amoy",
+      "token_name": "Polygon PoS Amoy"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Unichain",
+      "contract_name": "Unichain",
+      "domain": 10,
+      "environment": "mainnet",
+      "key": "unichain_mainnet",
+      "token_name": "Unichain"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Unichain",
+      "contract_name": "Unichain Sepolia",
+      "domain": 10,
+      "environment": "testnet",
+      "key": "unichain_sepolia",
+      "token_name": "Unichain Sepolia"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Linea",
+      "contract_name": "Linea",
+      "domain": 11,
+      "environment": "mainnet",
+      "key": "linea_mainnet",
+      "token_name": "Linea"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Linea",
+      "contract_name": "Linea Sepolia",
+      "domain": 11,
+      "environment": "testnet",
+      "key": "linea_sepolia",
+      "token_name": "Linea Sepolia"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Sonic",
+      "contract_name": "Sonic",
+      "domain": 13,
+      "environment": "mainnet",
+      "key": "sonic_mainnet",
+      "token_name": "Sonic"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Sonic",
+      "contract_name": "Sonic Testnet",
+      "domain": 13,
+      "environment": "testnet",
+      "key": "sonic_testnet",
+      "token_name": "Sonic Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Sei",
+      "contract_name": "Sei",
+      "domain": 16,
+      "environment": "mainnet",
+      "key": "sei_mainnet",
+      "token_name": "Sei"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Sei",
+      "contract_name": "Sei Testnet",
+      "domain": 16,
+      "environment": "testnet",
+      "key": "sei_testnet",
+      "token_name": "Sei Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "HyperEVM",
+      "contract_name": "HyperEVM",
+      "domain": 19,
+      "environment": "mainnet",
+      "key": "hyper_evm_mainnet",
+      "token_name": "HyperEVM"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "HyperEVM",
+      "contract_name": "HyperEVM Testnet",
+      "domain": 19,
+      "environment": "testnet",
+      "key": "hyper_evm_testnet",
+      "token_name": "HyperEVM Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "World Chain",
+      "contract_name": "World Chain",
+      "domain": 14,
+      "environment": "mainnet",
+      "key": "world_mainnet",
+      "token_name": "World Chain"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "World Chain",
+      "contract_name": "World Chain Sepolia",
+      "domain": 14,
+      "environment": "testnet",
+      "key": "world_sepolia",
+      "token_name": "World Chain Sepolia"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Monad",
+      "contract_name": "Monad",
+      "domain": 15,
+      "environment": "mainnet",
+      "key": "monad_mainnet",
+      "token_name": "Monad"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Monad",
+      "contract_name": "Monad Testnet",
+      "domain": 15,
+      "environment": "testnet",
+      "key": "monad_testnet",
+      "token_name": "Monad Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "XDC",
+      "contract_name": "XDC",
+      "domain": 18,
+      "environment": "mainnet",
+      "key": "xdc_mainnet",
+      "token_name": "XDC"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "XDC",
+      "contract_name": "XDC Apothem",
+      "domain": 18,
+      "environment": "testnet",
+      "key": "xdc_testnet",
+      "token_name": "XDC Apothem"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Ink",
+      "contract_name": "Ink",
+      "domain": 21,
+      "environment": "mainnet",
+      "key": "ink_mainnet",
+      "token_name": "Ink"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Ink",
+      "contract_name": "Ink Testnet",
+      "domain": 21,
+      "environment": "testnet",
+      "key": "ink_sepolia",
+      "token_name": "Ink Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Plume",
+      "contract_name": "Plume",
+      "domain": 22,
+      "environment": "mainnet",
+      "key": "plume_mainnet",
+      "token_name": "Plume"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Plume",
+      "contract_name": "Plume Testnet",
+      "domain": 22,
+      "environment": "testnet",
+      "key": "plume_testnet",
+      "token_name": "Plume Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Arc",
+      "contract_name": "Arc",
+      "domain": 26,
+      "environment": "mainnet",
+      "key": "arc_mainnet",
+      "token_name": "Arc"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Arc",
+      "contract_name": "Arc Testnet",
+      "domain": 26,
+      "environment": "testnet",
+      "key": "arc_testnet",
+      "token_name": "Arc Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Injective",
+      "contract_name": "Injective",
+      "domain": 29,
+      "environment": "mainnet",
+      "key": "injective_mainnet",
+      "token_name": "Injective"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Injective",
+      "contract_name": "Injective Testnet",
+      "domain": 29,
+      "environment": "testnet",
+      "key": "injective_testnet",
+      "token_name": "Injective Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Pharos",
+      "contract_name": "Pharos",
+      "domain": 31,
+      "environment": "mainnet",
+      "key": "pharos_mainnet",
+      "token_name": "Pharos"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Pharos",
+      "contract_name": "Pharos Testnet",
+      "domain": 31,
+      "environment": "testnet",
+      "key": "pharos_testnet",
+      "token_name": "Pharos Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Cronos",
+      "contract_name": "Cronos",
+      "domain": 32,
+      "environment": "mainnet",
+      "key": "cronos_mainnet",
+      "token_name": "Cronos"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Cronos",
+      "contract_name": "Cronos Testnet",
+      "domain": 32,
+      "environment": "testnet",
+      "key": "cronos_testnet",
+      "token_name": "Cronos Testnet"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Plasma",
+      "contract_name": "Plasma",
+      "domain": 33,
+      "environment": "mainnet",
+      "key": "plasma_mainnet",
+      "token_name": "Plasma"
+    },
+    {
+      "bridge_supported": true,
+      "capability_name": "Plasma",
+      "contract_name": "Plasma Testnet",
+      "domain": 33,
+      "environment": "testnet",
+      "key": "plasma_testnet",
+      "token_name": "Plasma Testnet"
+    },
+    {
+      "bridge_supported": false,
+      "capability_name": "BNB Smart Chain",
+      "contract_name": "BNB Smart Chain",
+      "domain": null,
+      "environment": "mainnet",
+      "key": "bnb_smart_chain_mainnet",
+      "token_name": null
+    },
+    {
+      "bridge_supported": false,
+      "capability_name": null,
+      "contract_name": null,
+      "domain": null,
+      "environment": "mainnet",
+      "key": "moonbeam_mainnet",
+      "token_name": null
     }
   ],
   "source": "https://developers.circle.com/cctp/concepts/supported-chains-and-domains.md",
