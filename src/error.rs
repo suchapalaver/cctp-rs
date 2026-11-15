@@ -34,6 +34,14 @@ pub enum AttestationFailureKind {
     AttestationMissing,
     /// Status was `Complete` but the `message` field was null (v2 only).
     MessageMissing,
+    /// The `attestation` field was present but decoded to zero bytes.
+    AttestationEmpty,
+    /// The `message` field was present but decoded to zero bytes (v2 only).
+    MessageEmpty,
+    /// A non-complete response unexpectedly carried attestation bytes.
+    UnexpectedAttestation,
+    /// A failed response unexpectedly carried message bytes (v2 only).
+    UnexpectedMessage,
 }
 
 impl fmt::Display for AttestationFailureKind {
@@ -41,7 +49,11 @@ impl fmt::Display for AttestationFailureKind {
         let msg = match self {
             Self::ApiReportedFailed => "Iris API reported failed status",
             Self::AttestationMissing => "attestation field missing in complete response",
+            Self::AttestationEmpty => "attestation field is empty",
             Self::MessageMissing => "message field missing in complete response",
+            Self::MessageEmpty => "message field is empty",
+            Self::UnexpectedAttestation => "attestation field present in a non-complete response",
+            Self::UnexpectedMessage => "message field present in a failed response",
         };
         f.write_str(msg)
     }
@@ -391,6 +403,22 @@ mod tests {
         assert_eq!(
             render(AttestationFailureKind::MessageMissing),
             "Attestation failed: message field missing in complete response",
+        );
+        assert_eq!(
+            render(AttestationFailureKind::AttestationEmpty),
+            "Attestation failed: attestation field is empty",
+        );
+        assert_eq!(
+            render(AttestationFailureKind::MessageEmpty),
+            "Attestation failed: message field is empty",
+        );
+        assert_eq!(
+            render(AttestationFailureKind::UnexpectedAttestation),
+            "Attestation failed: attestation field present in a non-complete response",
+        );
+        assert_eq!(
+            render(AttestationFailureKind::UnexpectedMessage),
+            "Attestation failed: message field present in a failed response",
         );
     }
 

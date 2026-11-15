@@ -26,16 +26,6 @@ use crate::error::{AttestationFailureKind, CctpError};
 use crate::spans;
 use tracing::error;
 
-pub(super) fn attestation_data_missing() -> CctpError {
-    spans::record_error_with_context(
-        "AttestationDataMissing",
-        "Attestation status is complete but attestation field is null",
-        Some("This indicates an unexpected API response format"),
-    );
-    error!(event = "attestation_data_missing");
-    CctpError::AttestationFailed(AttestationFailureKind::AttestationMissing)
-}
-
 pub(super) fn attestation_api_reported_failed() -> CctpError {
     spans::record_error_with_context(
         "AttestationFailed",
@@ -44,4 +34,30 @@ pub(super) fn attestation_api_reported_failed() -> CctpError {
     );
     error!(event = "attestation_failed");
     CctpError::AttestationFailed(AttestationFailureKind::ApiReportedFailed)
+}
+
+pub(super) fn malformed_attestation_response(kind: AttestationFailureKind) -> CctpError {
+    let (error_type, message, context, event) = match kind {
+        AttestationFailureKind::AttestationMissing => (
+            "AttestationDataMissing",
+            "Attestation status is complete but attestation field is null",
+            "This indicates an unexpected API response format",
+            "attestation_data_missing",
+        ),
+        AttestationFailureKind::MessageMissing => (
+            "MessageDataMissing",
+            "Attestation status is complete but message field is null",
+            "This indicates an unexpected API response format",
+            "message_data_missing",
+        ),
+        _ => (
+            "MalformedAttestationResponse",
+            "Iris returned an invalid attestation status/payload combination",
+            "The response is not safe to consume",
+            "malformed_attestation_response",
+        ),
+    };
+    spans::record_error_with_context(error_type, message, Some(context));
+    error!(reason = %kind, event = event);
+    CctpError::AttestationFailed(kind)
 }

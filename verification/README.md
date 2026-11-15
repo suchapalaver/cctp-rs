@@ -27,7 +27,7 @@ resource graph, expert-panel memo format, and current claim ledger — see
 | `FinalityThreshold` ↔ `u32` accepts exactly 1000 (fast) and 2000 (standard) | `CctpSpec/Finality.lean` | `src/protocol/finality.rs` |
 | `TransferMode` dispatch: fast variants ⇔ threshold 1000; uncapped standard variants send zero `maxFee`; explicit fee caps and hooks are preserved | `CctpSpec/TransferMode.lean` | `src/bridge/transfer_mode.rs` |
 | Bridge route validity: both chains are supported, source ≠ destination, environments match, and every valid endpoint maps to a modeled `DomainId`; executable Fast/Forwarding and USDC/EURC support tables feed the independent authority check | `CctpSpec/Route.lean` | `src/chain/v2.rs`, `src/primitives.rs` (`CctpV2Route`, `CctpTransferAsset`) |
-| V2 attestation/mint lifecycle safety: placeholder events cannot authorize mint, usable canonical attestations outrank pending/failed siblings, mint requires an unused destination nonce, and relayer races converge to `AlreadyRelayed` | `CctpSpec/Lifecycle.lean` | `src/bridge/v2.rs` (`get_attestation`, `is_message_received`, `mint_if_needed`) |
+| V2 attestation/mint lifecycle safety: placeholder events cannot authorize mint; normalized Iris entries have exactly one modeled operational class; usable canonical attestations outrank every sibling and valid pending siblings outrank malformed/failed entries; mint requires an unused destination nonce; relayer races converge to `AlreadyRelayed` | `CctpSpec/Lifecycle.lean` | `src/protocol/attestation.rs`, `src/bridge/v2.rs` (`get_attestation`, `is_message_received`, `mint_if_needed`) |
 | Big-endian field codec round-trips; `bytes32` EVM-address words are canonical (12 zero leading bytes) | `CctpSpec/Bytes.lean` | `src/protocol/message.rs` (`decode_address_word`, field codecs) |
 | Canonical v2 message structure: header (148 B), burn body (≥ 228 B), domain-aware body-word validation; transfer kind comes only from requested header finality and is independent of body `maxFee` | `CctpSpec/Message.lean` | `src/protocol/message.rs` (`MessageHeader`, `BurnMessageV2`, `ParsedV2Message`) |
 
@@ -153,8 +153,9 @@ The lifecycle slice uses a staged combination:
 3. The generator emits the exhaustive 10-state × 12-event matrix and every
    Iris selection input through arrays of length two (273 scenarios). Length
    two covers every pairwise precedence interaction in the production
-   selector; existing Rust tests separately pin first-usable-message data
-   selection.
+   selector; payload-presence booleans mean missing or non-empty bytes. Rust
+   normalization tests separately cover present-but-empty bytes and pin
+   first-usable-message data selection.
 4. Rust correspondence tests replay those selection verdicts against the
    production `select_v2_attestation` helper used by `get_attestation`.
    Deterministic HTTP and RPC tests exercise the real `get_attestation`,
@@ -244,9 +245,9 @@ the existing unit suite):
 | Production `TransferMode` dispatch matches the model | `transfer_mode_dispatch_matches_lean_model` |
 | Production bridge support, `NamedChain::is_testnet`, and chain→domain mappings match the model; parser-only domains are outside the bridge-chain image | `chain_classification_matches_lean_model` |
 | `CctpV2Route::new` matches the model over every pair of modeled supported and unsupported chains | `route_validity_matches_lean_model` |
-| Production Iris selection matches the Lean model for empty, every singleton, and every ordered pair of modeled status/data combinations | `bridge::v2::tests::lifecycle_model_correspondence::iris_selection_matches_lean_model` |
+| Production Iris normalization/selection matches the Lean model for empty, every singleton, and every ordered pair of modeled missing/non-empty status/data combinations | `bridge::v2::tests::lifecycle_model_correspondence::iris_selection_matches_lean_model` |
 | Real `is_message_received`/`mint_if_needed` RPC paths short-circuit pre-received messages, submit unused messages, treat a nonce race as `AlreadyRelayed`, and propagate unrelated failures | `bridge::v2::tests::mint_if_needed_lifecycle` |
-| Real `get_attestation` HTTP polling honors complete/pending/failed multi-message selection | `tests/v2_multi_message_attestation.rs` |
+| Real v1/v2 `get_attestation` HTTP polling rejects status-inconsistent and present-but-empty payloads with typed errors; v2 preserves complete/valid-pending/malformed/failed multi-message precedence | `tests/attestation_normalization.rs`, `tests/v2_multi_message_attestation.rs` |
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
 | Production header, full-message, and summary Fast Transfer flags agree with Lean for zero-fee Fast and nonzero-fee Standard messages | `zero_fee_fast_ethereum_to_base`, `fee_switch_standard_sei_to_base` vectors in `accepted_messages_parse_to_lean_model_fields` |
 | Production parser rejects the model's reject vectors, including unsupported header/body versions, naming the offending field or version | `rejected_messages_fail_to_parse` |
@@ -354,6 +355,10 @@ When **changing v2 attestation selection or mint race handling**
 (`src/bridge/v2.rs`): update `CctpSpec/Lifecycle.lean`, re-check the theorem
 statements, regenerate fixtures, and run both the lifecycle-filtered library
 tests and the deterministic `v2_multi_message_attestation` integration test.
+When changing raw Iris DTO normalization (`src/protocol/attestation.rs`), also
+run `tests/attestation_normalization.rs`; present-but-empty payloads are tested
+in Rust because the Lean presence abstraction distinguishes only missing from
+non-empty bytes.
 
 When **changing message parsing** (`src/protocol/message.rs`): change the
 model in `CctpSpec/Message.lean` to match, re-prove (`lake build`),
