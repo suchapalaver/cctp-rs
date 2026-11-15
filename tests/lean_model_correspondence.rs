@@ -600,9 +600,19 @@ fn accepted_messages_parse_to_lean_model_fields() {
             "vector {name}: attested finality"
         );
         assert_eq!(
-            parsed.body.is_fast_transfer(),
+            parsed.header.is_fast_transfer(),
             derived.is_fast_transfer,
-            "vector {name}: fast transfer flag"
+            "vector {name}: header fast transfer flag"
+        );
+        assert_eq!(
+            parsed.is_fast_transfer(),
+            derived.is_fast_transfer,
+            "vector {name}: full-message fast transfer flag"
+        );
+        assert_eq!(
+            parsed.summary().is_fast_transfer,
+            derived.is_fast_transfer,
+            "vector {name}: summary fast transfer flag"
         );
         assert_eq!(
             parsed.body.has_hooks(),
