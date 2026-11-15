@@ -155,14 +155,15 @@ Maintainers can run the drift check locally with:
 python3 scripts/check_cctp_protocol_drift.py
 ```
 
-The scheduled/manual `CCTP Protocol Drift` workflow runs the same
-command against Circle's published Markdown docs and compares the
-domain table, V1 legacy-only table, token availability, and
-Standard/Fast/Upfront/Forwarding capability matrix with the checked-in
-snapshot plus the local `DomainId` and README/AGENTS counts. Drift is a
-maintenance signal: file or update an issue first, then convert the
-change into parser-only, bridge-route, asset-support, or capability-gate
-work before advertising new protocol support.
+The scheduled/manual `CCTP Protocol Drift` workflow runs the same command
+against Circle's published Markdown docs and compares the domain table, V1
+legacy-only table, token availability, Standard/Fast/Upfront/Forwarding
+capability matrix, CCTP v2 contracts, and USDC/EURC addresses with the
+checked-in authority snapshot. Normal Rust CI independently checks both the
+Lean executable tables and production SDK APIs against that offline snapshot.
+Drift is a maintenance signal: file or update an issue first, then convert the
+change into parser-only, bridge-route, asset-support, address, or
+capability-gate work before advertising new protocol support.
 
 ### Asset-aware V2 burns
 

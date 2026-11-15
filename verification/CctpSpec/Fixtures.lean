@@ -316,6 +316,10 @@ def chainVectorJson (chain : Chain) : Json :=
     ("chain", str chain.jsonName),
     ("supports_cctp_v2", toJson chain.supportsCctpV2),
     ("is_testnet", toJson chain.isTestnet),
+    ("supports_fast_transfer", toJson chain.supportsFastTransfer),
+    ("supports_forwarding_service", toJson chain.supportsForwardingService),
+    ("supports_usdc", toJson chain.supportsUsdc),
+    ("supports_eurc", toJson chain.supportsEurc),
     ("domain_id", match chain.domainId? with
       | some domain => toJson domain.toU32
       | none => Json.null),

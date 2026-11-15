@@ -161,9 +161,11 @@ suite so it can exercise the private production selector used by
   import an encoding detector in the local environment, use
   `pipx run --spec 'reuse[charset-normalizer]' reuse lint`.
 - `python3 scripts/check_cctp_protocol_drift.py` — compares Circle's
-  published CCTP domain, token, V1 legacy-only, and capability tables
-  with the checked-in drift snapshot plus local `DomainId` and docs
-  counts.
+  published CCTP domain, token, V1 legacy-only, capability, CCTP v2 contract,
+  and USDC/EURC address tables with the checked-in authority snapshot plus
+  local `DomainId` and docs counts. Refresh reviewed published fields with
+  `--refresh-snapshot --as-of YYYY-MM-DD`; never automate acceptance of the
+  resulting diff.
 - `cd verification && lake build` — re-checks the Lean proofs (toolchain pinned
   by `verification/lean-toolchain`; install via elan, or nix:
   `nix shell nixpkgs#lean4 nixpkgs#gcc -c lake build`).
@@ -184,10 +186,13 @@ suite so it can exercise the private production selector used by
   unsigned automation commits. The flake declares x86_64 and aarch64 Linux
   plus aarch64 Darwin outputs; nixos-unstable dropped x86_64-darwin in 26.11.
 - The `CCTP Protocol Drift` workflow is separate from locked CI. It runs on a
-  schedule or manually, fetches Circle's supported blockchains Markdown page,
-  and flags domain, token, V1 legacy-only, and capability drift. Treat failures
-  there as protocol-maintenance signals; file or update an issue before
-  changing parser, bridge, asset, or capability support.
+  schedule or manually, fetches Circle's supported-chain, CCTP-contract,
+  USDC-address, and EURC-address Markdown pages, and flags domain, token, V1
+  legacy-only, capability, and address drift. Locked CI remains offline and
+  checks both Lean executable output and production Rust against the committed
+  authority snapshot. Treat live failures as protocol-maintenance signals;
+  file or update an issue before changing parser, bridge, asset, address, or
+  capability support.
 - GitHub Actions workflows pin `ubuntu-24.04` rather than `ubuntu-latest` so
   CI/runtime drift is deliberate. Do not move runner images as part of unrelated
   changes; validate toolchain, Lean, release, protocol drift, live smoke,
