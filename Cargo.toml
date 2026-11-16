@@ -22,7 +22,7 @@ alloy-contract = { version = ">=2.4, <2.5.0", default-features = false }
 alloy-eips = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-genesis = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-json-rpc = { version = ">=2.4, <2.6.0", default-features = false }
-alloy-network = { version = ">=2.4, <2.5.0", default-features = false }
+alloy-network = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-network-primitives = { version = ">=2.4, <2.6.0", default-features = false }
 alloy-primitives = { version = "1.7", default-features = false, features = [
     "serde",
@@ -54,7 +54,7 @@ url = "2.5"
 
 [dev-dependencies]
 alloy-rpc-client = { version = ">=2.4, <2.6.0", default-features = false }
-alloy-signer-local = ">=2.4, <2.5.0"
+alloy-signer-local = ">=2.4, <2.6.0"
 dotenvy = "0.15"
 insta = "1.47"
 rstest = "0.28"
