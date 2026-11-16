@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{CctpError, Result};
+use crate::protocol::AttestationState;
 use crate::{spans, DomainId};
-use crate::{AttestationBytes, AttestationResponse, AttestationStatus, CctpV1};
+use crate::{AttestationBytes, AttestationResponse, CctpV1};
 use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
 use alloy_primitives::{hex, Address, FixedBytes, TxHash};
@@ -329,24 +331,21 @@ impl<P: Provider<Ethereum> + Clone> Cctp<P> {
                                 }
                             };
 
-                        match attestation.status {
-                            AttestationStatus::Complete => {
-                                let attestation_bytes = attestation
-                                    .attestation
-                                    .ok_or_else(super::attestation_data_missing)?
-                                    .to_vec();
-
+                        match attestation.into_state() {
+                            AttestationState::Ready(attestation_bytes) => {
                                 info!(
                                     attestation_length_bytes = attestation_bytes.len(),
                                     event = "attestation_complete"
                                 );
                                 Ok(Some(attestation_bytes))
                             }
-                            AttestationStatus::Failed => {
+                            AttestationState::Failed => {
                                 Err(super::attestation_api_reported_failed())
                             }
-                            AttestationStatus::Pending
-                            | AttestationStatus::PendingConfirmations => {
+                            AttestationState::Malformed(kind) => {
+                                Err(super::malformed_attestation_response(kind))
+                            }
+                            AttestationState::Pending => {
                                 debug!(event = "attestation_pending");
                                 sleep(Duration::from_secs(poll_interval)).await;
                                 Ok(None)

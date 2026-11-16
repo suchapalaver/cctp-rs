@@ -186,7 +186,17 @@ def isUsable (entry : AttestationEntry) : Bool :=
   entry.status == .complete && entry.hasMessage && entry.hasAttestation
 
 def isPending (entry : AttestationEntry) : Bool :=
-  entry.status == .pending || entry.status == .pendingConfirmations
+  (entry.status == .pending || entry.status == .pendingConfirmations) &&
+    !entry.hasAttestation
+
+def isMalformed (entry : AttestationEntry) : Bool :=
+  (entry.status == .complete && !entry.isUsable) ||
+  ((entry.status == .pending || entry.status == .pendingConfirmations) &&
+    entry.hasAttestation) ||
+  (entry.status == .failed && (entry.hasMessage || entry.hasAttestation))
+
+def isFailed (entry : AttestationEntry) : Bool :=
+  entry.status == .failed && !entry.hasMessage && !entry.hasAttestation
 
 /-- Every status/data-presence combination used for exhaustive selection
 vectors. -/
@@ -207,6 +217,14 @@ theorem mem_all (entry : AttestationEntry) : entry ∈ all := by
   | mk status hasMessage hasAttestation =>
       cases status <;> cases hasMessage <;> cases hasAttestation <;> decide
 
+/-- Normalization assigns every modeled non-empty-payload wire entry to exactly
+one operational class. -/
+theorem classification_unique (entry : AttestationEntry) :
+    [entry.isUsable, entry.isPending, entry.isMalformed, entry.isFailed].count true = 1 := by
+  cases entry with
+  | mk status hasMessage hasAttestation =>
+      cases status <;> cases hasMessage <;> cases hasAttestation <;> decide
+
 end AttestationEntry
 
 inductive AttestationSelection where
@@ -214,6 +232,8 @@ inductive AttestationSelection where
   | pending
   | attestationMissing
   | messageMissing
+  | unexpectedAttestation
+  | unexpectedMessage
   | failed
   | empty
 deriving DecidableEq, Repr
@@ -225,21 +245,33 @@ def jsonName : AttestationSelection → String
   | .pending => "pending"
   | .attestationMissing => "attestation_missing"
   | .messageMissing => "message_missing"
+  | .unexpectedAttestation => "unexpected_attestation"
+  | .unexpectedMessage => "unexpected_message"
   | .failed => "failed"
   | .empty => "empty"
 
 end AttestationSelection
 
+/-- Classifies a malformed non-empty payload combination. The fixture model
+abstracts byte payloads as missing or non-empty; Rust unit tests separately
+cover present-but-empty bytes. -/
+def malformedSelection (entry : AttestationEntry) : AttestationSelection :=
+  match entry.status with
+  | .complete =>
+      if !entry.hasAttestation then .attestationMissing else .messageMissing
+  | .pending | .pendingConfirmations => .unexpectedAttestation
+  | .failed =>
+      if entry.hasAttestation then .unexpectedAttestation else .unexpectedMessage
+
 /-- Mirrors the precedence in Rust `select_v2_attestation`: usable complete,
-then any pending sibling, then malformed complete, then failed, then empty. -/
+then any valid pending sibling, then malformed, then valid failed, then empty. -/
 def selectAttestation (entries : List AttestationEntry) : AttestationSelection :=
   if entries.any AttestationEntry.isUsable then .ready
   else if entries.any AttestationEntry.isPending then .pending
-  else match entries.find? (fun entry => entry.status == .complete) with
-    | some entry =>
-        if !entry.hasAttestation then .attestationMissing else .messageMissing
+  else match entries.find? AttestationEntry.isMalformed with
+    | some entry => malformedSelection entry
     | none =>
-        if entries.any (fun entry => entry.status == .failed) then .failed else .empty
+        if entries.any AttestationEntry.isFailed then .failed else .empty
 
 theorem usable_complete_selects_ready {entries : List AttestationEntry}
     (h : entries.any AttestationEntry.isUsable = true) :

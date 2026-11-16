@@ -513,6 +513,13 @@ protocol implementation and external Circle authority.
 
 cctp-rs provides detailed error types for different failure scenarios:
 
+`AttestationResponse`, `V2AttestationResponse`, and `V2Message` are public raw
+Iris wire DTOs retained for compatibility and direct response inspection; their
+field combinations are not validated application state. Bridge polling
+normalizes them immediately and rejects missing, empty, or status-inconsistent
+payloads through `AttestationFailureKind`. A future major release may expose
+the validated state directly and narrow construction of the raw DTOs.
+
 ```rust
 use cctp_rs::{CctpError, PollingConfig};
 

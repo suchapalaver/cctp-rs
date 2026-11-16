@@ -4,10 +4,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{AttestationFailureKind, CctpError, Result};
-use crate::protocol::{AttestationBytes, FastTransferAllowance, FinalityThreshold, TransferFee};
+use crate::protocol::{
+    AttestationBytes, AttestationState, FastTransferAllowance, FinalityThreshold, TransferFee,
+    V2Attestation,
+};
 use crate::{
-    spans, AttestationStatus, CctpTransferAsset, CctpV2 as CctpV2Trait, CctpV2Route, DomainId,
-    V2AttestationResponse, V2Message,
+    spans, CctpTransferAsset, CctpV2 as CctpV2Trait, CctpV2Route, DomainId, V2AttestationResponse,
 };
 use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
@@ -856,7 +858,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                         // trusting the first entry — the first could be pending or
                         // failed while a sibling carries usable attestation data.
                         let message_count = v2_response.messages.len();
-                        match select_v2_attestation(&v2_response.messages) {
+                        let attestation_states = v2_response.into_states();
+                        match select_v2_attestation(&attestation_states) {
                             V2AttestationOutcome::Ready {
                                 message: message_bytes,
                                 attestation: attestation_bytes,
@@ -874,19 +877,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                             V2AttestationOutcome::Failed => {
                                 Err(super::attestation_api_reported_failed())
                             }
-                            V2AttestationOutcome::AttestationMissing => {
-                                Err(super::attestation_data_missing())
-                            }
-                            V2AttestationOutcome::MessageMissing => {
-                                spans::record_error_with_context(
-                                    "MessageDataMissing",
-                                    "Attestation status is complete but message field is null",
-                                    Some("This indicates an unexpected API response format"),
-                                );
-                                error!(event = "message_data_missing");
-                                Err(CctpError::AttestationFailed(
-                                    AttestationFailureKind::MessageMissing,
-                                ))
+                            V2AttestationOutcome::Malformed(kind) => {
+                                Err(super::malformed_attestation_response(kind))
                             }
                             V2AttestationOutcome::Pending => {
                                 debug!(
@@ -1879,10 +1871,8 @@ enum V2AttestationOutcome {
     },
     /// No usable message yet, but at least one is still pending — keep polling.
     Pending,
-    /// A `Complete` message was found but its attestation field was null.
-    AttestationMissing,
-    /// A `Complete` message was found but its message field was null.
-    MessageMissing,
+    /// Iris returned an invalid status/payload combination.
+    Malformed(AttestationFailureKind),
     /// Every message reported failure and none carried usable data.
     Failed,
     /// The response held no messages — keep polling.
@@ -1896,49 +1886,38 @@ enum V2AttestationOutcome {
 ///    sibling has failed.
 /// 2. A still-pending message means keep polling — a failed sibling does not
 ///    end the transaction while another message may yet complete.
-/// 3. A `Complete` message missing its data is surfaced as a malformed
-///    response (attestation checked before message, matching the prior path).
-/// 4. With nothing pending or usable, an all-failed response fails.
+/// 3. A malformed status/payload combination is surfaced (attestation checked
+///    before message for a malformed `Complete`, matching the prior path).
+/// 4. With nothing pending, malformed, or usable, an all-failed response fails.
 /// 5. An empty array keeps polling.
-fn select_v2_attestation(messages: &[V2Message]) -> V2AttestationOutcome {
-    if let Some((message, attestation)) = messages.iter().find_map(|message| {
-        if message.status != AttestationStatus::Complete {
-            return None;
-        }
-        Some((
-            message.message.as_ref()?.to_vec(),
-            message.attestation.as_ref()?.to_vec(),
-        ))
+fn select_v2_attestation(messages: &[AttestationState<V2Attestation>]) -> V2AttestationOutcome {
+    if let Some(ready) = messages.iter().find_map(|message| match message {
+        AttestationState::Ready(ready) => Some(ready),
+        _ => None,
     }) {
         return V2AttestationOutcome::Ready {
-            message,
-            attestation,
-        };
-    }
-
-    if messages.iter().any(|message| {
-        matches!(
-            message.status,
-            AttestationStatus::Pending | AttestationStatus::PendingConfirmations
-        )
-    }) {
-        return V2AttestationOutcome::Pending;
-    }
-
-    if let Some(message) = messages
-        .iter()
-        .find(|message| message.status == AttestationStatus::Complete)
-    {
-        return if message.attestation.is_none() {
-            V2AttestationOutcome::AttestationMissing
-        } else {
-            V2AttestationOutcome::MessageMissing
+            message: ready.message.clone(),
+            attestation: ready.attestation.clone(),
         };
     }
 
     if messages
         .iter()
-        .any(|message| message.status == AttestationStatus::Failed)
+        .any(|message| matches!(message, AttestationState::Pending))
+    {
+        return V2AttestationOutcome::Pending;
+    }
+
+    if let Some(kind) = messages.iter().find_map(|message| match message {
+        AttestationState::Malformed(kind) => Some(*kind),
+        _ => None,
+    }) {
+        return V2AttestationOutcome::Malformed(kind);
+    }
+
+    if messages
+        .iter()
+        .any(|message| matches!(message, AttestationState::Failed))
     {
         return V2AttestationOutcome::Failed;
     }
@@ -1949,6 +1928,7 @@ fn select_v2_attestation(messages: &[V2Message]) -> V2AttestationOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AttestationStatus, V2Message};
     use alloy_chains::NamedChain;
     use alloy_primitives::{Address, FixedBytes};
     use alloy_provider::ProviderBuilder;
@@ -2712,15 +2692,16 @@ mod tests {
             status: AttestationStatus,
             message: Option<&[u8]>,
             attestation: Option<&[u8]>,
-        ) -> V2Message {
+        ) -> AttestationState<V2Attestation> {
             V2Message {
                 status,
                 message: message.map(Bytes::copy_from_slice),
                 attestation: attestation.map(Bytes::copy_from_slice),
             }
+            .into_state()
         }
 
-        fn complete(msg: &[u8], attestation: &[u8]) -> V2Message {
+        fn complete(msg: &[u8], attestation: &[u8]) -> AttestationState<V2Attestation> {
             message(AttestationStatus::Complete, Some(msg), Some(attestation))
         }
 
@@ -2825,7 +2806,7 @@ mod tests {
             )];
             assert_eq!(
                 select_v2_attestation(&messages),
-                V2AttestationOutcome::AttestationMissing
+                V2AttestationOutcome::Malformed(AttestationFailureKind::AttestationMissing)
             );
         }
 
@@ -2838,7 +2819,33 @@ mod tests {
             )];
             assert_eq!(
                 select_v2_attestation(&messages),
-                V2AttestationOutcome::MessageMissing
+                V2AttestationOutcome::Malformed(AttestationFailureKind::MessageMissing)
+            );
+        }
+
+        #[test]
+        fn complete_empty_attestation_reports_attestation_empty() {
+            let messages = vec![message(
+                AttestationStatus::Complete,
+                Some(&[0xde, 0xad]),
+                Some(&[]),
+            )];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Malformed(AttestationFailureKind::AttestationEmpty)
+            );
+        }
+
+        #[test]
+        fn pending_with_attestation_is_malformed() {
+            let messages = vec![message(
+                AttestationStatus::Pending,
+                None,
+                Some(&[0xbe, 0xef]),
+            )];
+            assert_eq!(
+                select_v2_attestation(&messages),
+                V2AttestationOutcome::Malformed(AttestationFailureKind::UnexpectedAttestation)
             );
         }
 
@@ -2902,20 +2909,28 @@ mod tests {
             }
         }
 
-        fn production_entry(entry: &AttestationEntryVector) -> V2Message {
+        fn production_entry(entry: &AttestationEntryVector) -> AttestationState<V2Attestation> {
             V2Message {
                 status: status(&entry.status),
                 message: entry.has_message.then(|| Bytes::from_static(&[0x11])),
                 attestation: entry.has_attestation.then(|| Bytes::from_static(&[0x22])),
             }
+            .into_state()
         }
 
         fn outcome_name(outcome: &V2AttestationOutcome) -> &'static str {
             match outcome {
                 V2AttestationOutcome::Ready { .. } => "ready",
                 V2AttestationOutcome::Pending => "pending",
-                V2AttestationOutcome::AttestationMissing => "attestation_missing",
-                V2AttestationOutcome::MessageMissing => "message_missing",
+                V2AttestationOutcome::Malformed(kind) => match kind {
+                    AttestationFailureKind::AttestationMissing => "attestation_missing",
+                    AttestationFailureKind::AttestationEmpty => "attestation_empty",
+                    AttestationFailureKind::MessageMissing => "message_missing",
+                    AttestationFailureKind::MessageEmpty => "message_empty",
+                    AttestationFailureKind::UnexpectedAttestation => "unexpected_attestation",
+                    AttestationFailureKind::UnexpectedMessage => "unexpected_message",
+                    AttestationFailureKind::ApiReportedFailed => "failed",
+                },
                 V2AttestationOutcome::Failed => "failed",
                 V2AttestationOutcome::Empty => "empty",
             }

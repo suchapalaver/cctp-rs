@@ -292,7 +292,8 @@ def lifecycleTransitions : List (LifecycleState × LifecycleEvent) :=
 /-- Exhaustive Iris selection inputs through response arrays of length two.
 Length two is the smallest bound that exercises every precedence interaction:
 usable vs pending, usable vs failed, pending vs failed, and malformed complete
-vs pending. -/
+vs pending. Payload-presence booleans mean non-empty bytes; Rust normalization
+tests cover the additional present-but-empty wire state. -/
 def attestationSelectionScenarios : List (List AttestationEntry) :=
   [[]] ++
   AttestationEntry.all.map (fun entry => [entry]) ++

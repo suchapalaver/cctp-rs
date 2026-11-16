@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //! CCTP protocol types and definitions
@@ -16,6 +17,7 @@ mod message;
 pub use attestation::{
     AttestationBytes, AttestationResponse, AttestationStatus, V2AttestationResponse, V2Message,
 };
+pub(crate) use attestation::{AttestationState, V2Attestation};
 pub use domain_id::{DomainId, InvalidDomainId};
 pub use fees::{FastTransferAllowance, FeeBps, TransferFee};
 pub use finality::{FinalityThreshold, InvalidFinalityThreshold};
