@@ -478,37 +478,39 @@ fn accepted_messages_parse_to_lean_model_fields() {
 
         // Header fields.
         let header = &vector.header;
+        let parsed_header = parsed.header();
         assert_eq!(
-            parsed.header.version, header.version,
+            parsed_header.version(),
+            header.version,
             "vector {name}: header version"
         );
         assert_eq!(
-            parsed.header.source_domain.as_u32(),
+            parsed_header.source_domain().as_u32(),
             header.source_domain,
             "vector {name}: source domain"
         );
         assert_eq!(
-            serde_name(&parsed.header.source_domain),
+            serde_name(&parsed_header.source_domain()),
             header.source_domain_name,
             "vector {name}: source domain name"
         );
         assert_eq!(
-            parsed.header.destination_domain.as_u32(),
+            parsed_header.destination_domain().as_u32(),
             header.destination_domain,
             "vector {name}: destination domain"
         );
         assert_eq!(
-            serde_name(&parsed.header.destination_domain),
+            serde_name(&parsed_header.destination_domain()),
             header.destination_domain_name,
             "vector {name}: destination domain name"
         );
         for (field, actual, expected) in [
-            ("nonce", parsed.header.nonce, &header.nonce),
-            ("sender", parsed.header.sender, &header.sender),
-            ("recipient", parsed.header.recipient, &header.recipient),
+            ("nonce", parsed_header.nonce(), &header.nonce),
+            ("sender", parsed_header.sender(), &header.sender),
+            ("recipient", parsed_header.recipient(), &header.recipient),
             (
                 "destination_caller",
-                parsed.header.destination_caller,
+                parsed_header.destination_caller(),
                 &header.destination_caller,
             ),
         ] {
@@ -518,30 +520,34 @@ fn accepted_messages_parse_to_lean_model_fields() {
             assert_eq!(actual, expected, "vector {name}: header {field}");
         }
         assert_eq!(
-            parsed.header.min_finality_threshold, header.min_finality_threshold,
+            parsed_header.min_finality_threshold(),
+            header.min_finality_threshold,
             "vector {name}: min finality"
         );
         assert_eq!(
-            parsed.header.finality_threshold_executed, header.finality_threshold_executed,
+            parsed_header.finality_threshold_executed(),
+            header.finality_threshold_executed,
             "vector {name}: executed finality"
         );
 
         // Body fields.
         let body = &vector.body;
+        let parsed_body = parsed.body();
         assert_eq!(
-            parsed.body.version, body.version,
+            parsed_body.version(),
+            body.version,
             "vector {name}: body version"
         );
         for (field, actual, expected) in [
-            ("burn_token", parsed.body.burn_token, &body.burn_token),
+            ("burn_token", parsed_body.burn_token(), &body.burn_token),
             (
                 "mint_recipient",
-                parsed.body.mint_recipient,
+                parsed_body.mint_recipient(),
                 &body.mint_recipient,
             ),
             (
                 "message_sender",
-                parsed.body.message_sender,
+                parsed_body.message_sender(),
                 &body.message_sender,
             ),
         ] {
@@ -551,12 +557,16 @@ fn accepted_messages_parse_to_lean_model_fields() {
             assert_eq!(actual, expected, "vector {name}: body {field}");
         }
         for (field, actual, expected) in [
-            ("amount", parsed.body.amount, &body.amount),
-            ("max_fee", parsed.body.max_fee, &body.max_fee),
-            ("fee_executed", parsed.body.fee_executed, &body.fee_executed),
+            ("amount", parsed_body.amount(), &body.amount),
+            ("max_fee", parsed_body.max_fee(), &body.max_fee),
+            (
+                "fee_executed",
+                parsed_body.fee_executed(),
+                &body.fee_executed,
+            ),
             (
                 "expiration_block",
-                parsed.body.expiration_block,
+                parsed_body.expiration_block(),
                 &body.expiration_block,
             ),
         ] {
@@ -567,8 +577,8 @@ fn accepted_messages_parse_to_lean_model_fields() {
             );
         }
         assert_eq!(
-            parsed.body.hook_data,
-            Bytes::from(bytes_of_hex(name, &body.hook_data)),
+            parsed_body.hook_data(),
+            &Bytes::from(bytes_of_hex(name, &body.hook_data)),
             "vector {name}: hook data"
         );
 
@@ -580,27 +590,27 @@ fn accepted_messages_parse_to_lean_model_fields() {
             "vector {name}: length"
         );
         assert_eq!(
-            parsed.header.has_placeholder_nonce(),
+            parsed_header.has_placeholder_nonce(),
             derived.has_placeholder_nonce,
             "vector {name}: placeholder nonce"
         );
         assert_eq!(
-            parsed.header.is_permissionless(),
+            parsed_header.is_permissionless(),
             derived.is_permissionless,
             "vector {name}: permissionless"
         );
         assert_eq!(
-            parsed.header.requested_finality().map(|t| serde_name(&t)),
+            parsed_header.requested_finality().map(|t| serde_name(&t)),
             derived.requested_finality,
             "vector {name}: requested finality"
         );
         assert_eq!(
-            parsed.header.attested_finality().map(|t| serde_name(&t)),
+            parsed_header.attested_finality().map(|t| serde_name(&t)),
             derived.attested_finality,
             "vector {name}: attested finality"
         );
         assert_eq!(
-            parsed.header.is_fast_transfer(),
+            parsed_header.is_fast_transfer(),
             derived.is_fast_transfer,
             "vector {name}: header fast transfer flag"
         );
@@ -610,12 +620,12 @@ fn accepted_messages_parse_to_lean_model_fields() {
             "vector {name}: full-message fast transfer flag"
         );
         assert_eq!(
-            parsed.summary().is_fast_transfer,
+            parsed.summary().is_fast_transfer(),
             derived.is_fast_transfer,
             "vector {name}: summary fast transfer flag"
         );
         assert_eq!(
-            parsed.body.has_hooks(),
+            parsed_body.has_hooks(),
             derived.has_hooks,
             "vector {name}: hooks flag"
         );
