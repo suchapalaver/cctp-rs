@@ -36,7 +36,8 @@ use alloy_signer_local::PrivateKeySigner;
 use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, Erc20Contract, MintResult, TransferMode};
 use common::funded_v2::{
     format_eth_balance, format_usdc_balance, redacted_rpc_url, supported_testnet_routes,
-    FundedV2Route, DEFAULT_TRANSFER_AMOUNT, MIN_NATIVE_BALANCE_WEI, MIN_USDC_BALANCE,
+    FundedV2Error, FundedV2Route, DEFAULT_TRANSFER_AMOUNT, MIN_NATIVE_BALANCE_WEI,
+    MIN_USDC_BALANCE,
 };
 use dotenvy::dotenv;
 use tracing::{info_span, Instrument};
@@ -44,7 +45,7 @@ use tracing::{info_span, Instrument};
 const DEFAULT_FAST_FEE_BUFFER_PERCENT: u32 = 20;
 
 #[tokio::main]
-async fn main() -> Result<(), CctpError> {
+async fn main() -> Result<(), FundedV2Error> {
     // Load .env file
     dotenv().ok();
 
@@ -58,7 +59,7 @@ async fn main() -> Result<(), CctpError> {
     let destination_chain = route.destination_chain();
 
     if !source_chain.supports_fast_transfer()? {
-        return Err(CctpError::FastTransferUnsupported { source_chain });
+        return Err(CctpError::FastTransferUnsupported { source_chain }.into());
     }
 
     println!("⚡ CCTP v2 Fast Transfer: {source_chain} → {destination_chain}");

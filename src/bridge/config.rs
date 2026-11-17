@@ -9,7 +9,7 @@ use alloy_chains::NamedChain;
 use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
-use crate::error::{CctpError, Result};
+use crate::error::{ConfigError, Result};
 
 /// Circle Iris API environment URLs
 ///
@@ -132,7 +132,7 @@ impl PollingConfig {
     ///
     /// # Errors
     ///
-    /// Returns [`CctpError::InvalidConfig`] when either input is zero.
+    /// Returns [`crate::CctpError::InvalidConfig`] when either input is zero.
     ///
     /// # Example
     ///
@@ -147,16 +147,10 @@ impl PollingConfig {
     /// assert!(PollingConfig::try_new(20, 0).is_err());
     /// ```
     pub fn try_new(max_attempts: u32, poll_interval_secs: u64) -> Result<Self> {
-        let max_attempts = NonZeroU32::new(max_attempts).ok_or_else(|| {
-            CctpError::InvalidConfig(
-                "PollingConfig.max_attempts must be greater than 0".to_string(),
-            )
-        })?;
-        let poll_interval_secs = NonZeroU64::new(poll_interval_secs).ok_or_else(|| {
-            CctpError::InvalidConfig(
-                "PollingConfig.poll_interval_secs must be greater than 0".to_string(),
-            )
-        })?;
+        let max_attempts =
+            NonZeroU32::new(max_attempts).ok_or(ConfigError::PollingMaxAttemptsZero)?;
+        let poll_interval_secs =
+            NonZeroU64::new(poll_interval_secs).ok_or(ConfigError::PollingIntervalZero)?;
 
         Ok(Self {
             max_attempts,
@@ -191,7 +185,7 @@ impl PollingConfig {
     ///
     /// # Errors
     ///
-    /// Returns [`CctpError::InvalidConfig`] when `attempts` is zero.
+    /// Returns [`crate::CctpError::InvalidConfig`] when `attempts` is zero.
     pub fn try_with_max_attempts(self, attempts: u32) -> Result<Self> {
         Self::try_new(attempts, self.poll_interval_secs())
     }
@@ -215,7 +209,7 @@ impl PollingConfig {
     ///
     /// # Errors
     ///
-    /// Returns [`CctpError::InvalidConfig`] when `secs` is zero.
+    /// Returns [`crate::CctpError::InvalidConfig`] when `secs` is zero.
     pub fn try_with_poll_interval_secs(self, secs: u64) -> Result<Self> {
         Self::try_new(self.max_attempts(), secs)
     }
@@ -242,6 +236,7 @@ impl PollingConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::CctpError;
 
     #[test]
     fn test_default_config() {
@@ -284,8 +279,11 @@ mod tests {
             .try_with_max_attempts(0)
             .unwrap_err();
         assert!(
-            matches!(err, CctpError::InvalidConfig(ref msg) if msg.contains("max_attempts")),
-            "expected InvalidConfig mentioning max_attempts, got {err:?}"
+            matches!(
+                err,
+                CctpError::InvalidConfig(ConfigError::PollingMaxAttemptsZero)
+            ),
+            "expected typed zero-attempt error, got {err:?}"
         );
     }
 
@@ -295,8 +293,11 @@ mod tests {
             .try_with_poll_interval_secs(0)
             .unwrap_err();
         assert!(
-            matches!(err, CctpError::InvalidConfig(ref msg) if msg.contains("poll_interval_secs")),
-            "expected InvalidConfig mentioning poll_interval_secs, got {err:?}"
+            matches!(
+                err,
+                CctpError::InvalidConfig(ConfigError::PollingIntervalZero)
+            ),
+            "expected typed zero-interval error, got {err:?}"
         );
     }
 
@@ -309,9 +310,22 @@ mod tests {
 
     #[test]
     fn test_try_new_rejects_zero_inputs() {
-        assert!(PollingConfig::try_new(0, 30).is_err());
-        assert!(PollingConfig::try_new(20, 0).is_err());
-        assert!(PollingConfig::try_new(0, 0).is_err());
+        assert!(matches!(
+            PollingConfig::try_new(0, 30),
+            Err(CctpError::InvalidConfig(
+                ConfigError::PollingMaxAttemptsZero
+            ))
+        ));
+        assert!(matches!(
+            PollingConfig::try_new(20, 0),
+            Err(CctpError::InvalidConfig(ConfigError::PollingIntervalZero))
+        ));
+        assert!(matches!(
+            PollingConfig::try_new(0, 0),
+            Err(CctpError::InvalidConfig(
+                ConfigError::PollingMaxAttemptsZero
+            ))
+        ));
     }
 
     #[test]
