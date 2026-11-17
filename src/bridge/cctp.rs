@@ -235,9 +235,7 @@ impl<P: Provider<Ethereum> + Clone> Cctp<P> {
     /// // Or with custom retry settings
     /// let attestation = bridge.get_attestation(
     ///     message_hash,
-    ///     PollingConfig::default()
-    ///         .with_max_attempts(20)
-    ///         .with_poll_interval_secs(30),
+    ///     PollingConfig::try_new(20, 30)?,
     /// ).await?;
     /// ```
     pub async fn get_attestation(
@@ -245,9 +243,8 @@ impl<P: Provider<Ethereum> + Clone> Cctp<P> {
         message_hash: FixedBytes<32>,
         polling_config: PollingConfig,
     ) -> Result<AttestationBytes> {
-        polling_config.validate()?;
-        let max_attempts = polling_config.max_attempts;
-        let poll_interval = polling_config.poll_interval_secs;
+        let max_attempts = polling_config.max_attempts();
+        let poll_interval = polling_config.poll_interval_secs();
         let total_timeout_secs = polling_config.total_timeout_secs();
 
         let span = spans::get_attestation_with_retry(

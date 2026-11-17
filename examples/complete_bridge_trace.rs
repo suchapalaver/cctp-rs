@@ -239,9 +239,8 @@ async fn demonstrate_complete_bridge_flow(
         match bridge
             .get_attestation(
                 message_hash,
-                cctp_rs::PollingConfig::default()
-                    .with_max_attempts(3)
-                    .with_poll_interval_secs(2),
+                cctp_rs::PollingConfig::try_new(3, 2)
+                    .expect("trace example polling values are nonzero"),
             )
             .await
         {
@@ -312,9 +311,8 @@ async fn demonstrate_error_tracking(
         match bridge
             .get_attestation(
                 invalid_hash,
-                cctp_rs::PollingConfig::default()
-                    .with_max_attempts(2)
-                    .with_poll_interval_secs(1),
+                cctp_rs::PollingConfig::try_new(2, 1)
+                    .expect("trace example polling values are nonzero"),
             )
             .await
         {

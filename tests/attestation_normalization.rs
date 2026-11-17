@@ -63,9 +63,7 @@ async fn v1_rejects_pending_response_with_attestation() {
     let error = v1_bridge(Url::parse(&server.uri()).expect("wiremock URI parses"))
         .get_attestation(
             FixedBytes::from([0x12; 32]),
-            PollingConfig::default()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await
         .expect_err("status-inconsistent attestation must fail");
@@ -87,9 +85,7 @@ async fn v1_rejects_present_but_empty_attestation() {
     let error = v1_bridge(Url::parse(&server.uri()).expect("wiremock URI parses"))
         .get_attestation(
             FixedBytes::from([0x12; 32]),
-            PollingConfig::default()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await
         .expect_err("empty attestation must fail");
@@ -114,9 +110,7 @@ async fn v2_rejects_pending_response_with_attestation() {
     let error = v2_bridge(Url::parse(&server.uri()).expect("wiremock URI parses"))
         .get_attestation(
             FixedBytes::from([0xab; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await
         .expect_err("status-inconsistent attestation must fail");
@@ -141,9 +135,7 @@ async fn v2_rejects_present_but_empty_message() {
     let error = v2_bridge(Url::parse(&server.uri()).expect("wiremock URI parses"))
         .get_attestation(
             FixedBytes::from([0xab; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await
         .expect_err("empty message must fail");

@@ -749,9 +749,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// // Or with custom retry settings
     /// let (message, attestation) = bridge.get_attestation(
     ///     burn_tx_hash,
-    ///     PollingConfig::default()
-    ///         .with_max_attempts(60)
-    ///         .with_poll_interval_secs(10),
+    ///     PollingConfig::try_new(60, 10)?,
     /// ).await?;
     ///
     /// // Use the returned message (NOT from get_message_sent_event) for minting
@@ -762,9 +760,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         tx_hash: TxHash,
         polling_config: PollingConfig,
     ) -> Result<(Vec<u8>, AttestationBytes)> {
-        polling_config.validate()?;
-        let max_attempts = polling_config.max_attempts;
-        let poll_interval = polling_config.poll_interval_secs;
+        let max_attempts = polling_config.max_attempts();
+        let poll_interval = polling_config.poll_interval_secs();
         let total_timeout_secs = polling_config.total_timeout_secs();
 
         let span = spans::get_v2_attestation_with_retry(
@@ -1221,10 +1218,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// # Arguments
     ///
     /// * `message` - The canonical message bytes (from [`Self::get_attestation`])
-    /// * `max_attempts` - Maximum polling attempts (default: 60). `Some(0)` is
-    ///   rejected with [`CctpError::InvalidConfig`].
-    /// * `poll_interval` - Seconds between polls (default: based on transfer
-    ///   type and chain). `Some(0)` is rejected with [`CctpError::InvalidConfig`].
+    /// * `polling_config` - Optional validated polling settings. When omitted,
+    ///   uses 60 attempts and a chain-appropriate interval.
     ///
     /// # Returns
     ///
@@ -1233,7 +1228,6 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ///   This is distinct from [`CctpError::AttestationTimeout`] — by
     ///   the time this method runs, attestation has already succeeded;
     ///   what timed out is observing the destination-chain receipt.
-    /// * `Err(CctpError::InvalidConfig)` if either input is `Some(0)`
     ///
     /// # Example
     ///
@@ -1245,38 +1239,31 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// ).await?;
     ///
     /// // Wait for completion (relayer or self)
-    /// bridge.wait_for_receive(&message, None, None).await?;
+    /// bridge.wait_for_receive(&message, None).await?;
     /// println!("Transfer complete!");
     /// ```
     pub async fn wait_for_receive(
         &self,
         message: &[u8],
-        max_attempts: Option<u32>,
-        poll_interval: Option<u64>,
+        polling_config: Option<PollingConfig>,
     ) -> Result<()> {
-        if matches!(max_attempts, Some(0)) {
-            return Err(CctpError::InvalidConfig(
-                "wait_for_receive max_attempts must be greater than 0".to_string(),
-            ));
-        }
-        if matches!(poll_interval, Some(0)) {
-            return Err(CctpError::InvalidConfig(
-                "wait_for_receive poll_interval must be greater than 0".to_string(),
-            ));
-        }
-
-        let max_attempts = max_attempts.unwrap_or(60);
-        let poll_interval = poll_interval.unwrap_or_else(|| {
-            if self.transfer_mode.is_fast() {
-                self.destination_chain
-                    .fast_transfer_confirmation_time_seconds()
-                    .unwrap_or(5)
-            } else {
-                self.destination_chain
-                    .standard_transfer_confirmation_time_seconds()
-                    .unwrap_or(60)
+        let polling_config = match polling_config {
+            Some(config) => config,
+            None => {
+                let poll_interval = if self.transfer_mode.is_fast() {
+                    self.destination_chain
+                        .fast_transfer_confirmation_time_seconds()
+                        .unwrap_or(5)
+                } else {
+                    self.destination_chain
+                        .standard_transfer_confirmation_time_seconds()
+                        .unwrap_or(60)
+                };
+                PollingConfig::try_new(60, poll_interval)?
             }
-        });
+        };
+        let max_attempts = polling_config.max_attempts();
+        let poll_interval = polling_config.poll_interval_secs();
 
         let message_hash: FixedBytes<32> = alloy_primitives::keccak256(message);
         let span = spans::wait_for_receive(
@@ -3731,7 +3718,10 @@ mod tests {
                 .build();
 
             let err = bridge
-                .wait_for_receive(b"any message bytes", Some(3), Some(1))
+                .wait_for_receive(
+                    b"any message bytes",
+                    Some(PollingConfig::try_new(3, 1).unwrap()),
+                )
                 .await
                 .expect_err("polling against a destination that never reports receipt must error");
 

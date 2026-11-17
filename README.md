@@ -552,9 +552,7 @@ use cctp_rs::PollingConfig;
 // V1: Wait up to 10 minutes with 30-second intervals
 let attestation = bridge.get_attestation(
     message_hash,
-    PollingConfig::default()
-        .with_max_attempts(20)
-        .with_poll_interval_secs(30),
+    PollingConfig::try_new(20, 30)?,
 ).await?;
 
 // V2: Use preset for fast transfers (5 second intervals)
@@ -566,9 +564,7 @@ let (message, attestation) = v2_bridge.get_attestation(
 // V2: Or customize for your needs
 let (message, attestation) = v2_bridge.get_attestation(
     tx_hash,
-    PollingConfig::default()
-        .with_max_attempts(60)
-        .with_poll_interval_secs(10),
+    PollingConfig::try_new(60, 10)?,
 ).await?;
 
 // Check total timeout
@@ -617,7 +613,7 @@ async fn wait_for_transfer<P: Provider + Clone>(bridge: &CctpV2Bridge<P>) -> Res
     ).await?;
 
     // Wait for completion (by relayer or self)
-    bridge.wait_for_receive(&message, None, None).await?;
+    bridge.wait_for_receive(&message, None).await?;
     println!("Transfer complete!");
     Ok(())
 }

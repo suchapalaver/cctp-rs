@@ -46,7 +46,7 @@ behavior.
 | Inspect a v2 message as JSON | `ParsedV2MessageSummary::parse` | Returns `ParseMessageError`, not `CctpError`; non-EVM body words stay in `*_bytes` fields. |
 | Drive contracts directly (custom hooks, batch flows) | `TokenMessengerV2Contract` / `MessageTransmitterV2Contract` | Bridge types wrap these. |
 | Look up chain config without a provider | `CctpV1` / `CctpV2` traits on `NamedChain` | Pure functions: domain id, addresses, confirmation times. |
-| Tune attestation polling | `PollingConfig::fast_transfer()` for v2 fast, `PollingConfig::default()` otherwise | Customize via `with_max_attempts`, `with_poll_interval_secs`. |
+| Tune attestation polling | `PollingConfig::fast_transfer()` for v2 fast, `PollingConfig::default()` otherwise | Customize via `try_new`, `try_with_max_attempts`, or `try_with_poll_interval_secs`. |
 
 ## Footguns
 

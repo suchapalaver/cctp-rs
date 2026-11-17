@@ -3,8 +3,10 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use std::num::{NonZeroU32, NonZeroU64};
+
 use alloy_chains::NamedChain;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
 use crate::error::{CctpError, Result};
@@ -53,7 +55,9 @@ pub const FAST_TRANSFER_ALLOWANCE_PATH_V2: &str = "/v2/fastBurn/USDC/allowance";
 /// Configuration for attestation polling behavior.
 ///
 /// Controls how the bridge polls Circle's Iris API for attestation availability.
-/// Use the builder methods to customize, or use preset configurations for common scenarios.
+/// Use [`Self::try_new`] or the fallible builder methods to customize, or use
+/// preset configurations for common scenarios. Attempt counts and polling
+/// intervals are nonzero by construction, including after deserialization.
 ///
 /// # Examples
 ///
@@ -65,18 +69,34 @@ pub const FAST_TRANSFER_ALLOWANCE_PATH_V2: &str = "/v2/fastBurn/USDC/allowance";
 ///
 /// // Customize polling behavior
 /// let config = PollingConfig::default()
-///     .with_max_attempts(20)
-///     .with_poll_interval_secs(30);
+///     .try_with_max_attempts(20).unwrap()
+///     .try_with_poll_interval_secs(30).unwrap();
 ///
 /// // Use preset for fast transfers (30 attempts, 5 second intervals)
 /// let config = PollingConfig::fast_transfer();
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct PollingConfig {
     /// Maximum number of polling attempts before giving up.
-    pub max_attempts: u32,
+    max_attempts: NonZeroU32,
     /// Seconds to wait between polling attempts.
-    pub poll_interval_secs: u64,
+    poll_interval_secs: NonZeroU64,
+}
+
+#[derive(Deserialize)]
+struct PollingConfigWire {
+    max_attempts: u32,
+    poll_interval_secs: u64,
+}
+
+impl<'de> Deserialize<'de> for PollingConfig {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = PollingConfigWire::deserialize(deserializer)?;
+        Self::try_new(wire.max_attempts, wire.poll_interval_secs).map_err(serde::de::Error::custom)
+    }
 }
 
 impl Default for PollingConfig {
@@ -88,10 +108,7 @@ impl Default for PollingConfig {
     /// This results in a maximum wait time of ~30 minutes, which accommodates
     /// the typical 13-19 minute attestation time for v1 transfers.
     fn default() -> Self {
-        Self {
-            max_attempts: 30,
-            poll_interval_secs: 60,
-        }
+        Self::try_new(30, 60).expect("default polling values are nonzero")
     }
 }
 
@@ -104,10 +121,7 @@ impl PollingConfig {
     /// Fast transfers typically complete in under 30 seconds, so this configuration
     /// polls more frequently with shorter intervals.
     pub fn fast_transfer() -> Self {
-        Self {
-            max_attempts: 30,
-            poll_interval_secs: 5,
-        }
+        Self::try_new(30, 5).expect("fast-transfer polling values are nonzero")
     }
 
     /// Creates a polling configuration after checking that both fields are
@@ -126,49 +140,41 @@ impl PollingConfig {
     /// use cctp_rs::PollingConfig;
     ///
     /// let config = PollingConfig::try_new(20, 30).unwrap();
-    /// assert_eq!(config.max_attempts, 20);
-    /// assert_eq!(config.poll_interval_secs, 30);
+    /// assert_eq!(config.max_attempts(), 20);
+    /// assert_eq!(config.poll_interval_secs(), 30);
     ///
     /// assert!(PollingConfig::try_new(0, 30).is_err());
     /// assert!(PollingConfig::try_new(20, 0).is_err());
     /// ```
     pub fn try_new(max_attempts: u32, poll_interval_secs: u64) -> Result<Self> {
-        let config = Self {
+        let max_attempts = NonZeroU32::new(max_attempts).ok_or_else(|| {
+            CctpError::InvalidConfig(
+                "PollingConfig.max_attempts must be greater than 0".to_string(),
+            )
+        })?;
+        let poll_interval_secs = NonZeroU64::new(poll_interval_secs).ok_or_else(|| {
+            CctpError::InvalidConfig(
+                "PollingConfig.poll_interval_secs must be greater than 0".to_string(),
+            )
+        })?;
+
+        Ok(Self {
             max_attempts,
             poll_interval_secs,
-        };
-        config.validate()?;
-        Ok(config)
+        })
     }
 
-    /// Validates the configuration for use in polling loops.
-    ///
-    /// Builder methods like [`Self::with_max_attempts`] and
-    /// [`Self::with_poll_interval_secs`] do not check their inputs, so callers
-    /// that accept the values at runtime should call this before using the
-    /// config to poll Circle's Iris API.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`CctpError::InvalidConfig`] when `max_attempts` is zero
-    /// (the polling loop would exit before its first request) or
-    /// `poll_interval_secs` is zero (the loop would never sleep between
-    /// retries).
-    pub fn validate(&self) -> Result<()> {
-        if self.max_attempts == 0 {
-            return Err(CctpError::InvalidConfig(
-                "PollingConfig.max_attempts must be greater than 0".to_string(),
-            ));
-        }
-        if self.poll_interval_secs == 0 {
-            return Err(CctpError::InvalidConfig(
-                "PollingConfig.poll_interval_secs must be greater than 0".to_string(),
-            ));
-        }
-        Ok(())
+    /// Returns the maximum number of polling attempts before giving up.
+    pub const fn max_attempts(&self) -> u32 {
+        self.max_attempts.get()
     }
 
-    /// Sets the maximum number of polling attempts.
+    /// Returns the number of seconds between polling attempts.
+    pub const fn poll_interval_secs(&self) -> u64 {
+        self.poll_interval_secs.get()
+    }
+
+    /// Sets the maximum number of polling attempts after validating it.
     ///
     /// # Arguments
     ///
@@ -179,15 +185,18 @@ impl PollingConfig {
     /// ```rust
     /// use cctp_rs::PollingConfig;
     ///
-    /// let config = PollingConfig::default().with_max_attempts(60);
-    /// assert_eq!(config.max_attempts, 60);
+    /// let config = PollingConfig::default().try_with_max_attempts(60).unwrap();
+    /// assert_eq!(config.max_attempts(), 60);
     /// ```
-    pub fn with_max_attempts(mut self, attempts: u32) -> Self {
-        self.max_attempts = attempts;
-        self
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::InvalidConfig`] when `attempts` is zero.
+    pub fn try_with_max_attempts(self, attempts: u32) -> Result<Self> {
+        Self::try_new(attempts, self.poll_interval_secs())
     }
 
-    /// Sets the interval between polling attempts in seconds.
+    /// Sets the interval between polling attempts in seconds after validating it.
     ///
     /// # Arguments
     ///
@@ -198,12 +207,17 @@ impl PollingConfig {
     /// ```rust
     /// use cctp_rs::PollingConfig;
     ///
-    /// let config = PollingConfig::default().with_poll_interval_secs(30);
-    /// assert_eq!(config.poll_interval_secs, 30);
+    /// let config = PollingConfig::default()
+    ///     .try_with_poll_interval_secs(30)
+    ///     .unwrap();
+    /// assert_eq!(config.poll_interval_secs(), 30);
     /// ```
-    pub fn with_poll_interval_secs(mut self, secs: u64) -> Self {
-        self.poll_interval_secs = secs;
-        self
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::InvalidConfig`] when `secs` is zero.
+    pub fn try_with_poll_interval_secs(self, secs: u64) -> Result<Self> {
+        Self::try_new(self.max_attempts(), secs)
     }
 
     /// Returns the total maximum wait time in seconds.
@@ -221,7 +235,7 @@ impl PollingConfig {
     /// assert_eq!(config.total_timeout_secs(), 30 * 60); // 30 minutes
     /// ```
     pub fn total_timeout_secs(&self) -> u64 {
-        u64::from(self.max_attempts).saturating_mul(self.poll_interval_secs)
+        u64::from(self.max_attempts()).saturating_mul(self.poll_interval_secs())
     }
 }
 
@@ -232,26 +246,28 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = PollingConfig::default();
-        assert_eq!(config.max_attempts, 30);
-        assert_eq!(config.poll_interval_secs, 60);
+        assert_eq!(config.max_attempts(), 30);
+        assert_eq!(config.poll_interval_secs(), 60);
         assert_eq!(config.total_timeout_secs(), 1800); // 30 minutes
     }
 
     #[test]
     fn test_fast_transfer_config() {
         let config = PollingConfig::fast_transfer();
-        assert_eq!(config.max_attempts, 30);
-        assert_eq!(config.poll_interval_secs, 5);
+        assert_eq!(config.max_attempts(), 30);
+        assert_eq!(config.poll_interval_secs(), 5);
         assert_eq!(config.total_timeout_secs(), 150); // 2.5 minutes
     }
 
     #[test]
     fn test_builder_methods() {
         let config = PollingConfig::default()
-            .with_max_attempts(20)
-            .with_poll_interval_secs(30);
-        assert_eq!(config.max_attempts, 20);
-        assert_eq!(config.poll_interval_secs, 30);
+            .try_with_max_attempts(20)
+            .unwrap()
+            .try_with_poll_interval_secs(30)
+            .unwrap();
+        assert_eq!(config.max_attempts(), 20);
+        assert_eq!(config.poll_interval_secs(), 30);
         assert_eq!(config.total_timeout_secs(), 600); // 10 minutes
     }
 
@@ -263,15 +279,10 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_accepts_defaults() {
-        assert!(PollingConfig::default().validate().is_ok());
-        assert!(PollingConfig::fast_transfer().validate().is_ok());
-    }
-
-    #[test]
-    fn test_validate_rejects_zero_max_attempts() {
-        let config = PollingConfig::default().with_max_attempts(0);
-        let err = config.validate().unwrap_err();
+    fn test_builder_rejects_zero_max_attempts() {
+        let err = PollingConfig::default()
+            .try_with_max_attempts(0)
+            .unwrap_err();
         assert!(
             matches!(err, CctpError::InvalidConfig(ref msg) if msg.contains("max_attempts")),
             "expected InvalidConfig mentioning max_attempts, got {err:?}"
@@ -279,9 +290,10 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_rejects_zero_poll_interval() {
-        let config = PollingConfig::default().with_poll_interval_secs(0);
-        let err = config.validate().unwrap_err();
+    fn test_builder_rejects_zero_poll_interval() {
+        let err = PollingConfig::default()
+            .try_with_poll_interval_secs(0)
+            .unwrap_err();
         assert!(
             matches!(err, CctpError::InvalidConfig(ref msg) if msg.contains("poll_interval_secs")),
             "expected InvalidConfig mentioning poll_interval_secs, got {err:?}"
@@ -291,8 +303,8 @@ mod tests {
     #[test]
     fn test_try_new_accepts_positive_values() {
         let config = PollingConfig::try_new(20, 30).unwrap();
-        assert_eq!(config.max_attempts, 20);
-        assert_eq!(config.poll_interval_secs, 30);
+        assert_eq!(config.max_attempts(), 20);
+        assert_eq!(config.poll_interval_secs(), 30);
     }
 
     #[test]
@@ -304,10 +316,7 @@ mod tests {
 
     #[test]
     fn test_total_timeout_saturates_on_overflow() {
-        let config = PollingConfig {
-            max_attempts: u32::MAX,
-            poll_interval_secs: u64::MAX,
-        };
+        let config = PollingConfig::try_new(u32::MAX, u64::MAX).unwrap();
         // u32::MAX * u64::MAX would overflow; saturating arithmetic clamps it.
         assert_eq!(config.total_timeout_secs(), u64::MAX);
     }
@@ -315,10 +324,31 @@ mod tests {
     #[test]
     fn test_total_timeout_with_large_in_range_values() {
         // 1_000_000 attempts * 3600 secs = 3.6e9, fits comfortably in u64.
-        let config = PollingConfig {
-            max_attempts: 1_000_000,
-            poll_interval_secs: 3600,
-        };
+        let config = PollingConfig::try_new(1_000_000, 3600).unwrap();
         assert_eq!(config.total_timeout_secs(), 3_600_000_000);
+    }
+
+    #[test]
+    fn test_serde_round_trip_preserves_wire_shape() {
+        let config = PollingConfig::try_new(20, 30).unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+        assert_eq!(json, r#"{"max_attempts":20,"poll_interval_secs":30}"#);
+        assert_eq!(
+            serde_json::from_str::<PollingConfig>(&json).unwrap(),
+            config
+        );
+    }
+
+    #[test]
+    fn test_deserialization_rejects_zero_fields() {
+        let zero_attempts =
+            serde_json::from_str::<PollingConfig>(r#"{"max_attempts":0,"poll_interval_secs":30}"#)
+                .unwrap_err();
+        assert!(zero_attempts.to_string().contains("max_attempts"));
+
+        let zero_interval =
+            serde_json::from_str::<PollingConfig>(r#"{"max_attempts":20,"poll_interval_secs":0}"#)
+                .unwrap_err();
+        assert!(zero_interval.to_string().contains("poll_interval_secs"));
     }
 }
