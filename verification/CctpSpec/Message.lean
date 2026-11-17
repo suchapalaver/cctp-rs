@@ -80,7 +80,7 @@ def encode (h : MessageHeader) : List UInt8 :=
 
 /-- Decodes an exactly-148-byte header. Domain IDs must be known and the
 header version must be the supported CCTP v2 wire version. Mirrors
-`MessageHeader::decode` applied to the 148-byte prefix of a message. -/
+`MessageHeader::parse` applied to the 148-byte prefix of a message. -/
 def decode (bs : List UInt8) : Option MessageHeader :=
   if bs.length = size then
     if natOfBe (slice bs 0 4) = supportedVersion then
@@ -262,7 +262,7 @@ def encode (b : BurnBody) : List UInt8 :=
 /-- Decodes a burn-message body: at least 228 bytes, supported body version,
 preserving the three address-like words raw; everything past byte 228 is hook
 data. Domain-aware EVM padding checks happen at the full-message layer.
-Mirrors `BurnMessageV2::decode`. -/
+Mirrors `BurnMessageV2::parse`. -/
 def decode (bs : List UInt8) : Option BurnBody :=
   if minSize ≤ bs.length then
     if natOfBe (slice bs 0 4) = supportedVersion then
@@ -432,7 +432,7 @@ def encode (m : Message) : List UInt8 :=
 /-- Decodes a canonical CCTP v2 burn-transfer message: a valid header on the
 first 148 bytes, a structurally valid burn body on the rest, and EVM padding
 only where the header's source/destination domains require it. Mirrors
-`ParsedV2Message::decode` / `ParsedV2Message::parse`. -/
+`ParsedV2Message::parse`. -/
 def decode (bs : List UInt8) : Option Message :=
   match MessageHeader.decode (bs.take MessageHeader.size),
         BurnBody.decode (bs.drop MessageHeader.size) with

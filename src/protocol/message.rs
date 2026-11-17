@@ -28,20 +28,6 @@ fn read_u32(bytes: &[u8], offset: usize) -> u32 {
     ])
 }
 
-fn check_supported_version(
-    layer: &str,
-    version: u32,
-    supported: u32,
-) -> Result<(), ParseMessageError> {
-    if version == supported {
-        Ok(())
-    } else {
-        Err(ParseMessageError::new(format!(
-            "unsupported CCTP v2 {layer} version {version}; supported version is {supported}"
-        )))
-    }
-}
-
 fn address_word(address: Address) -> FixedBytes<32> {
     address.into_word()
 }
@@ -54,7 +40,7 @@ fn push_word(bytes: &mut Vec<u8>, word: FixedBytes<32>) {
 ///
 /// Returns `None` unless `bytes` is exactly 32 bytes long and the leading 12
 /// bytes are zero (the CCTP `bytes32` padding convention for EVM addresses).
-/// Rejecting non-canonical words preserves the `decode(raw).encode() == raw`
+/// Rejecting non-canonical words preserves the `parse(raw).encode() == raw`
 /// invariant — otherwise stray leading bytes would be silently truncated on
 /// decode and reintroduced as zeros on re-encode.
 fn decode_address_word(bytes: &[u8]) -> Option<Address> {
@@ -71,52 +57,55 @@ fn is_canonical_evm_address_word(bytes: &[u8]) -> bool {
     bytes.len() == 32 && bytes[..12].iter().all(|byte| *byte == 0)
 }
 
-fn check_canonical_address_word(bytes: &[u8], field: &str) -> Result<(), ParseMessageError> {
-    if bytes.len() != 32 {
-        return Err(ParseMessageError::new(format!(
-            "{field} word requires 32 bytes, got {len}",
-            len = bytes.len()
-        )));
-    }
-    if !is_canonical_evm_address_word(bytes) {
-        return Err(ParseMessageError::new(format!(
-            "{field} word has non-zero leading bytes; canonical CCTP v2 address \
-             words must be zero-padded in the first 12 bytes"
-        )));
-    }
-    Ok(())
-}
-
-fn check_word_for_domain(
-    domain: DomainId,
-    bytes: &[u8],
-    field: &str,
-) -> Result<(), ParseMessageError> {
-    if domain.is_evm() {
-        check_canonical_address_word(bytes, field)
-    } else if bytes.len() != 32 {
-        Err(ParseMessageError::new(format!(
-            "{field} word requires 32 bytes, got {len}",
-            len = bytes.len()
-        )))
-    } else {
-        Ok(())
-    }
-}
-
 /// Error returned when parsing a canonical CCTP v2 message fails.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("invalid CCTP v2 message: {reason}")]
-pub struct ParseMessageError {
-    reason: String,
-}
-
-impl ParseMessageError {
-    fn new(reason: impl Into<String>) -> Self {
-        Self {
-            reason: reason.into(),
-        }
-    }
+#[non_exhaustive]
+pub enum ParseMessageError {
+    /// The input is shorter than the 148-byte message header.
+    #[error(
+        "invalid CCTP v2 message: header requires at least {minimum} bytes, got {actual}",
+        minimum = MessageHeader::SIZE
+    )]
+    HeaderTooShort { actual: usize },
+    /// The bytes following the header are shorter than the 228-byte burn body.
+    #[error(
+        "invalid CCTP v2 message: burn message body requires at least {minimum} bytes, got {actual}",
+        minimum = BurnMessageV2::MIN_SIZE
+    )]
+    BurnBodyTooShort { actual: usize },
+    /// The message header uses a wire version this parser does not understand.
+    #[error(
+        "invalid CCTP v2 message: unsupported CCTP v2 message header version {version}; supported version is {supported}",
+        supported = CCTP_V2_MESSAGE_VERSION
+    )]
+    UnsupportedHeaderVersion { version: u32 },
+    /// The burn body uses a wire version this parser does not understand.
+    #[error(
+        "invalid CCTP v2 message: unsupported CCTP v2 burn message body version {version}; supported version is {supported}",
+        supported = CCTP_V2_BURN_BODY_VERSION
+    )]
+    UnsupportedBurnBodyVersion { version: u32 },
+    /// The header's source-domain word is not in the modeled CCTP domain table.
+    #[error("invalid CCTP v2 message: unknown source domain ID {domain}")]
+    UnknownSourceDomain { domain: u32 },
+    /// The header's destination-domain word is not in the modeled CCTP domain table.
+    #[error("invalid CCTP v2 message: unknown destination domain ID {domain}")]
+    UnknownDestinationDomain { domain: u32 },
+    /// An EVM-source burn-token word is not canonically left-padded.
+    #[error(
+        "invalid CCTP v2 message: burn_token word has non-zero leading bytes; canonical CCTP v2 address words must be zero-padded in the first 12 bytes"
+    )]
+    NonCanonicalBurnToken,
+    /// An EVM-destination mint-recipient word is not canonically left-padded.
+    #[error(
+        "invalid CCTP v2 message: mint_recipient word has non-zero leading bytes; canonical CCTP v2 address words must be zero-padded in the first 12 bytes"
+    )]
+    NonCanonicalMintRecipient,
+    /// An EVM-source message-sender word is not canonically left-padded.
+    #[error(
+        "invalid CCTP v2 message: message_sender word has non-zero leading bytes; canonical CCTP v2 address words must be zero-padded in the first 12 bytes"
+    )]
+    NonCanonicalMessageSender,
 }
 
 /// CCTP v2 Message Header
@@ -272,61 +261,42 @@ impl MessageHeader {
         Bytes::from(bytes)
     }
 
-    /// Decodes a message header from bytes
-    ///
-    /// Returns `None` if the bytes are not at least [`MessageHeader::SIZE`] bytes long
-    /// or if domain IDs are invalid.
-    pub fn decode(bytes: &[u8]) -> Option<Self> {
+    /// Parses a message header and returns a descriptive error on failure.
+    pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
         if bytes.len() < Self::SIZE {
-            return None;
+            return Err(ParseMessageError::HeaderTooShort {
+                actual: bytes.len(),
+            });
         }
 
         let version = read_u32(bytes, 0);
         if version != Self::SUPPORTED_VERSION {
-            return None;
+            return Err(ParseMessageError::UnsupportedHeaderVersion { version });
         }
 
-        let source_domain = read_u32(bytes, 4);
-        let source_domain = DomainId::from_u32(source_domain)?;
+        let source_domain_id = read_u32(bytes, 4);
+        let source_domain =
+            DomainId::from_u32(source_domain_id).ok_or(ParseMessageError::UnknownSourceDomain {
+                domain: source_domain_id,
+            })?;
+        let destination_domain_id = read_u32(bytes, 8);
+        let destination_domain = DomainId::from_u32(destination_domain_id).ok_or(
+            ParseMessageError::UnknownDestinationDomain {
+                domain: destination_domain_id,
+            },
+        )?;
 
-        let destination_domain = read_u32(bytes, 8);
-        let destination_domain = DomainId::from_u32(destination_domain)?;
-
-        let nonce = FixedBytes::from_slice(&bytes[12..44]);
-        let sender = FixedBytes::from_slice(&bytes[44..76]);
-        let recipient = FixedBytes::from_slice(&bytes[76..108]);
-        let destination_caller = FixedBytes::from_slice(&bytes[108..140]);
-
-        let min_finality_threshold = read_u32(bytes, 140);
-        let finality_threshold_executed = read_u32(bytes, 144);
-
-        Some(Self {
+        Ok(Self {
             version,
             source_domain,
             destination_domain,
-            nonce,
-            sender,
-            recipient,
-            destination_caller,
-            min_finality_threshold,
-            finality_threshold_executed,
+            nonce: FixedBytes::from_slice(&bytes[12..44]),
+            sender: FixedBytes::from_slice(&bytes[44..76]),
+            recipient: FixedBytes::from_slice(&bytes[76..108]),
+            destination_caller: FixedBytes::from_slice(&bytes[108..140]),
+            min_finality_threshold: read_u32(bytes, 140),
+            finality_threshold_executed: read_u32(bytes, 144),
         })
-    }
-
-    /// Parses a message header and returns a descriptive error on failure.
-    pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
-        if bytes.len() < Self::SIZE {
-            return Err(ParseMessageError::new(format!(
-                "header requires at least {} bytes, got {}",
-                Self::SIZE,
-                bytes.len()
-            )));
-        }
-
-        let version = read_u32(bytes, 0);
-        check_supported_version("message header", version, Self::SUPPORTED_VERSION)?;
-
-        Self::decode(bytes).ok_or_else(|| ParseMessageError::new("failed to decode header"))
     }
 
     /// Returns true when the nonce is still the placeholder zero value from the on-chain event.
@@ -670,23 +640,25 @@ impl BurnMessageV2 {
         Bytes::from(bytes)
     }
 
-    /// Decodes a burn message body from bytes.
+    /// Parses a burn message body and returns a descriptive error on failure.
     ///
-    /// Returns `None` for bytes shorter than [`Self::MIN_SIZE`]. The three
-    /// address-like fields are preserved as raw 32-byte words because their
-    /// canonical shape is domain-dependent. For any accepted input,
-    /// `decode(raw).unwrap().encode() == raw`.
-    pub fn decode(bytes: &[u8]) -> Option<Self> {
+    /// Body-only parsing has no source/destination domain context, so it
+    /// preserves the three address-like fields as raw words. Use
+    /// [`ParsedV2Message::parse`] when domain-aware EVM padding validation is
+    /// required.
+    pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
         if bytes.len() < Self::MIN_SIZE {
-            return None;
+            return Err(ParseMessageError::BurnBodyTooShort {
+                actual: bytes.len(),
+            });
         }
 
         let version = read_u32(bytes, 0);
         if version != Self::SUPPORTED_VERSION {
-            return None;
+            return Err(ParseMessageError::UnsupportedBurnBodyVersion { version });
         }
 
-        Some(Self {
+        Ok(Self {
             version,
             burn_token: FixedBytes::from_slice(&bytes[4..36]),
             mint_recipient: FixedBytes::from_slice(&bytes[36..68]),
@@ -697,28 +669,6 @@ impl BurnMessageV2 {
             expiration_block: U256::from_be_slice(&bytes[196..228]),
             hook_data: Bytes::copy_from_slice(&bytes[228..]),
         })
-    }
-
-    /// Parses a burn message body and returns a descriptive error on failure.
-    ///
-    /// Body-only parsing has no source/destination domain context, so it
-    /// preserves the three address-like fields as raw words. Use
-    /// [`ParsedV2Message::parse`] when domain-aware EVM padding validation is
-    /// required.
-    pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
-        if bytes.len() < Self::MIN_SIZE {
-            return Err(ParseMessageError::new(format!(
-                "burn message body requires at least {} bytes, got {}",
-                Self::MIN_SIZE,
-                bytes.len()
-            )));
-        }
-
-        let version = read_u32(bytes, 0);
-        check_supported_version("burn message body", version, Self::SUPPORTED_VERSION)?;
-
-        Self::decode(bytes)
-            .ok_or_else(|| ParseMessageError::new("failed to decode burn message body"))
     }
 
     /// Returns true if this message has hook data
@@ -775,21 +725,21 @@ impl ParsedV2Message {
         header: MessageHeader,
         body: BurnMessageV2,
     ) -> std::result::Result<Self, ParseMessageError> {
-        check_word_for_domain(
-            header.source_domain,
-            body.burn_token.as_slice(),
-            "burn_token",
-        )?;
-        check_word_for_domain(
-            header.destination_domain,
-            body.mint_recipient.as_slice(),
-            "mint_recipient",
-        )?;
-        check_word_for_domain(
-            header.source_domain,
-            body.message_sender.as_slice(),
-            "message_sender",
-        )?;
+        if header.source_domain.is_evm()
+            && !is_canonical_evm_address_word(body.burn_token.as_slice())
+        {
+            return Err(ParseMessageError::NonCanonicalBurnToken);
+        }
+        if header.destination_domain.is_evm()
+            && !is_canonical_evm_address_word(body.mint_recipient.as_slice())
+        {
+            return Err(ParseMessageError::NonCanonicalMintRecipient);
+        }
+        if header.source_domain.is_evm()
+            && !is_canonical_evm_address_word(body.message_sender.as_slice())
+        {
+            return Err(ParseMessageError::NonCanonicalMessageSender);
+        }
         Ok(Self { header, body })
     }
 
@@ -810,21 +760,6 @@ impl ParsedV2Message {
         let mut bytes = self.header.encode().to_vec();
         bytes.extend_from_slice(&self.body.encode());
         Bytes::from(bytes)
-    }
-
-    /// Decodes a canonical CCTP v2 burn-transfer message.
-    ///
-    /// Returns `None` for inputs that are too short, carry an unknown domain
-    /// ID, or contain non-canonical EVM `bytes32` address words for the
-    /// message's source or destination domains. Non-EVM-domain body words are
-    /// preserved raw. For any accepted input, `decode(raw).unwrap().encode()
-    /// == raw` and `decode(raw).unwrap().message_hash() == keccak256(raw)`.
-    /// Use [`Self::summary`] to obtain the JSON-friendly projection used in
-    /// agent and tool responses.
-    pub fn decode(bytes: &[u8]) -> Option<Self> {
-        let header = MessageHeader::decode(bytes)?;
-        let body = BurnMessageV2::decode(&bytes[MessageHeader::SIZE..])?;
-        Self::new(header, body).ok()
     }
 
     /// Parses a canonical CCTP v2 burn-transfer message and returns a
@@ -1217,7 +1152,53 @@ mod tests {
     }
 
     #[test]
-    fn test_message_header_encode_decode() {
+    fn test_parse_message_errors_render_structured_context() {
+        let cases = [
+            (
+                ParseMessageError::HeaderTooShort { actual: 12 },
+                "invalid CCTP v2 message: header requires at least 148 bytes, got 12",
+            ),
+            (
+                ParseMessageError::BurnBodyTooShort { actual: 34 },
+                "invalid CCTP v2 message: burn message body requires at least 228 bytes, got 34",
+            ),
+            (
+                ParseMessageError::UnsupportedHeaderVersion { version: 2 },
+                "invalid CCTP v2 message: unsupported CCTP v2 message header version 2; supported version is 1",
+            ),
+            (
+                ParseMessageError::UnsupportedBurnBodyVersion { version: 9 },
+                "invalid CCTP v2 message: unsupported CCTP v2 burn message body version 9; supported version is 1",
+            ),
+            (
+                ParseMessageError::UnknownSourceDomain { domain: 999 },
+                "invalid CCTP v2 message: unknown source domain ID 999",
+            ),
+            (
+                ParseMessageError::UnknownDestinationDomain { domain: 998 },
+                "invalid CCTP v2 message: unknown destination domain ID 998",
+            ),
+            (
+                ParseMessageError::NonCanonicalBurnToken,
+                "invalid CCTP v2 message: burn_token word has non-zero leading bytes; canonical CCTP v2 address words must be zero-padded in the first 12 bytes",
+            ),
+            (
+                ParseMessageError::NonCanonicalMintRecipient,
+                "invalid CCTP v2 message: mint_recipient word has non-zero leading bytes; canonical CCTP v2 address words must be zero-padded in the first 12 bytes",
+            ),
+            (
+                ParseMessageError::NonCanonicalMessageSender,
+                "invalid CCTP v2 message: message_sender word has non-zero leading bytes; canonical CCTP v2 address words must be zero-padded in the first 12 bytes",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn test_message_header_encode_parse() {
         let header = MessageHeader::new(
             DomainId::Ethereum,
             DomainId::Arbitrum,
@@ -1232,23 +1213,36 @@ mod tests {
         let encoded = header.encode();
         assert_eq!(encoded.len(), MessageHeader::SIZE);
 
-        let decoded = MessageHeader::decode(&encoded).expect("should decode");
+        let decoded = MessageHeader::parse(&encoded).expect("should parse");
         assert_eq!(header, decoded);
     }
 
     #[test]
-    fn test_message_header_decode_too_short() {
+    fn test_message_header_parse_too_short() {
         let short_bytes = vec![0u8; 100];
-        assert!(MessageHeader::decode(&short_bytes).is_none());
+        assert_eq!(
+            MessageHeader::parse(&short_bytes),
+            Err(ParseMessageError::HeaderTooShort { actual: 100 })
+        );
     }
 
     #[test]
-    fn test_message_header_decode_invalid_domain() {
+    fn test_message_header_parse_invalid_domains() {
         let mut bytes = vec![0u8; MessageHeader::SIZE];
         bytes[0..4].copy_from_slice(&MessageHeader::SUPPORTED_VERSION.to_be_bytes());
-        // Set invalid source domain ID (999)
+
         bytes[4..8].copy_from_slice(&999u32.to_be_bytes());
-        assert!(MessageHeader::decode(&bytes).is_none());
+        assert_eq!(
+            MessageHeader::parse(&bytes),
+            Err(ParseMessageError::UnknownSourceDomain { domain: 999 })
+        );
+
+        bytes[4..8].copy_from_slice(&DomainId::Ethereum.as_u32().to_be_bytes());
+        bytes[8..12].copy_from_slice(&998u32.to_be_bytes());
+        assert_eq!(
+            MessageHeader::parse(&bytes),
+            Err(ParseMessageError::UnknownDestinationDomain { domain: 998 })
+        );
     }
 
     #[test]
@@ -1266,16 +1260,11 @@ mod tests {
         let mut encoded = header.encode().to_vec();
         encoded[0..4].copy_from_slice(&2u32.to_be_bytes());
 
-        assert!(
-            MessageHeader::decode(&encoded).is_none(),
-            "decode must reject unsupported message header versions"
-        );
         let err = MessageHeader::parse(&encoded)
             .expect_err("parse must reject unsupported message header versions");
-        assert!(
-            err.to_string()
-                .contains("unsupported CCTP v2 message header version 2"),
-            "parse error should name the unsupported header version: {err}"
+        assert_eq!(
+            err,
+            ParseMessageError::UnsupportedHeaderVersion { version: 2 }
         );
     }
 
@@ -1359,7 +1348,7 @@ mod tests {
     }
 
     #[test]
-    fn test_burn_message_v2_encode_decode_roundtrip() {
+    fn test_burn_message_v2_encode_parse_roundtrip() {
         let message = BurnMessageV2::new_with_max_fee(
             address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
             address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
@@ -1371,7 +1360,7 @@ mod tests {
         .with_expiration_block(U256::from(12345u64));
 
         let encoded = message.encode();
-        let decoded = BurnMessageV2::decode(&encoded).expect("burn message should decode");
+        let decoded = BurnMessageV2::parse(&encoded).expect("burn message should parse");
 
         assert_eq!(decoded, message);
         assert_eq!(
@@ -1386,16 +1375,20 @@ mod tests {
         let mut encoded = canonical_burn_body_bytes();
         encoded[0..4].copy_from_slice(&9u32.to_be_bytes());
 
-        assert!(
-            BurnMessageV2::decode(&encoded).is_none(),
-            "decode must reject unsupported burn body versions"
-        );
         let err = BurnMessageV2::parse(&encoded)
             .expect_err("parse must reject unsupported burn body versions");
-        assert!(
-            err.to_string()
-                .contains("unsupported CCTP v2 burn message body version 9"),
-            "parse error should name the unsupported body version: {err}"
+        assert_eq!(
+            err,
+            ParseMessageError::UnsupportedBurnBodyVersion { version: 9 }
+        );
+    }
+
+    #[test]
+    fn test_burn_message_v2_rejects_short_body() {
+        let short_bytes = vec![0u8; 100];
+        assert_eq!(
+            BurnMessageV2::parse(&short_bytes),
+            Err(ParseMessageError::BurnBodyTooShort { actual: 100 })
         );
     }
 
@@ -1418,19 +1411,15 @@ mod tests {
         bytes[36] = 0xee;
         bytes[100] = 0xdd;
 
-        let decoded = BurnMessageV2::decode(&bytes)
-            .expect("body-only decode preserves raw words without domain context");
-        assert_eq!(decoded.encode().as_ref(), bytes.as_slice());
-        assert_eq!(decoded.burn_token().as_slice(), &bytes[4..36]);
-        assert_eq!(decoded.mint_recipient().as_slice(), &bytes[36..68]);
-        assert_eq!(decoded.message_sender().as_slice(), &bytes[100..132]);
-        assert_eq!(decoded.burn_token_address(), None);
-        assert_eq!(decoded.mint_recipient_address(), None);
-        assert_eq!(decoded.message_sender_address(), None);
-
         let parsed = BurnMessageV2::parse(&bytes)
             .expect("body-only parse preserves raw words without domain context");
-        assert_eq!(parsed, decoded);
+        assert_eq!(parsed.encode().as_ref(), bytes.as_slice());
+        assert_eq!(parsed.burn_token().as_slice(), &bytes[4..36]);
+        assert_eq!(parsed.mint_recipient().as_slice(), &bytes[36..68]);
+        assert_eq!(parsed.message_sender().as_slice(), &bytes[100..132]);
+        assert_eq!(parsed.burn_token_address(), None);
+        assert_eq!(parsed.mint_recipient_address(), None);
+        assert_eq!(parsed.message_sender_address(), None);
     }
 
     #[test]
@@ -1440,10 +1429,28 @@ mod tests {
         // first-byte variants are also covered below; this pins the iteration
         // bound at 12 (not 11) so a regression that shortened the slice would
         // surface here.
-        for (offset, field, source_domain, destination_domain) in [
-            (4, "burn_token", DomainId::Ethereum, DomainId::Base),
-            (36, "mint_recipient", DomainId::Ethereum, DomainId::Base),
-            (100, "message_sender", DomainId::Ethereum, DomainId::Base),
+        for (offset, field, expected, source_domain, destination_domain) in [
+            (
+                4,
+                "burn_token",
+                ParseMessageError::NonCanonicalBurnToken,
+                DomainId::Ethereum,
+                DomainId::Base,
+            ),
+            (
+                36,
+                "mint_recipient",
+                ParseMessageError::NonCanonicalMintRecipient,
+                DomainId::Ethereum,
+                DomainId::Base,
+            ),
+            (
+                100,
+                "message_sender",
+                ParseMessageError::NonCanonicalMessageSender,
+                DomainId::Ethereum,
+                DomainId::Base,
+            ),
         ] {
             for padding_offset in [0, 11] {
                 let mut body_bytes = canonical_burn_body_bytes();
@@ -1461,16 +1468,9 @@ mod tests {
                 let mut bytes = header.encode().to_vec();
                 bytes.extend_from_slice(&body_bytes);
 
-                assert!(
-                    ParsedV2Message::decode(&bytes).is_none(),
-                    "domain-aware decode must reject non-canonical {field} word"
-                );
                 let err = ParsedV2Message::parse(&bytes)
                     .expect_err("domain-aware parse must reject non-canonical body words");
-                assert!(
-                    err.to_string().contains(field),
-                    "parse error should name the offending field {field}: {err}"
-                );
+                assert_eq!(err, expected.clone(), "wrong error for {field}");
             }
         }
     }
@@ -1500,7 +1500,7 @@ mod tests {
 
         let error = ParsedV2Message::new(header, body)
             .expect_err("safe construction must enforce domain-aware EVM padding");
-        assert!(error.to_string().contains("burn_token"));
+        assert_eq!(error, ParseMessageError::NonCanonicalBurnToken);
     }
 
     #[test]
@@ -1515,26 +1515,16 @@ mod tests {
         // Body burn_token word lives at MessageHeader::SIZE + 4; flip a padding byte.
         bytes[MessageHeader::SIZE + 4] = 0xff;
 
-        assert!(
-            ParsedV2Message::decode(&bytes).is_none(),
-            "ParsedV2Message::decode must reject non-canonical body address words"
-        );
         let err = ParsedV2Message::parse(&bytes)
             .expect_err("ParsedV2Message::parse must reject non-canonical body address words");
-        assert!(
-            err.to_string().contains("burn_token"),
-            "parse error should name the offending field: {err}"
-        );
+        assert_eq!(err, ParseMessageError::NonCanonicalBurnToken);
 
         // ParsedV2MessageSummary::parse is the agent/tool-facing entry point;
         // it must surface the same per-field rejection.
         let summary_err = ParsedV2MessageSummary::parse(&bytes).expect_err(
             "ParsedV2MessageSummary::parse must reject non-canonical body address words",
         );
-        assert!(
-            summary_err.to_string().contains("burn_token"),
-            "summary parse error should name the offending field: {summary_err}"
-        );
+        assert_eq!(summary_err, ParseMessageError::NonCanonicalBurnToken);
     }
 
     #[test]
@@ -1554,24 +1544,17 @@ mod tests {
         body[0..4].copy_from_slice(&9u32.to_be_bytes());
         bytes.extend_from_slice(&body);
 
-        assert!(
-            ParsedV2Message::decode(&bytes).is_none(),
-            "full decode must reject unsupported burn body versions"
-        );
         let err = ParsedV2Message::parse(&bytes)
             .expect_err("full parse must reject unsupported burn body versions");
-        assert!(
-            err.to_string()
-                .contains("unsupported CCTP v2 burn message body version 9"),
-            "parse error should name the unsupported body version: {err}"
+        assert_eq!(
+            err,
+            ParseMessageError::UnsupportedBurnBodyVersion { version: 9 }
         );
         let summary_err = ParsedV2MessageSummary::parse(&bytes)
             .expect_err("summary parse must reject unsupported burn body versions");
-        assert!(
-            summary_err
-                .to_string()
-                .contains("unsupported CCTP v2 burn message body version 9"),
-            "summary parse error should name the unsupported body version: {summary_err}"
+        assert_eq!(
+            summary_err,
+            ParseMessageError::UnsupportedBurnBodyVersion { version: 9 }
         );
     }
 

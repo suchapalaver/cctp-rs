@@ -431,11 +431,15 @@ sending a zero `maxFee`; fee-switch modes on older deployments fail with
 ### Agent Tooling: Inspect a Canonical V2 Message
 
 Tooling layers usually need structured JSON instead of raw message bytes. `ParsedV2Message`
-and `ParsedV2MessageSummary` decode the canonical message returned by Circle's v2 API
+and `ParsedV2MessageSummary` parse the canonical message returned by Circle's v2 API
 into serializable Rust types.
 
-Parsing failures return `ParseMessageError`, so this inspection path does not expand the
-existing `CctpError` surface used by bridge operations.
+Parsing failures return the non-exhaustive `ParseMessageError` enum, so callers
+can distinguish truncation, unsupported versions, unknown source/destination
+domains, and non-canonical EVM body words without parsing display text. Use
+`parse`, not a lossy optional decode adapter; v9 removes the redundant
+`MessageHeader::decode`, `BurnMessageV2::decode`, and
+`ParsedV2Message::decode` methods.
 
 The parser is strict about the current Circle CCTP v2 wire format: both the
 message header and burn body must use version `1`. Future format revisions are

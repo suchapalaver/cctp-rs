@@ -20,8 +20,8 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::{keccak256, Bytes, FixedBytes, U256};
 use cctp_rs::{
-    CctpTransferAsset, CctpV2, CctpV2Route, DomainId, FinalityThreshold, ParsedV2Message,
-    TransferMode,
+    CctpTransferAsset, CctpV2, CctpV2Route, DomainId, FinalityThreshold, MessageHeader,
+    ParseMessageError, ParsedV2Message, TransferMode,
 };
 use serde::Deserialize;
 
@@ -470,11 +470,6 @@ fn accepted_messages_parse_to_lean_model_fields() {
         let parsed = ParsedV2Message::parse(&raw).unwrap_or_else(|e| {
             panic!("vector {name}: Lean model accepts, production rejects: {e}")
         });
-        assert_eq!(
-            ParsedV2Message::decode(&raw).as_ref(),
-            Some(&parsed),
-            "vector {name}: decode and parse must agree"
-        );
 
         // Header fields.
         let header = &vector.header;
@@ -646,7 +641,7 @@ fn accepted_messages_parse_to_lean_model_fields() {
 }
 
 /// Every byte string the Lean model rejects must be rejected by the
-/// production parser too, with an error naming the modeled reason.
+/// production parser too, with a typed error matching the modeled reason.
 #[test]
 fn rejected_messages_fail_to_parse() {
     let fixtures = fixtures();
@@ -656,32 +651,37 @@ fn rejected_messages_fail_to_parse() {
         let name = &vector.name;
         let raw = bytes_of_hex(name, &vector.raw);
 
-        assert!(
-            ParsedV2Message::decode(&raw).is_none(),
-            "vector {name}: Lean model rejects, production decode accepted"
-        );
-        let error = ParsedV2Message::parse(&raw)
-            .expect_err(&format!(
-                "vector {name}: Lean model rejects, production parse accepted"
-            ))
-            .to_string();
+        let error = ParsedV2Message::parse(&raw).expect_err(&format!(
+            "vector {name}: Lean model rejects, production parse accepted"
+        ));
 
-        let expected_fragment = match vector.reject_kind.as_str() {
-            "too_short_header" => "header requires at least",
-            "too_short_body" => "burn message body requires at least",
-            // The production parser reports unknown domains as a header
-            // decode failure without naming the field.
-            "unknown_source_domain" | "unknown_destination_domain" => "failed to decode header",
-            "unsupported_header_version" => "unsupported CCTP v2 message header version",
-            "unsupported_body_version" => "unsupported CCTP v2 burn message body version",
-            "non_canonical_burn_token" => "burn_token",
-            "non_canonical_mint_recipient" => "mint_recipient",
-            "non_canonical_message_sender" => "message_sender",
+        let u32_at = |offset: usize| {
+            u32::from_be_bytes(
+                raw[offset..offset + 4]
+                    .try_into()
+                    .expect("modeled u32 field must contain four bytes"),
+            )
+        };
+        let expected = match vector.reject_kind.as_str() {
+            "too_short_header" => ParseMessageError::HeaderTooShort { actual: raw.len() },
+            "too_short_body" => ParseMessageError::BurnBodyTooShort {
+                actual: raw.len() - MessageHeader::SIZE,
+            },
+            "unknown_source_domain" => ParseMessageError::UnknownSourceDomain { domain: u32_at(4) },
+            "unknown_destination_domain" => {
+                ParseMessageError::UnknownDestinationDomain { domain: u32_at(8) }
+            }
+            "unsupported_header_version" => {
+                ParseMessageError::UnsupportedHeaderVersion { version: u32_at(0) }
+            }
+            "unsupported_body_version" => ParseMessageError::UnsupportedBurnBodyVersion {
+                version: u32_at(MessageHeader::SIZE),
+            },
+            "non_canonical_burn_token" => ParseMessageError::NonCanonicalBurnToken,
+            "non_canonical_mint_recipient" => ParseMessageError::NonCanonicalMintRecipient,
+            "non_canonical_message_sender" => ParseMessageError::NonCanonicalMessageSender,
             other => panic!("vector {name}: unknown reject kind {other}"),
         };
-        assert!(
-            error.contains(expected_fragment),
-            "vector {name}: error should mention '{expected_fragment}', got: {error}"
-        );
+        assert_eq!(error, expected, "vector {name}: wrong rejection category");
     }
 }

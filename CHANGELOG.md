@@ -64,6 +64,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CctpError::InvalidConfig(ConfigError::...)`. Keep a wildcard arm because
   both public error enums are non-exhaustive. The separate
   `InvalidAmount(String)` migration is tracked in issue #134.
+- **Breaking (planned for 9.0.0):** replaced the private reason `String` in
+  `ParseMessageError` with a public, non-exhaustive enum covering truncated
+  headers/bodies, unsupported versions, unknown source/destination domains,
+  and each non-canonical EVM body word. Unknown domains now retain both the
+  rejected ID and whether it appeared at the source or destination boundary.
+  Removed the redundant `MessageHeader::decode`, `BurnMessageV2::decode`, and
+  `ParsedV2Message::decode` methods so parser failures cannot be silently
+  erased into `Option::None`.
+
+  Migration: call the same-named `parse` method and handle
+  `Result<_, ParseMessageError>`. Replace display/substr matching with exact
+  variants and retain a wildcard arm because the enum is non-exhaustive.
 
 ### Fixed
 
