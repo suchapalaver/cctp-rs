@@ -142,9 +142,7 @@ async fn v1_attestation_polling_does_not_leak_span_across_await() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0x12u8; 32]),
-            PollingConfig::default()
-                .with_max_attempts(3)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(3, 1).unwrap(),
         )
         .await;
     probe.await.expect("probe task panicked");
@@ -203,9 +201,7 @@ async fn v2_attestation_polling_does_not_leak_span_across_await() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(3)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(3, 1).unwrap(),
         )
         .await;
     probe.await.expect("probe task panicked");

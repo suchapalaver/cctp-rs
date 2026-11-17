@@ -39,6 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same-named accessor methods; remove the version argument from
   `MessageHeader::new`; replace struct literals with the constructors above;
   and retain canonical message bytes instead of deserializing summary JSON.
+- **Breaking (planned for 9.0.0):** made `PollingConfig` nonzero by
+  construction. Its fields are private and exposed through `max_attempts()`
+  and `poll_interval_secs()`; custom values use `try_new`,
+  `try_with_max_attempts`, or `try_with_poll_interval_secs`, and serde rejects
+  zero values at the configuration boundary. `CctpV2Bridge::wait_for_receive`
+  now accepts `Option<PollingConfig>` instead of separate optional attempt and
+  interval integers, so its overrides cannot disagree or encode zero.
+
+  Migration: replace field reads with the same-named accessors, replace
+  infallible `with_*` calls with `try_*` calls, and replace
+  `wait_for_receive(message, attempts, interval)` with
+  `wait_for_receive(message, Some(PollingConfig::try_new(attempts, interval)?))`.
+  Pass `None` to retain chain-aware defaults.
 
 ### Fixed
 

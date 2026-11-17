@@ -62,9 +62,7 @@ async fn returns_complete_message_behind_failed_sibling() {
     let (message, attestation) = bridge(api_override)
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await
         .expect("a complete message must be returned despite a failed sibling");
@@ -109,9 +107,7 @@ async fn polls_until_a_pending_sibling_completes() {
     let (message, attestation) = bridge(api_override)
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(3)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(3, 1).unwrap(),
         )
         .await
         .expect("polling must continue past a failed sibling until the pending one completes");
@@ -137,9 +133,7 @@ async fn fails_when_every_message_failed() {
     let err = bridge(api_override)
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await
         .expect_err("an all-failed response must surface as a failure, not succeed");

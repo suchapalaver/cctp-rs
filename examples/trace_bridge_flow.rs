@@ -100,12 +100,7 @@ async fn main() -> Result<(), CctpError> {
 
     // Use minimal retries for demo purposes
     match bridge
-        .get_attestation(
-            message_hash,
-            cctp_rs::PollingConfig::default()
-                .with_max_attempts(2)
-                .with_poll_interval_secs(5),
-        )
+        .get_attestation(message_hash, cctp_rs::PollingConfig::try_new(2, 5)?)
         .await
     {
         Ok(attestation) => {

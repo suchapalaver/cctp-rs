@@ -153,9 +153,7 @@ async fn v1_process_response_span_records_attestation_failed() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0x12u8; 32]),
-            PollingConfig::default()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await;
     assert!(result.is_err(), "expected polling to fail on failed status");
@@ -193,9 +191,7 @@ async fn v1_attempt_span_records_http_request_failed() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0x12u8; 32]),
-            PollingConfig::default()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await;
     assert!(
@@ -245,9 +241,7 @@ async fn v1_process_response_span_records_attestation_data_missing() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0x12u8; 32]),
-            PollingConfig::default()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await;
     assert!(
@@ -298,9 +292,7 @@ async fn v2_process_response_span_records_attestation_failed() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await;
     assert!(result.is_err(), "expected polling to fail on failed status");
@@ -338,9 +330,7 @@ async fn v2_attempt_span_records_http_request_failed() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await;
     assert!(
@@ -395,9 +385,7 @@ async fn v2_process_response_span_records_attestation_data_missing() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await;
     assert!(
@@ -452,9 +440,7 @@ async fn v2_process_response_span_records_message_data_missing() {
     let result = bridge
         .get_attestation(
             FixedBytes::from([0xabu8; 32]),
-            PollingConfig::fast_transfer()
-                .with_max_attempts(1)
-                .with_poll_interval_secs(1),
+            PollingConfig::try_new(1, 1).unwrap(),
         )
         .await;
     assert!(
@@ -537,7 +523,10 @@ async fn v2_wait_for_receive_span_records_receive_timeout() {
         .build();
 
     let result = bridge
-        .wait_for_receive(b"any message bytes", Some(3), Some(1))
+        .wait_for_receive(
+            b"any message bytes",
+            Some(PollingConfig::try_new(3, 1).unwrap()),
+        )
         .await;
     assert!(
         result.is_err(),
