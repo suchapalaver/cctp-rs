@@ -520,6 +520,26 @@ normalizes them immediately and rejects missing, empty, or status-inconsistent
 payloads through `AttestationFailureKind`. A future major release may expose
 the validated state directly and narrow construction of the raw DTOs.
 
+Configuration failures carry a typed `ConfigError`, so applications can match
+the category without parsing display text. Both enums are non-exhaustive:
+
+```rust
+use cctp_rs::{CctpError, ConfigError, PollingConfig};
+
+let max_attempts = 30;
+let poll_interval_secs = 5;
+match PollingConfig::try_new(max_attempts, poll_interval_secs) {
+    Ok(config) => println!("Polling timeout: {}s", config.total_timeout_secs()),
+    Err(CctpError::InvalidConfig(ConfigError::PollingMaxAttemptsZero)) => {
+        println!("At least one polling attempt is required");
+    }
+    Err(CctpError::InvalidConfig(ConfigError::PollingIntervalZero)) => {
+        println!("Polling intervals cannot be zero");
+    }
+    Err(error) => println!("Configuration failed: {error}"),
+}
+```
+
 ```rust
 use cctp_rs::{CctpError, PollingConfig};
 

@@ -33,13 +33,14 @@ use alloy_signer_local::PrivateKeySigner;
 use cctp_rs::{CctpError, CctpV2, CctpV2Bridge, Erc20Contract, MintResult, PollingConfig};
 use common::funded_v2::{
     format_eth_balance, format_usdc_balance, redacted_rpc_url, supported_testnet_routes,
-    FundedV2Route, DEFAULT_TRANSFER_AMOUNT, MIN_NATIVE_BALANCE_WEI, MIN_USDC_BALANCE,
+    FundedV2Error, FundedV2Route, DEFAULT_TRANSFER_AMOUNT, MIN_NATIVE_BALANCE_WEI,
+    MIN_USDC_BALANCE,
 };
 use dotenvy::dotenv;
 use tracing::{info_span, Instrument};
 
 #[tokio::main]
-async fn main() -> Result<(), CctpError> {
+async fn main() -> Result<(), FundedV2Error> {
     // Load .env file
     dotenv().ok();
 

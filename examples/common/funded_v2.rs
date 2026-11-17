@@ -7,6 +7,7 @@ use std::{env, fmt::Display, str::FromStr};
 use alloy_chains::NamedChain;
 use alloy_primitives::{address, Address};
 use cctp_rs::{CctpError, CctpV2Route};
+use thiserror::Error;
 use url::Url;
 
 pub const DEFAULT_SOURCE_CHAIN: NamedChain = NamedChain::ArbitrumSepolia;
@@ -14,6 +15,54 @@ pub const DEFAULT_DESTINATION_CHAIN: NamedChain = NamedChain::BaseSepolia;
 pub const DEFAULT_TRANSFER_AMOUNT: u64 = 1_000_000;
 pub const MIN_NATIVE_BALANCE_WEI: u64 = 1_000_000_000_000_000;
 pub const MIN_USDC_BALANCE: u64 = 1_000_000;
+
+#[derive(Debug, Error)]
+pub enum FundedV2Error {
+    #[error(transparent)]
+    Cctp(#[from] CctpError),
+    #[error("funded examples refuse mainnet routes; use testnet source and destination chains")]
+    MainnetRoute,
+    #[error(
+        "{env_var}={value:?} is not a recognized chain; supported funded testnet aliases: {supported_aliases}"
+    )]
+    UnrecognizedChain {
+        env_var: String,
+        value: String,
+        supported_aliases: &'static str,
+    },
+    #[error("set {generic_env_var}, {chain_env_var}, or TESTNET_API_KEY for {chain}")]
+    MissingRpcConfig {
+        generic_env_var: String,
+        chain_env_var: &'static str,
+        chain: NamedChain,
+    },
+    #[error("{env_var} must be a valid HTTP RPC URL: {source}")]
+    InvalidRpcUrl {
+        env_var: String,
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("{env_var} must be an HTTP RPC URL with a host")]
+    InvalidRpcEndpoint { env_var: String },
+    #[error("{env_var} must be a valid EVM address: {source}")]
+    InvalidUsdcAddress {
+        env_var: String,
+        #[source]
+        source: alloy_primitives::hex::FromHexError,
+    },
+    #[error("no built-in testnet USDC address for {chain}; set {override_env_var}")]
+    MissingUsdcAddress {
+        chain: NamedChain,
+        override_env_var: String,
+    },
+    #[error(
+        "{chain} is not in this funded example's built-in testnet route table; supported routes use: {supported_aliases}"
+    )]
+    UnsupportedChain {
+        chain: NamedChain,
+        supported_aliases: &'static str,
+    },
+}
 
 #[derive(Debug, Clone)]
 pub struct FundedV2Route {
@@ -25,16 +74,13 @@ pub struct FundedV2Route {
 }
 
 impl FundedV2Route {
-    pub fn from_env() -> Result<Self, CctpError> {
+    pub fn from_env() -> Result<Self, FundedV2Error> {
         let source_chain = chain_from_env("SOURCE_CHAIN", DEFAULT_SOURCE_CHAIN)?;
         let destination_chain = chain_from_env("DESTINATION_CHAIN", DEFAULT_DESTINATION_CHAIN)?;
         let route = CctpV2Route::new(source_chain, destination_chain)?;
 
         if !source_chain.is_testnet() || !destination_chain.is_testnet() {
-            return Err(CctpError::InvalidConfig(
-                "funded examples refuse mainnet routes; use testnet source and destination chains"
-                    .to_string(),
-            ));
+            return Err(FundedV2Error::MainnetRoute);
         }
 
         Ok(Self {
@@ -91,14 +137,14 @@ pub fn supported_testnet_routes() -> &'static str {
     "sepolia, arbitrum-sepolia, base-sepolia, optimism-sepolia, avalanche-fuji, polygon-amoy"
 }
 
-fn chain_from_env(env_var: &str, default: NamedChain) -> Result<NamedChain, CctpError> {
+fn chain_from_env(env_var: &str, default: NamedChain) -> Result<NamedChain, FundedV2Error> {
     match env::var(env_var) {
         Ok(raw) if !raw.trim().is_empty() => parse_chain(env_var, &raw),
         _ => Ok(default),
     }
 }
 
-fn parse_chain(env_var: &str, raw: &str) -> Result<NamedChain, CctpError> {
+fn parse_chain(env_var: &str, raw: &str) -> Result<NamedChain, FundedV2Error> {
     let normalized = raw.trim().to_ascii_lowercase().replace(['_', ' '], "-");
 
     let chain = match normalized.as_str() {
@@ -110,19 +156,17 @@ fn parse_chain(env_var: &str, raw: &str) -> Result<NamedChain, CctpError> {
         "polygon-amoy" | "amoy" => NamedChain::PolygonAmoy,
         _ => NamedChain::from_str(&normalized)
             .or_else(|_| NamedChain::from_str(raw.trim()))
-            .map_err(|_| {
-                CctpError::InvalidConfig(format!(
-                    "{env_var}={raw:?} is not a recognized chain; supported funded testnet \
-                     aliases: {}",
-                    supported_testnet_routes()
-                ))
+            .map_err(|_| FundedV2Error::UnrecognizedChain {
+                env_var: env_var.to_string(),
+                value: raw.to_string(),
+                supported_aliases: supported_testnet_routes(),
             })?,
     };
 
     Ok(chain)
 }
 
-fn rpc_url_for(chain: NamedChain, generic_env_var: &str) -> Result<Url, CctpError> {
+fn rpc_url_for(chain: NamedChain, generic_env_var: &str) -> Result<Url, FundedV2Error> {
     if let Ok(raw) = env::var(generic_env_var) {
         if !raw.trim().is_empty() {
             return parse_rpc_url(generic_env_var, &raw);
@@ -136,10 +180,10 @@ fn rpc_url_for(chain: NamedChain, generic_env_var: &str) -> Result<Url, CctpErro
         }
     }
 
-    let api_key = env::var("TESTNET_API_KEY").map_err(|_| {
-        CctpError::InvalidConfig(format!(
-            "set {generic_env_var}, {chain_env_var}, or TESTNET_API_KEY for {chain}"
-        ))
+    let api_key = env::var("TESTNET_API_KEY").map_err(|_| FundedV2Error::MissingRpcConfig {
+        generic_env_var: generic_env_var.to_string(),
+        chain_env_var,
+        chain,
     })?;
 
     let alchemy_host = alchemy_host(chain).ok_or_else(|| unsupported_chain_env(chain))?;
@@ -149,34 +193,40 @@ fn rpc_url_for(chain: NamedChain, generic_env_var: &str) -> Result<Url, CctpErro
     )
 }
 
-fn parse_rpc_url(env_var: &str, rpc_url: &str) -> Result<Url, CctpError> {
-    let url: Url = rpc_url.parse().map_err(|err| {
-        CctpError::InvalidConfig(format!("{env_var} must be a valid HTTP RPC URL: {err}"))
-    })?;
+fn parse_rpc_url(env_var: &str, rpc_url: &str) -> Result<Url, FundedV2Error> {
+    let url: Url = rpc_url
+        .parse()
+        .map_err(|source| FundedV2Error::InvalidRpcUrl {
+            env_var: env_var.to_string(),
+            source,
+        })?;
 
     match (url.scheme(), url.host_str()) {
         ("http" | "https", Some(_)) => Ok(url),
-        _ => Err(CctpError::InvalidConfig(format!(
-            "{env_var} must be an HTTP RPC URL with a host"
-        ))),
+        _ => Err(FundedV2Error::InvalidRpcEndpoint {
+            env_var: env_var.to_string(),
+        }),
     }
 }
 
-fn usdc_address_for(chain: NamedChain, override_env_var: &str) -> Result<Address, CctpError> {
+fn usdc_address_for(chain: NamedChain, override_env_var: &str) -> Result<Address, FundedV2Error> {
     if let Ok(raw) = env::var(override_env_var) {
         if !raw.trim().is_empty() {
-            return raw.trim().parse().map_err(|err| {
-                CctpError::InvalidConfig(format!(
-                    "{override_env_var} must be a valid EVM address: {err}"
-                ))
-            });
+            return raw
+                .trim()
+                .parse()
+                .map_err(|source: alloy_primitives::hex::FromHexError| {
+                    FundedV2Error::InvalidUsdcAddress {
+                        env_var: override_env_var.to_string(),
+                        source,
+                    }
+                });
         }
     }
 
-    default_testnet_usdc(chain).ok_or_else(|| {
-        CctpError::InvalidConfig(format!(
-            "no built-in testnet USDC address for {chain}; set {override_env_var}"
-        ))
+    default_testnet_usdc(chain).ok_or_else(|| FundedV2Error::MissingUsdcAddress {
+        chain,
+        override_env_var: override_env_var.to_string(),
     })
 }
 
@@ -235,10 +285,48 @@ fn tx_explorer_base(chain: NamedChain) -> Option<&'static str> {
     })
 }
 
-fn unsupported_chain_env(chain: NamedChain) -> CctpError {
-    CctpError::InvalidConfig(format!(
-        "{chain} is not in this funded example's built-in testnet route table; \
-         supported routes use: {}",
-        supported_testnet_routes()
-    ))
+fn unsupported_chain_env(chain: NamedChain) -> FundedV2Error {
+    FundedV2Error::UnsupportedChain {
+        chain,
+        supported_aliases: supported_testnet_routes(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_chain_alias_preserves_typed_context() {
+        let error = parse_chain("SOURCE_CHAIN", "definitely-not-a-chain").unwrap_err();
+        assert!(matches!(
+            error,
+            FundedV2Error::UnrecognizedChain {
+                ref env_var,
+                ref value,
+                ..
+            } if env_var == "SOURCE_CHAIN" && value == "definitely-not-a-chain"
+        ));
+    }
+
+    #[test]
+    fn malformed_rpc_url_preserves_parse_error() {
+        let error = parse_rpc_url("SOURCE_RPC_URL", "://bad").unwrap_err();
+        assert!(matches!(
+            error,
+            FundedV2Error::InvalidRpcUrl { ref env_var, .. }
+                if env_var == "SOURCE_RPC_URL"
+        ));
+        assert!(std::error::Error::source(&error).is_some());
+    }
+
+    #[test]
+    fn non_http_rpc_url_has_distinct_category() {
+        let error = parse_rpc_url("SOURCE_RPC_URL", "ws://localhost:8545").unwrap_err();
+        assert!(matches!(
+            error,
+            FundedV2Error::InvalidRpcEndpoint { ref env_var }
+                if env_var == "SOURCE_RPC_URL"
+        ));
+    }
 }

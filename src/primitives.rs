@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::chain::addresses;
-use crate::{CctpError, CctpV2, DomainId, Result};
+use crate::{CctpError, CctpV2, ConfigError, DomainId, Result};
 
 const USDC_SCALE: u128 = 1_000_000;
 
@@ -304,14 +304,14 @@ impl CctpV2Route {
             return Err(CctpError::UnsupportedChain(destination));
         }
         if source == destination {
-            return Err(CctpError::InvalidConfig(
-                "source and destination chains must differ".to_string(),
-            ));
+            return Err(ConfigError::RouteSameChain { chain: source }.into());
         }
         if source.is_testnet() != destination.is_testnet() {
-            return Err(CctpError::InvalidConfig(
-                "source and destination chains must both be mainnet or both be testnet".to_string(),
-            ));
+            return Err(ConfigError::RouteEnvironmentMismatch {
+                source_chain: source,
+                destination_chain: destination,
+            }
+            .into());
         }
 
         Ok(Self {
@@ -723,7 +723,20 @@ mod tests {
     #[test]
     fn rejects_invalid_cctp_v2_routes() {
         assert!(CctpV2Route::new(NamedChain::Mainnet, NamedChain::Moonbeam).is_err());
-        assert!(CctpV2Route::new(NamedChain::Mainnet, NamedChain::Mainnet).is_err());
-        assert!(CctpV2Route::new(NamedChain::Mainnet, NamedChain::BaseSepolia).is_err());
+        assert!(matches!(
+            CctpV2Route::new(NamedChain::Mainnet, NamedChain::Mainnet),
+            Err(CctpError::InvalidConfig(ConfigError::RouteSameChain {
+                chain: NamedChain::Mainnet
+            }))
+        ));
+        assert!(matches!(
+            CctpV2Route::new(NamedChain::Mainnet, NamedChain::BaseSepolia),
+            Err(CctpError::InvalidConfig(
+                ConfigError::RouteEnvironmentMismatch {
+                    source_chain: NamedChain::Mainnet,
+                    destination_chain: NamedChain::BaseSepolia,
+                }
+            ))
+        ));
     }
 }

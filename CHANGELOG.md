@@ -52,6 +52,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `wait_for_receive(message, attempts, interval)` with
   `wait_for_receive(message, Some(PollingConfig::try_new(attempts, interval)?))`.
   Pass `None` to retain chain-aware defaults.
+- **Breaking (planned for 9.0.0):** replaced the free-form `String` inside
+  `CctpError::InvalidConfig` with the public, non-exhaustive `ConfigError`
+  enum. Polling and route validation failures now preserve their category and
+  relevant chain context for exact downstream matching. Funded examples use a
+  separate local error type for environment and RPC diagnostics rather than
+  expanding the SDK error vocabulary with application-specific states.
+
+  Migration: replace message or substring matching on
+  `CctpError::InvalidConfig(message)` with typed matching on
+  `CctpError::InvalidConfig(ConfigError::...)`. Keep a wildcard arm because
+  both public error enums are non-exhaustive. The separate
+  `InvalidAmount(String)` migration is tracked in issue #134.
 
 ### Fixed
 

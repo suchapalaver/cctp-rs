@@ -59,6 +59,32 @@ impl fmt::Display for AttestationFailureKind {
     }
 }
 
+/// Categorical reasons SDK configuration validation can fail.
+///
+/// Carried by [`CctpError::InvalidConfig`] so callers can react to known
+/// invalid states without parsing human-readable error messages.
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConfigError {
+    /// A polling loop was configured to make no attempts.
+    #[error("PollingConfig.max_attempts must be greater than 0")]
+    PollingMaxAttemptsZero,
+    /// A polling loop was configured to retry without sleeping.
+    #[error("PollingConfig.poll_interval_secs must be greater than 0")]
+    PollingIntervalZero,
+    /// A CCTP route used the same chain as both endpoints.
+    #[error("source and destination chains must differ (both were {chain:?})")]
+    RouteSameChain { chain: NamedChain },
+    /// A CCTP route crossed between mainnet and testnet environments.
+    #[error(
+        "source and destination chains must both be mainnet or both be testnet (got {source_chain:?} -> {destination_chain:?})"
+    )]
+    RouteEnvironmentMismatch {
+        source_chain: NamedChain,
+        destination_chain: NamedChain,
+    },
+}
+
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum CctpError {
@@ -124,7 +150,7 @@ pub enum CctpError {
     MessageSentEventMissing { tx_hash: TxHash },
 
     #[error("Invalid configuration: {0}")]
-    InvalidConfig(String),
+    InvalidConfig(#[from] ConfigError),
 
     #[error("Invalid amount: {0}")]
     InvalidAmount(String),
@@ -335,7 +361,7 @@ mod tests {
         let err = CctpError::ReceiveTimeout;
         assert!(err.is_timeout());
 
-        let err = CctpError::InvalidConfig("some error".to_string());
+        let err = CctpError::InvalidConfig(ConfigError::PollingMaxAttemptsZero);
         assert!(!err.is_timeout());
     }
 
@@ -368,7 +394,9 @@ mod tests {
     #[test]
     fn test_unrelated_errors_not_already_relayed() {
         assert!(!CctpError::AttestationTimeout.is_already_relayed());
-        assert!(!CctpError::InvalidConfig("test".to_string()).is_already_relayed());
+        assert!(
+            !CctpError::InvalidConfig(ConfigError::PollingMaxAttemptsZero).is_already_relayed()
+        );
         assert!(!CctpError::NotImplemented("test".to_string()).is_already_relayed());
         assert!(!CctpError::TransactionNotFound {
             tx_hash: TxHash::ZERO,
@@ -420,6 +448,41 @@ mod tests {
             render(AttestationFailureKind::UnexpectedMessage),
             "Attestation failed: message field present in a failed response",
         );
+    }
+
+    #[test]
+    fn test_config_error_kinds_render_structured_context() {
+        let cases = [
+            (
+                ConfigError::PollingMaxAttemptsZero,
+                "PollingConfig.max_attempts must be greater than 0",
+            ),
+            (
+                ConfigError::PollingIntervalZero,
+                "PollingConfig.poll_interval_secs must be greater than 0",
+            ),
+            (
+                ConfigError::RouteSameChain {
+                    chain: NamedChain::Mainnet,
+                },
+                "source and destination chains must differ (both were Mainnet)",
+            ),
+            (
+                ConfigError::RouteEnvironmentMismatch {
+                    source_chain: NamedChain::Mainnet,
+                    destination_chain: NamedChain::BaseSepolia,
+                },
+                "source and destination chains must both be mainnet or both be testnet (got Mainnet -> BaseSepolia)",
+            ),
+        ];
+
+        for (kind, expected) in cases {
+            assert_eq!(kind.to_string(), expected);
+            assert_eq!(
+                CctpError::from(kind).to_string(),
+                format!("Invalid configuration: {expected}")
+            );
+        }
     }
 
     #[test]
