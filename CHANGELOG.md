@@ -21,6 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Extended the Lean route model and generated Rust correspondence vectors to
   cover every newly enabled bridge network and official testnet.
+- **Breaking (planned for 9.0.0):** made `MessageHeader`, `BurnMessageV2`,
+  `ParsedV2Message`, and `ParsedV2MessageSummary` durable validated types.
+  Their fields are private and exposed through read-only accessors;
+  `MessageHeader::new` now supplies supported version 1 rather than accepting
+  a caller-provided version; raw burn-body construction uses
+  `BurnMessageV2::from_raw_words`; and full-message construction uses the
+  domain-validating `ParsedV2Message::new`.
+- **Breaking (planned for 9.0.0):** removed `Deserialize` from parsed message
+  values and summaries. Reparse canonical Circle message bytes with
+  `ParsedV2Message::parse` or `ParsedV2MessageSummary::parse`. Summary JSON
+  remains wire-compatible for output, but hashes, lengths, address
+  projections, and booleans are now computed from one canonical parsed
+  message and cannot be supplied as independent inputs.
+
+  Migration: replace `.header` / `.body` and summary field reads with their
+  same-named accessor methods; remove the version argument from
+  `MessageHeader::new`; replace struct literals with the constructors above;
+  and retain canonical message bytes instead of deserializing summary JSON.
 
 ### Fixed
 
