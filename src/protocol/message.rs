@@ -10,7 +10,7 @@
 //! Reference: <https://developers.circle.com/cctp/technical-guide>
 
 use alloy_primitives::{Address, Bytes, FixedBytes, U256};
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Serializer};
 use thiserror::Error;
 
 use super::DomainId;
@@ -104,10 +104,6 @@ fn check_word_for_domain(
     }
 }
 
-fn bytes_is_empty(bytes: &Bytes) -> bool {
-    bytes.is_empty()
-}
-
 /// Error returned when parsing a canonical CCTP v2 message fails.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("invalid CCTP v2 message: {reason}")]
@@ -141,26 +137,26 @@ impl ParseMessageError {
 /// - finalityThresholdExecuted: uint32 (4 bytes) - actual finality level
 ///
 /// Total fixed size: 4 + 4 + 4 + 32 + 32 + 32 + 32 + 4 + 4 = 148 bytes
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MessageHeader {
     /// Message format version
-    pub version: u32,
+    version: u32,
     /// Source blockchain domain ID
-    pub source_domain: DomainId,
+    source_domain: DomainId,
     /// Destination blockchain domain ID
-    pub destination_domain: DomainId,
+    destination_domain: DomainId,
     /// Unique message nonce assigned by Circle
-    pub nonce: FixedBytes<32>,
+    nonce: FixedBytes<32>,
     /// Address that sent the message (padded to 32 bytes)
-    pub sender: FixedBytes<32>,
+    sender: FixedBytes<32>,
     /// Address that will receive the message (padded to 32 bytes)
-    pub recipient: FixedBytes<32>,
+    recipient: FixedBytes<32>,
     /// Address authorized to call receiveMessage on destination (0 = anyone)
-    pub destination_caller: FixedBytes<32>,
+    destination_caller: FixedBytes<32>,
     /// Minimum finality threshold required (1000 = Fast, 2000 = Standard)
-    pub min_finality_threshold: u32,
+    min_finality_threshold: u32,
     /// Actual finality threshold when message was attested
-    pub finality_threshold_executed: u32,
+    finality_threshold_executed: u32,
 }
 
 impl MessageHeader {
@@ -169,10 +165,9 @@ impl MessageHeader {
     /// The only CCTP v2 message header version this parser understands.
     pub const SUPPORTED_VERSION: u32 = CCTP_V2_MESSAGE_VERSION;
 
-    /// Creates a new message header
+    /// Creates a new header using the only supported wire version.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        version: u32,
         source_domain: DomainId,
         destination_domain: DomainId,
         nonce: FixedBytes<32>,
@@ -183,7 +178,7 @@ impl MessageHeader {
         finality_threshold_executed: u32,
     ) -> Self {
         Self {
-            version,
+            version: Self::SUPPORTED_VERSION,
             source_domain,
             destination_domain,
             nonce,
@@ -193,6 +188,60 @@ impl MessageHeader {
             min_finality_threshold,
             finality_threshold_executed,
         }
+    }
+
+    /// Returns the validated message format version.
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Returns the source blockchain domain.
+    #[must_use]
+    pub const fn source_domain(&self) -> DomainId {
+        self.source_domain
+    }
+
+    /// Returns the destination blockchain domain.
+    #[must_use]
+    pub const fn destination_domain(&self) -> DomainId {
+        self.destination_domain
+    }
+
+    /// Returns the canonical 32-byte nonce.
+    #[must_use]
+    pub const fn nonce(&self) -> FixedBytes<32> {
+        self.nonce
+    }
+
+    /// Returns the canonical 32-byte sender word.
+    #[must_use]
+    pub const fn sender(&self) -> FixedBytes<32> {
+        self.sender
+    }
+
+    /// Returns the canonical 32-byte recipient word.
+    #[must_use]
+    pub const fn recipient(&self) -> FixedBytes<32> {
+        self.recipient
+    }
+
+    /// Returns the canonical 32-byte destination-caller word.
+    #[must_use]
+    pub const fn destination_caller(&self) -> FixedBytes<32> {
+        self.destination_caller
+    }
+
+    /// Returns the requested minimum finality threshold as its wire value.
+    #[must_use]
+    pub const fn min_finality_threshold(&self) -> u32 {
+        self.min_finality_threshold
+    }
+
+    /// Returns the executed finality threshold as its wire value.
+    #[must_use]
+    pub const fn finality_threshold_executed(&self) -> u32 {
+        self.finality_threshold_executed
     }
 
     /// Encodes the message header to bytes
@@ -295,7 +344,8 @@ impl MessageHeader {
     pub fn sender_address(&self) -> Option<Address> {
         self.source_domain
             .is_evm()
-            .then(|| Address::from_slice(&self.sender.as_slice()[12..32]))
+            .then(|| decode_address_word(self.sender.as_slice()))
+            .flatten()
     }
 
     /// Returns the recipient as an EVM `Address` when the destination domain is EVM.
@@ -306,7 +356,8 @@ impl MessageHeader {
     pub fn recipient_address(&self) -> Option<Address> {
         self.destination_domain
             .is_evm()
-            .then(|| Address::from_slice(&self.recipient.as_slice()[12..32]))
+            .then(|| decode_address_word(self.recipient.as_slice()))
+            .flatten()
     }
 
     /// Returns the destination caller as an EVM `Address` when one is set and
@@ -320,9 +371,7 @@ impl MessageHeader {
         if self.is_permissionless() || !self.destination_domain.is_evm() {
             return None;
         }
-        Some(Address::from_slice(
-            &self.destination_caller.as_slice()[12..32],
-        ))
+        decode_address_word(self.destination_caller.as_slice())
     }
 
     /// Returns true when the message can be relayed by anyone.
@@ -374,29 +423,29 @@ impl MessageHeader {
 /// - hookData: dynamic bytes - arbitrary data for destination chain hooks
 ///
 /// Total fixed size: 4 + 32 + 32 + 32 + 32 + 32 + 32 + 32 = 228 bytes + dynamic hookData
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BurnMessageV2 {
     /// Message body version
-    pub version: u32,
+    version: u32,
     /// Canonical 32-byte token word from the source domain.
-    pub burn_token: FixedBytes<32>,
+    burn_token: FixedBytes<32>,
     /// Canonical 32-byte recipient word for the destination domain.
-    pub mint_recipient: FixedBytes<32>,
+    mint_recipient: FixedBytes<32>,
     /// Amount of tokens being transferred (in wei/smallest unit)
-    pub amount: U256,
+    amount: U256,
     /// Canonical 32-byte sender word from the source domain.
-    pub message_sender: FixedBytes<32>,
+    message_sender: FixedBytes<32>,
     /// Maximum fee the sender is willing to pay.
     ///
     /// This is independent of requested finality: Fast Transfer and
     /// fee-switch Standard Transfer messages may both carry a fee cap.
-    pub max_fee: U256,
+    max_fee: U256,
     /// Actual fee that was charged
-    pub fee_executed: U256,
+    fee_executed: U256,
     /// Block number after which the message expires (anti-replay protection)
-    pub expiration_block: U256,
+    expiration_block: U256,
     /// Optional hook data for programmable transfers
-    pub hook_data: Bytes,
+    hook_data: Bytes,
 }
 
 impl BurnMessageV2 {
@@ -404,6 +453,89 @@ impl BurnMessageV2 {
     pub const MIN_SIZE: usize = 228;
     /// The only CCTP v2 burn body version this parser understands.
     pub const SUPPORTED_VERSION: u32 = CCTP_V2_BURN_BODY_VERSION;
+
+    /// Creates a version-1 burn body from canonical wire words.
+    ///
+    /// The address-like words are intentionally not projected to EVM
+    /// addresses because their meaning depends on the containing header's
+    /// domains. [`ParsedV2Message::new`] performs that domain-aware check.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_raw_words(
+        burn_token: FixedBytes<32>,
+        mint_recipient: FixedBytes<32>,
+        amount: U256,
+        message_sender: FixedBytes<32>,
+        max_fee: U256,
+        fee_executed: U256,
+        expiration_block: U256,
+        hook_data: Bytes,
+    ) -> Self {
+        Self {
+            version: Self::SUPPORTED_VERSION,
+            burn_token,
+            mint_recipient,
+            amount,
+            message_sender,
+            max_fee,
+            fee_executed,
+            expiration_block,
+            hook_data,
+        }
+    }
+
+    /// Returns the validated burn-body version.
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Returns the canonical 32-byte burn-token word.
+    #[must_use]
+    pub const fn burn_token(&self) -> FixedBytes<32> {
+        self.burn_token
+    }
+
+    /// Returns the canonical 32-byte mint-recipient word.
+    #[must_use]
+    pub const fn mint_recipient(&self) -> FixedBytes<32> {
+        self.mint_recipient
+    }
+
+    /// Returns the transfer amount in atomic units.
+    #[must_use]
+    pub const fn amount(&self) -> U256 {
+        self.amount
+    }
+
+    /// Returns the canonical 32-byte message-sender word.
+    #[must_use]
+    pub const fn message_sender(&self) -> FixedBytes<32> {
+        self.message_sender
+    }
+
+    /// Returns the maximum fee cap.
+    #[must_use]
+    pub const fn max_fee(&self) -> U256 {
+        self.max_fee
+    }
+
+    /// Returns the executed fee.
+    #[must_use]
+    pub const fn fee_executed(&self) -> U256 {
+        self.fee_executed
+    }
+
+    /// Returns the expiration block.
+    #[must_use]
+    pub const fn expiration_block(&self) -> U256 {
+        self.expiration_block
+    }
+
+    /// Returns the hook data.
+    #[must_use]
+    pub const fn hook_data(&self) -> &Bytes {
+        &self.hook_data
+    }
 
     /// Creates a new burn message with standard settings (no fast transfer, no hooks)
     pub fn new(
@@ -589,38 +721,6 @@ impl BurnMessageV2 {
             .ok_or_else(|| ParseMessageError::new("failed to decode burn message body"))
     }
 
-    fn parse_for_domains(
-        bytes: &[u8],
-        source_domain: DomainId,
-        destination_domain: DomainId,
-    ) -> std::result::Result<Self, ParseMessageError> {
-        if bytes.len() < Self::MIN_SIZE {
-            return Err(ParseMessageError::new(format!(
-                "burn message body requires at least {} bytes, got {}",
-                Self::MIN_SIZE,
-                bytes.len()
-            )));
-        }
-
-        let version = read_u32(bytes, 0);
-        check_supported_version("burn message body", version, Self::SUPPORTED_VERSION)?;
-
-        check_word_for_domain(source_domain, &bytes[4..36], "burn_token")?;
-        check_word_for_domain(destination_domain, &bytes[36..68], "mint_recipient")?;
-        check_word_for_domain(source_domain, &bytes[100..132], "message_sender")?;
-
-        Self::decode(bytes)
-            .ok_or_else(|| ParseMessageError::new("failed to decode burn message body"))
-    }
-
-    fn decode_for_domains(
-        bytes: &[u8],
-        source_domain: DomainId,
-        destination_domain: DomainId,
-    ) -> Option<Self> {
-        Self::parse_for_domains(bytes, source_domain, destination_domain).ok()
-    }
-
     /// Returns true if this message has hook data
     pub fn has_hooks(&self) -> bool {
         !self.hook_data.is_empty()
@@ -651,14 +751,60 @@ impl BurnMessageV2 {
 /// Parsed representation of a canonical CCTP v2 transfer message.
 ///
 /// This combines the fixed-size message header with the burn message body and
-/// can be serialized directly for agent or tool responses.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// can be serialized directly for agent or tool responses. Its fields are
+/// private so a value accepted by the strict parser remains valid for its
+/// entire lifetime.
+///
+/// ```compile_fail
+/// fn replace_header(message: &mut cctp_rs::ParsedV2Message) {
+///     message.header = message.header().clone();
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ParsedV2Message {
-    pub header: MessageHeader,
-    pub body: BurnMessageV2,
+    header: MessageHeader,
+    body: BurnMessageV2,
 }
 
 impl ParsedV2Message {
+    /// Creates a parsed message from validated component values.
+    ///
+    /// EVM-domain body words must use canonical 12-zero-byte padding. Raw
+    /// words for non-EVM domains are preserved without projection.
+    pub fn new(
+        header: MessageHeader,
+        body: BurnMessageV2,
+    ) -> std::result::Result<Self, ParseMessageError> {
+        check_word_for_domain(
+            header.source_domain,
+            body.burn_token.as_slice(),
+            "burn_token",
+        )?;
+        check_word_for_domain(
+            header.destination_domain,
+            body.mint_recipient.as_slice(),
+            "mint_recipient",
+        )?;
+        check_word_for_domain(
+            header.source_domain,
+            body.message_sender.as_slice(),
+            "message_sender",
+        )?;
+        Ok(Self { header, body })
+    }
+
+    /// Returns the validated message header.
+    #[must_use]
+    pub const fn header(&self) -> &MessageHeader {
+        &self.header
+    }
+
+    /// Returns the validated burn-message body.
+    #[must_use]
+    pub const fn body(&self) -> &BurnMessageV2 {
+        &self.body
+    }
+
     /// Encodes the full CCTP v2 message.
     pub fn encode(&self) -> Bytes {
         let mut bytes = self.header.encode().to_vec();
@@ -677,12 +823,8 @@ impl ParsedV2Message {
     /// agent and tool responses.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let header = MessageHeader::decode(bytes)?;
-        let body = BurnMessageV2::decode_for_domains(
-            &bytes[MessageHeader::SIZE..],
-            header.source_domain,
-            header.destination_domain,
-        )?;
-        Some(Self { header, body })
+        let body = BurnMessageV2::decode(&bytes[MessageHeader::SIZE..])?;
+        Self::new(header, body).ok()
     }
 
     /// Parses a canonical CCTP v2 burn-transfer message and returns a
@@ -696,12 +838,8 @@ impl ParsedV2Message {
     /// [`Self::summary`].
     pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
         let header = MessageHeader::parse(bytes)?;
-        let body = BurnMessageV2::parse_for_domains(
-            &bytes[MessageHeader::SIZE..],
-            header.source_domain,
-            header.destination_domain,
-        )?;
-        Ok(Self { header, body })
+        let body = BurnMessageV2::parse(&bytes[MessageHeader::SIZE..])?;
+        Self::new(header, body)
     }
 
     /// Returns the keccak256 message hash used by the destination contract.
@@ -730,66 +868,17 @@ impl ParsedV2Message {
     /// projection for the authoritative value.
     #[must_use]
     pub fn summary(&self) -> ParsedV2MessageSummary {
-        let encoded = self.encode();
-        let message_hash = alloy_primitives::keccak256(&encoded);
-        let message_len_bytes = encoded.len();
-
         ParsedV2MessageSummary {
-            message_hash,
-            message_len_bytes,
-            source_domain: self.header.source_domain,
-            destination_domain: self.header.destination_domain,
-            message_version: self.header.version,
-            body_version: self.body.version,
-            nonce: self.header.nonce,
-            has_placeholder_nonce: self.header.has_placeholder_nonce(),
-            sender_bytes: self.header.sender,
-            sender: self.header.sender_address(),
-            recipient_bytes: self.header.recipient,
-            recipient: self.header.recipient_address(),
-            destination_caller_bytes: self.header.destination_caller,
-            destination_caller: self.header.destination_caller_address(),
-            permissionless_relay: self.header.is_permissionless(),
-            requested_finality: self.header.requested_finality(),
-            attested_finality: self.header.attested_finality(),
-            burn_token_bytes: self.body.burn_token,
-            burn_token: self
-                .header
-                .source_domain
-                .is_evm()
-                .then(|| self.body.burn_token_address())
-                .flatten(),
-            mint_recipient_bytes: self.body.mint_recipient,
-            mint_recipient: self
-                .header
-                .destination_domain
-                .is_evm()
-                .then(|| self.body.mint_recipient_address())
-                .flatten(),
-            amount: self.body.amount,
-            message_sender_bytes: self.body.message_sender,
-            message_sender: self
-                .header
-                .source_domain
-                .is_evm()
-                .then(|| self.body.message_sender_address())
-                .flatten(),
-            max_fee: self.body.max_fee,
-            fee_executed: self.body.fee_executed,
-            expiration_block: self.body.expiration_block,
-            hook_data: self.body.hook_data.clone(),
-            hook_data_len_bytes: self.body.hook_data.len(),
-            has_hooks: self.body.has_hooks(),
-            is_fast_transfer: self.is_fast_transfer(),
+            message: self.clone(),
         }
     }
 }
 
 /// JSON-friendly summary of a canonical CCTP v2 transfer message.
 ///
-/// `DomainId` values serialize as `snake_case` strings. Future crate releases may
-/// add new domain variants, so older versions of the crate may reject summaries
-/// containing unknown domain names.
+/// `DomainId` values serialize as `snake_case` strings. Future crate releases
+/// may add new domain variants, so JSON consumers should treat those values as
+/// non-exhaustive.
 ///
 /// # Address fields and non-EVM domains
 ///
@@ -808,74 +897,312 @@ impl ParsedV2Message {
 /// canonical 32-byte wire values, while the EVM-shaped address projections are
 /// populated only for the source or destination domains where that projection
 /// is meaningful.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Summaries are output-only projections. Deserialize canonical message bytes
+/// with [`Self::parse`] instead of accepting redundant JSON fields that may
+/// contradict one another.
+///
+/// ```compile_fail
+/// let _: cctp_rs::ParsedV2MessageSummary =
+///     serde_json::from_str("{}").expect("summaries are not deserializable");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedV2MessageSummary {
-    pub message_hash: FixedBytes<32>,
-    pub message_len_bytes: usize,
-    pub source_domain: DomainId,
-    pub destination_domain: DomainId,
-    pub message_version: u32,
-    pub body_version: u32,
-    pub nonce: FixedBytes<32>,
-    pub has_placeholder_nonce: bool,
-    /// Canonical 32-byte sender word from the header. Always populated.
-    pub sender_bytes: FixedBytes<32>,
-    /// EVM sender address, populated only when `source_domain.is_evm()`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sender: Option<Address>,
-    /// Canonical 32-byte recipient word from the header. Always populated.
-    pub recipient_bytes: FixedBytes<32>,
-    /// EVM recipient address, populated only when `destination_domain.is_evm()`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recipient: Option<Address>,
-    /// Canonical 32-byte destination caller word. Zero for permissionless messages.
-    pub destination_caller_bytes: FixedBytes<32>,
-    /// EVM destination caller address, populated only when the message is not
-    /// permissionless and `destination_domain.is_evm()`.
-    ///
-    /// A `None` here is therefore ambiguous on its own — use
-    /// `permissionless_relay` to disambiguate. A `None` with
-    /// `permissionless_relay == true` means the message is open to any relayer;
-    /// a `None` with `permissionless_relay == false` means a caller is set but
-    /// the destination is non-EVM, and `destination_caller_bytes` carries the
-    /// canonical value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub destination_caller: Option<Address>,
-    pub permissionless_relay: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requested_finality: Option<FinalityThreshold>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub attested_finality: Option<FinalityThreshold>,
-    /// Canonical 32-byte burn token word from the body. Always populated.
-    pub burn_token_bytes: FixedBytes<32>,
-    /// EVM burn token address, populated only when `source_domain.is_evm()`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub burn_token: Option<Address>,
-    /// Canonical 32-byte mint recipient word from the body. Always populated.
-    pub mint_recipient_bytes: FixedBytes<32>,
-    /// EVM mint recipient address, populated only when `destination_domain.is_evm()`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mint_recipient: Option<Address>,
-    pub amount: U256,
-    /// Canonical 32-byte message sender word from the body. Always populated.
-    pub message_sender_bytes: FixedBytes<32>,
-    /// EVM message sender address, populated only when `source_domain.is_evm()`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_sender: Option<Address>,
-    pub max_fee: U256,
-    pub fee_executed: U256,
-    pub expiration_block: U256,
-    #[serde(default, skip_serializing_if = "bytes_is_empty")]
-    pub hook_data: Bytes,
-    pub hook_data_len_bytes: usize,
-    pub has_hooks: bool,
-    pub is_fast_transfer: bool,
+    message: ParsedV2Message,
 }
 
 impl ParsedV2MessageSummary {
     /// Parses and summarizes a canonical CCTP v2 transfer message.
     pub fn parse(bytes: &[u8]) -> std::result::Result<Self, ParseMessageError> {
         ParsedV2Message::parse(bytes).map(|message| message.summary())
+    }
+
+    /// Returns the canonical parsed message backing this projection.
+    #[must_use]
+    pub const fn message(&self) -> &ParsedV2Message {
+        &self.message
+    }
+
+    /// Returns the keccak256 hash of the canonical message bytes.
+    #[must_use]
+    pub fn message_hash(&self) -> FixedBytes<32> {
+        self.message.message_hash()
+    }
+
+    /// Returns the canonical message length in bytes.
+    #[must_use]
+    pub fn message_len_bytes(&self) -> usize {
+        self.message.encode().len()
+    }
+
+    /// Returns the source blockchain domain.
+    #[must_use]
+    pub const fn source_domain(&self) -> DomainId {
+        self.message.header.source_domain
+    }
+
+    /// Returns the destination blockchain domain.
+    #[must_use]
+    pub const fn destination_domain(&self) -> DomainId {
+        self.message.header.destination_domain
+    }
+
+    /// Returns the validated message-header version.
+    #[must_use]
+    pub const fn message_version(&self) -> u32 {
+        self.message.header.version
+    }
+
+    /// Returns the validated burn-body version.
+    #[must_use]
+    pub const fn body_version(&self) -> u32 {
+        self.message.body.version
+    }
+
+    /// Returns the canonical 32-byte nonce.
+    #[must_use]
+    pub const fn nonce(&self) -> FixedBytes<32> {
+        self.message.header.nonce
+    }
+
+    /// Returns whether the nonce is the zero placeholder from an on-chain event.
+    #[must_use]
+    pub fn has_placeholder_nonce(&self) -> bool {
+        self.message.header.has_placeholder_nonce()
+    }
+
+    /// Returns the canonical 32-byte sender word.
+    #[must_use]
+    pub const fn sender_bytes(&self) -> FixedBytes<32> {
+        self.message.header.sender
+    }
+
+    /// Returns the sender as an EVM address when that projection is valid.
+    #[must_use]
+    pub fn sender(&self) -> Option<Address> {
+        self.message.header.sender_address()
+    }
+
+    /// Returns the canonical 32-byte recipient word.
+    #[must_use]
+    pub const fn recipient_bytes(&self) -> FixedBytes<32> {
+        self.message.header.recipient
+    }
+
+    /// Returns the recipient as an EVM address when that projection is valid.
+    #[must_use]
+    pub fn recipient(&self) -> Option<Address> {
+        self.message.header.recipient_address()
+    }
+
+    /// Returns the canonical 32-byte destination-caller word.
+    #[must_use]
+    pub const fn destination_caller_bytes(&self) -> FixedBytes<32> {
+        self.message.header.destination_caller
+    }
+
+    /// Returns the destination caller as an EVM address when one is set and valid.
+    #[must_use]
+    pub fn destination_caller(&self) -> Option<Address> {
+        self.message.header.destination_caller_address()
+    }
+
+    /// Returns whether any relayer may submit the message.
+    #[must_use]
+    pub fn permissionless_relay(&self) -> bool {
+        self.message.header.is_permissionless()
+    }
+
+    /// Returns the requested finality when it is a known CCTP threshold.
+    #[must_use]
+    pub fn requested_finality(&self) -> Option<FinalityThreshold> {
+        self.message.header.requested_finality()
+    }
+
+    /// Returns the executed finality when it is a known CCTP threshold.
+    #[must_use]
+    pub fn attested_finality(&self) -> Option<FinalityThreshold> {
+        self.message.header.attested_finality()
+    }
+
+    /// Returns the canonical 32-byte burn-token word.
+    #[must_use]
+    pub const fn burn_token_bytes(&self) -> FixedBytes<32> {
+        self.message.body.burn_token
+    }
+
+    /// Returns the burn token as an EVM address when that projection is valid.
+    #[must_use]
+    pub fn burn_token(&self) -> Option<Address> {
+        self.source_domain()
+            .is_evm()
+            .then(|| self.message.body.burn_token_address())
+            .flatten()
+    }
+
+    /// Returns the canonical 32-byte mint-recipient word.
+    #[must_use]
+    pub const fn mint_recipient_bytes(&self) -> FixedBytes<32> {
+        self.message.body.mint_recipient
+    }
+
+    /// Returns the mint recipient as an EVM address when that projection is valid.
+    #[must_use]
+    pub fn mint_recipient(&self) -> Option<Address> {
+        self.destination_domain()
+            .is_evm()
+            .then(|| self.message.body.mint_recipient_address())
+            .flatten()
+    }
+
+    /// Returns the transfer amount in atomic units.
+    #[must_use]
+    pub const fn amount(&self) -> U256 {
+        self.message.body.amount
+    }
+
+    /// Returns the canonical 32-byte message-sender word.
+    #[must_use]
+    pub const fn message_sender_bytes(&self) -> FixedBytes<32> {
+        self.message.body.message_sender
+    }
+
+    /// Returns the message sender as an EVM address when that projection is valid.
+    #[must_use]
+    pub fn message_sender(&self) -> Option<Address> {
+        self.source_domain()
+            .is_evm()
+            .then(|| self.message.body.message_sender_address())
+            .flatten()
+    }
+
+    /// Returns the maximum fee cap.
+    #[must_use]
+    pub const fn max_fee(&self) -> U256 {
+        self.message.body.max_fee
+    }
+
+    /// Returns the fee executed by Circle.
+    #[must_use]
+    pub const fn fee_executed(&self) -> U256 {
+        self.message.body.fee_executed
+    }
+
+    /// Returns the expiration block.
+    #[must_use]
+    pub const fn expiration_block(&self) -> U256 {
+        self.message.body.expiration_block
+    }
+
+    /// Returns the canonical hook data.
+    #[must_use]
+    pub const fn hook_data(&self) -> &Bytes {
+        &self.message.body.hook_data
+    }
+
+    /// Returns the hook-data length in bytes.
+    #[must_use]
+    pub fn hook_data_len_bytes(&self) -> usize {
+        self.hook_data().len()
+    }
+
+    /// Returns whether the message carries hook data.
+    #[must_use]
+    pub fn has_hooks(&self) -> bool {
+        self.message.body.has_hooks()
+    }
+
+    /// Returns whether the header requests Fast Transfer finality.
+    #[must_use]
+    pub fn is_fast_transfer(&self) -> bool {
+        self.message.is_fast_transfer()
+    }
+}
+
+#[derive(Serialize)]
+struct ParsedV2MessageSummaryRef<'a> {
+    message_hash: FixedBytes<32>,
+    message_len_bytes: usize,
+    source_domain: DomainId,
+    destination_domain: DomainId,
+    message_version: u32,
+    body_version: u32,
+    nonce: FixedBytes<32>,
+    has_placeholder_nonce: bool,
+    sender_bytes: FixedBytes<32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sender: Option<Address>,
+    recipient_bytes: FixedBytes<32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recipient: Option<Address>,
+    destination_caller_bytes: FixedBytes<32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    destination_caller: Option<Address>,
+    permissionless_relay: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requested_finality: Option<FinalityThreshold>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attested_finality: Option<FinalityThreshold>,
+    burn_token_bytes: FixedBytes<32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    burn_token: Option<Address>,
+    mint_recipient_bytes: FixedBytes<32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mint_recipient: Option<Address>,
+    amount: U256,
+    message_sender_bytes: FixedBytes<32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_sender: Option<Address>,
+    max_fee: U256,
+    fee_executed: U256,
+    expiration_block: U256,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hook_data: Option<&'a Bytes>,
+    hook_data_len_bytes: usize,
+    has_hooks: bool,
+    is_fast_transfer: bool,
+}
+
+impl Serialize for ParsedV2MessageSummary {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = self.message.encode();
+        ParsedV2MessageSummaryRef {
+            message_hash: alloy_primitives::keccak256(&encoded),
+            message_len_bytes: encoded.len(),
+            source_domain: self.source_domain(),
+            destination_domain: self.destination_domain(),
+            message_version: self.message_version(),
+            body_version: self.body_version(),
+            nonce: self.nonce(),
+            has_placeholder_nonce: self.has_placeholder_nonce(),
+            sender_bytes: self.sender_bytes(),
+            sender: self.sender(),
+            recipient_bytes: self.recipient_bytes(),
+            recipient: self.recipient(),
+            destination_caller_bytes: self.destination_caller_bytes(),
+            destination_caller: self.destination_caller(),
+            permissionless_relay: self.permissionless_relay(),
+            requested_finality: self.requested_finality(),
+            attested_finality: self.attested_finality(),
+            burn_token_bytes: self.burn_token_bytes(),
+            burn_token: self.burn_token(),
+            mint_recipient_bytes: self.mint_recipient_bytes(),
+            mint_recipient: self.mint_recipient(),
+            amount: self.amount(),
+            message_sender_bytes: self.message_sender_bytes(),
+            message_sender: self.message_sender(),
+            max_fee: self.max_fee(),
+            fee_executed: self.fee_executed(),
+            expiration_block: self.expiration_block(),
+            hook_data: self.has_hooks().then(|| self.hook_data()),
+            hook_data_len_bytes: self.hook_data_len_bytes(),
+            has_hooks: self.has_hooks(),
+            is_fast_transfer: self.is_fast_transfer(),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -892,7 +1219,6 @@ mod tests {
     #[test]
     fn test_message_header_encode_decode() {
         let header = MessageHeader::new(
-            1,
             DomainId::Ethereum,
             DomainId::Arbitrum,
             FixedBytes::from([1u8; 32]),
@@ -928,7 +1254,6 @@ mod tests {
     #[test]
     fn test_message_header_rejects_unsupported_version() {
         let header = MessageHeader::new(
-            MessageHeader::SUPPORTED_VERSION,
             DomainId::Ethereum,
             DomainId::Arbitrum,
             FixedBytes::from([1u8; 32]),
@@ -963,18 +1288,18 @@ mod tests {
 
         let msg = BurnMessageV2::new(burn_token, mint_recipient, amount, sender);
 
-        assert_eq!(msg.version, 1);
-        assert_eq!(msg.burn_token, burn_token.into_word());
+        assert_eq!(msg.version(), 1);
+        assert_eq!(msg.burn_token(), burn_token.into_word());
         assert_eq!(msg.burn_token_address(), Some(burn_token));
-        assert_eq!(msg.mint_recipient, mint_recipient.into_word());
+        assert_eq!(msg.mint_recipient(), mint_recipient.into_word());
         assert_eq!(msg.mint_recipient_address(), Some(mint_recipient));
-        assert_eq!(msg.amount, amount);
-        assert_eq!(msg.message_sender, sender.into_word());
+        assert_eq!(msg.amount(), amount);
+        assert_eq!(msg.message_sender(), sender.into_word());
         assert_eq!(msg.message_sender_address(), Some(sender));
-        assert_eq!(msg.max_fee, U256::ZERO);
-        assert_eq!(msg.fee_executed, U256::ZERO);
-        assert_eq!(msg.expiration_block, U256::ZERO);
-        assert!(msg.hook_data.is_empty());
+        assert_eq!(msg.max_fee(), U256::ZERO);
+        assert_eq!(msg.fee_executed(), U256::ZERO);
+        assert_eq!(msg.expiration_block(), U256::ZERO);
+        assert!(msg.hook_data().is_empty());
         assert!(!msg.has_hooks());
         assert!(!msg.has_nonzero_max_fee());
     }
@@ -990,7 +1315,7 @@ mod tests {
         let msg =
             BurnMessageV2::new_with_max_fee(burn_token, mint_recipient, amount, sender, max_fee);
 
-        assert_eq!(msg.max_fee, max_fee);
+        assert_eq!(msg.max_fee(), max_fee);
         assert!(msg.has_nonzero_max_fee());
         assert!(!msg.has_hooks());
     }
@@ -1011,7 +1336,7 @@ mod tests {
             hook_data.clone(),
         );
 
-        assert_eq!(msg.hook_data, hook_data);
+        assert_eq!(msg.hook_data(), &hook_data);
         assert!(msg.has_hooks());
         assert!(!msg.has_nonzero_max_fee());
     }
@@ -1030,7 +1355,7 @@ mod tests {
 
         assert!(msg.has_nonzero_max_fee());
         assert!(msg.has_hooks());
-        assert_eq!(msg.expiration_block, U256::from(1000u64));
+        assert_eq!(msg.expiration_block(), U256::from(1000u64));
     }
 
     #[test]
@@ -1096,9 +1421,9 @@ mod tests {
         let decoded = BurnMessageV2::decode(&bytes)
             .expect("body-only decode preserves raw words without domain context");
         assert_eq!(decoded.encode().as_ref(), bytes.as_slice());
-        assert_eq!(decoded.burn_token.as_slice(), &bytes[4..36]);
-        assert_eq!(decoded.mint_recipient.as_slice(), &bytes[36..68]);
-        assert_eq!(decoded.message_sender.as_slice(), &bytes[100..132]);
+        assert_eq!(decoded.burn_token().as_slice(), &bytes[4..36]);
+        assert_eq!(decoded.mint_recipient().as_slice(), &bytes[36..68]);
+        assert_eq!(decoded.message_sender().as_slice(), &bytes[100..132]);
         assert_eq!(decoded.burn_token_address(), None);
         assert_eq!(decoded.mint_recipient_address(), None);
         assert_eq!(decoded.message_sender_address(), None);
@@ -1121,23 +1446,61 @@ mod tests {
             (100, "message_sender", DomainId::Ethereum, DomainId::Base),
         ] {
             for padding_offset in [0, 11] {
-                let mut bytes = canonical_burn_body_bytes();
-                bytes[offset + padding_offset] = 0xff;
+                let mut body_bytes = canonical_burn_body_bytes();
+                body_bytes[offset + padding_offset] = 0xff;
+                let header = MessageHeader::new(
+                    source_domain,
+                    destination_domain,
+                    FixedBytes::from([0x11; 32]),
+                    address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
+                    address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+                    FixedBytes::ZERO,
+                    FinalityThreshold::Standard.as_u32(),
+                    FinalityThreshold::Standard.as_u32(),
+                );
+                let mut bytes = header.encode().to_vec();
+                bytes.extend_from_slice(&body_bytes);
 
                 assert!(
-                    BurnMessageV2::decode_for_domains(&bytes, source_domain, destination_domain)
-                        .is_none(),
+                    ParsedV2Message::decode(&bytes).is_none(),
                     "domain-aware decode must reject non-canonical {field} word"
                 );
-                let err =
-                    BurnMessageV2::parse_for_domains(&bytes, source_domain, destination_domain)
-                        .expect_err("domain-aware parse must reject non-canonical body words");
+                let err = ParsedV2Message::parse(&bytes)
+                    .expect_err("domain-aware parse must reject non-canonical body words");
                 assert!(
                     err.to_string().contains(field),
                     "parse error should name the offending field {field}: {err}"
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_safe_full_message_constructor_rejects_non_canonical_evm_words() {
+        let header = MessageHeader::new(
+            DomainId::Ethereum,
+            DomainId::Base,
+            FixedBytes::from([0x11; 32]),
+            address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+            FixedBytes::ZERO,
+            FinalityThreshold::Standard.as_u32(),
+            FinalityThreshold::Standard.as_u32(),
+        );
+        let body = BurnMessageV2::from_raw_words(
+            FixedBytes::from([0xff; 32]),
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+            U256::from(1_000_000u64),
+            address!("1234567890abcdef1234567890abcdef12345678").into_word(),
+            U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
+            Bytes::new(),
+        );
+
+        let error = ParsedV2Message::new(header, body)
+            .expect_err("safe construction must enforce domain-aware EVM padding");
+        assert!(error.to_string().contains("burn_token"));
     }
 
     #[test]
@@ -1177,7 +1540,6 @@ mod tests {
     #[test]
     fn test_parsed_v2_message_rejects_unsupported_body_version() {
         let header = MessageHeader::new(
-            MessageHeader::SUPPORTED_VERSION,
             DomainId::Ethereum,
             DomainId::Base,
             FixedBytes::from([1u8; 32]),
@@ -1216,7 +1578,6 @@ mod tests {
     #[test]
     fn test_message_header_permissionless_helpers() {
         let header = MessageHeader::new(
-            1,
             DomainId::Ethereum,
             DomainId::Base,
             FixedBytes::from([0u8; 32]),
@@ -1246,10 +1607,27 @@ mod tests {
     }
 
     #[test]
+    fn test_message_header_does_not_project_non_canonical_evm_words() {
+        let header = MessageHeader::new(
+            DomainId::Ethereum,
+            DomainId::Base,
+            FixedBytes::from([0x11; 32]),
+            FixedBytes::from([0xff; 32]),
+            FixedBytes::from([0xee; 32]),
+            FixedBytes::from([0xdd; 32]),
+            FinalityThreshold::Standard.as_u32(),
+            FinalityThreshold::Standard.as_u32(),
+        );
+
+        assert_eq!(header.sender_address(), None);
+        assert_eq!(header.recipient_address(), None);
+        assert_eq!(header.destination_caller_address(), None);
+    }
+
+    #[test]
     fn test_transfer_kind_uses_requested_finality_not_max_fee() {
-        let message = |finality: FinalityThreshold, max_fee: U256| ParsedV2Message {
-            header: MessageHeader::new(
-                1,
+        let message = |finality: FinalityThreshold, max_fee: U256| {
+            let header = MessageHeader::new(
                 DomainId::Ethereum,
                 DomainId::Base,
                 FixedBytes::from([0x11; 32]),
@@ -1258,27 +1636,28 @@ mod tests {
                 FixedBytes::ZERO,
                 finality.as_u32(),
                 finality.as_u32(),
-            ),
-            body: BurnMessageV2::new(
+            );
+            let body = BurnMessageV2::new(
                 address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
                 address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
                 U256::from(1_000_000u64),
                 address!("1234567890abcdef1234567890abcdef12345678"),
             )
-            .with_max_fee(max_fee),
+            .with_max_fee(max_fee);
+            ParsedV2Message::new(header, body).expect("canonical EVM message")
         };
 
         let zero_fee_fast = message(FinalityThreshold::Fast, U256::ZERO);
-        assert!(zero_fee_fast.header.is_fast_transfer());
+        assert!(zero_fee_fast.header().is_fast_transfer());
         assert!(zero_fee_fast.is_fast_transfer());
-        assert!(!zero_fee_fast.body.has_nonzero_max_fee());
-        assert!(zero_fee_fast.summary().is_fast_transfer);
+        assert!(!zero_fee_fast.body().has_nonzero_max_fee());
+        assert!(zero_fee_fast.summary().is_fast_transfer());
 
         let fee_switch_standard = message(FinalityThreshold::Standard, U256::from(42u64));
-        assert!(!fee_switch_standard.header.is_fast_transfer());
+        assert!(!fee_switch_standard.header().is_fast_transfer());
         assert!(!fee_switch_standard.is_fast_transfer());
-        assert!(fee_switch_standard.body.has_nonzero_max_fee());
-        assert!(!fee_switch_standard.summary().is_fast_transfer);
+        assert!(fee_switch_standard.body().has_nonzero_max_fee());
+        assert!(!fee_switch_standard.summary().is_fast_transfer());
     }
 
     #[test]
@@ -1288,100 +1667,89 @@ mod tests {
         let parsed = ParsedV2Message::parse(&raw_message).expect("message should parse");
         let summary = parsed.summary();
 
-        assert_eq!(parsed.header.source_domain, DomainId::Arbitrum);
-        assert_eq!(parsed.header.destination_domain, DomainId::Base);
-        assert!(!parsed.header.has_placeholder_nonce());
+        assert_eq!(parsed.header().source_domain(), DomainId::Arbitrum);
+        assert_eq!(parsed.header().destination_domain(), DomainId::Base);
+        assert!(!parsed.header().has_placeholder_nonce());
         assert_eq!(
-            parsed.header.requested_finality(),
+            parsed.header().requested_finality(),
             Some(FinalityThreshold::Standard)
         );
         assert_eq!(
-            parsed.header.attested_finality(),
+            parsed.header().attested_finality(),
             Some(FinalityThreshold::Standard)
         );
         assert_eq!(
-            parsed.body.burn_token,
+            parsed.body().burn_token(),
             address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word()
         );
         assert_eq!(
-            parsed.body.burn_token_address(),
+            parsed.body().burn_token_address(),
             Some(address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"))
         );
         assert_eq!(
-            parsed.body.mint_recipient,
+            parsed.body().mint_recipient(),
             address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word()
         );
         assert_eq!(
-            parsed.body.mint_recipient_address(),
+            parsed.body().mint_recipient_address(),
             Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"))
         );
-        assert_eq!(parsed.body.amount, U256::from(1_000_000u64));
+        assert_eq!(parsed.body().amount(), U256::from(1_000_000u64));
         assert_eq!(
-            parsed.body.message_sender,
+            parsed.body().message_sender(),
             address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word()
         );
         assert_eq!(
-            parsed.body.message_sender_address(),
+            parsed.body().message_sender_address(),
             Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"))
         );
-        assert_eq!(parsed.body.max_fee, U256::ZERO);
-        assert_eq!(parsed.body.fee_executed, U256::ZERO);
-        assert_eq!(parsed.body.expiration_block, U256::ZERO);
-        assert!(parsed.body.hook_data.is_empty());
+        assert_eq!(parsed.body().max_fee(), U256::ZERO);
+        assert_eq!(parsed.body().fee_executed(), U256::ZERO);
+        assert_eq!(parsed.body().expiration_block(), U256::ZERO);
+        assert!(parsed.body().hook_data().is_empty());
         assert_eq!(parsed.encode().as_ref(), raw_message.as_slice());
         assert_eq!(
             parsed.message_hash(),
             alloy_primitives::keccak256(&raw_message)
         );
         assert_eq!(
-            summary.message_hash,
+            summary.message_hash(),
             alloy_primitives::keccak256(&raw_message)
         );
-        assert!(summary.permissionless_relay);
-        assert!(!summary.has_hooks);
-        assert!(!summary.is_fast_transfer);
+        assert!(summary.permissionless_relay());
+        assert!(!summary.has_hooks());
+        assert!(!summary.is_fast_transfer());
 
         let json = serde_json::to_value(&summary).expect("summary should serialize");
-        let round_tripped: ParsedV2MessageSummary =
-            serde_json::from_value(json).expect("summary should round-trip");
-        assert_eq!(round_tripped, summary);
+        assert_eq!(json["message_hash"], summary.message_hash().to_string());
+        assert_eq!(json["message_len_bytes"], raw_message.len());
+        assert_eq!(json["permissionless_relay"], true);
+        assert_eq!(json["has_hooks"], false);
+        assert_eq!(json["is_fast_transfer"], false);
+        assert_eq!(summary.message().encode().as_ref(), raw_message.as_slice());
     }
 
     #[test]
     fn test_parsed_v2_message_summary_omits_empty_optionals() {
-        let summary = ParsedV2MessageSummary {
-            message_hash: FixedBytes::from([0x11; 32]),
-            message_len_bytes: 376,
-            source_domain: DomainId::Ethereum,
-            destination_domain: DomainId::Base,
-            message_version: 1,
-            body_version: 1,
-            nonce: FixedBytes::from([0x22; 32]),
-            has_placeholder_nonce: false,
-            sender_bytes: address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
-            sender: Some(address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D")),
-            recipient_bytes: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
-            recipient: Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")),
-            destination_caller_bytes: FixedBytes::ZERO,
-            destination_caller: None,
-            permissionless_relay: true,
-            requested_finality: Some(FinalityThreshold::Standard),
-            attested_finality: Some(FinalityThreshold::Standard),
-            burn_token_bytes: address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
-            burn_token: Some(address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D")),
-            mint_recipient_bytes: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
-            mint_recipient: Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")),
-            amount: U256::from(1_000_000u64),
-            message_sender_bytes: address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
-            message_sender: Some(address!("7F7D081724F0240c64C9E01CDe4626602f9a0192")),
-            max_fee: U256::ZERO,
-            fee_executed: U256::ZERO,
-            expiration_block: U256::ZERO,
-            hook_data: Bytes::new(),
-            hook_data_len_bytes: 0,
-            has_hooks: false,
-            is_fast_transfer: false,
-        };
+        let header = MessageHeader::new(
+            DomainId::Ethereum,
+            DomainId::Base,
+            FixedBytes::from([0x22; 32]),
+            address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D").into_word(),
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192").into_word(),
+            FixedBytes::ZERO,
+            FinalityThreshold::Standard.as_u32(),
+            FinalityThreshold::Standard.as_u32(),
+        );
+        let body = BurnMessageV2::new(
+            address!("75FaF114EAFb1bdbE2f0316Df893Fd58ce46AA4D"),
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
+            U256::from(1_000_000u64),
+            address!("7F7D081724F0240c64C9E01CDe4626602f9a0192"),
+        );
+        let summary = ParsedV2Message::new(header, body)
+            .expect("canonical EVM message")
+            .summary();
 
         let json = serde_json::to_value(summary).expect("summary should serialize");
         assert!(json.get("destination_caller").is_none());
@@ -1396,7 +1764,6 @@ mod tests {
         let recipient = address!("7F7D081724F0240c64C9E01CDe4626602f9a0192");
 
         let header = MessageHeader::new(
-            1,
             DomainId::Solana,
             DomainId::Base,
             FixedBytes::from([0x11u8; 32]),
@@ -1406,42 +1773,41 @@ mod tests {
             FinalityThreshold::Standard.as_u32(),
             FinalityThreshold::Standard.as_u32(),
         );
-        let body = BurnMessageV2 {
-            version: 1,
-            burn_token: solana_burn_token_word,
-            mint_recipient: recipient.into_word(),
-            amount: U256::from(1_000_000u64),
-            message_sender: solana_message_sender_word,
-            max_fee: U256::ZERO,
-            fee_executed: U256::ZERO,
-            expiration_block: U256::ZERO,
-            hook_data: Bytes::new(),
-        };
-        let message = ParsedV2Message { header, body };
+        let body = BurnMessageV2::from_raw_words(
+            solana_burn_token_word,
+            recipient.into_word(),
+            U256::from(1_000_000u64),
+            solana_message_sender_word,
+            U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
+            Bytes::new(),
+        );
+        let message = ParsedV2Message::new(header, body).expect("valid non-EVM source words");
         let encoded = message.encode();
         let parsed = ParsedV2Message::parse(&encoded)
             .expect("non-EVM source body words must parse and round-trip");
         assert_eq!(parsed.encode(), encoded);
 
-        assert_eq!(parsed.header.sender_address(), None);
-        assert_eq!(parsed.header.recipient_address(), Some(recipient));
-        assert_eq!(parsed.body.burn_token, solana_burn_token_word);
-        assert_eq!(parsed.body.burn_token_address(), None);
-        assert_eq!(parsed.body.message_sender, solana_message_sender_word);
-        assert_eq!(parsed.body.message_sender_address(), None);
-        assert_eq!(parsed.body.mint_recipient_address(), Some(recipient));
+        assert_eq!(parsed.header().sender_address(), None);
+        assert_eq!(parsed.header().recipient_address(), Some(recipient));
+        assert_eq!(parsed.body().burn_token(), solana_burn_token_word);
+        assert_eq!(parsed.body().burn_token_address(), None);
+        assert_eq!(parsed.body().message_sender(), solana_message_sender_word);
+        assert_eq!(parsed.body().message_sender_address(), None);
+        assert_eq!(parsed.body().mint_recipient_address(), Some(recipient));
 
         let summary = parsed.summary();
-        assert_eq!(summary.sender, None);
-        assert_eq!(summary.sender_bytes, solana_sender_word);
-        assert_eq!(summary.recipient, Some(recipient));
-        assert_eq!(summary.recipient_bytes, recipient.into_word());
-        assert_eq!(summary.burn_token, None);
-        assert_eq!(summary.burn_token_bytes, solana_burn_token_word);
-        assert_eq!(summary.message_sender, None);
-        assert_eq!(summary.message_sender_bytes, solana_message_sender_word);
-        assert_eq!(summary.mint_recipient, Some(recipient));
-        assert_eq!(summary.mint_recipient_bytes, recipient.into_word());
+        assert_eq!(summary.sender(), None);
+        assert_eq!(summary.sender_bytes(), solana_sender_word);
+        assert_eq!(summary.recipient(), Some(recipient));
+        assert_eq!(summary.recipient_bytes(), recipient.into_word());
+        assert_eq!(summary.burn_token(), None);
+        assert_eq!(summary.burn_token_bytes(), solana_burn_token_word);
+        assert_eq!(summary.message_sender(), None);
+        assert_eq!(summary.message_sender_bytes(), solana_message_sender_word);
+        assert_eq!(summary.mint_recipient(), Some(recipient));
+        assert_eq!(summary.mint_recipient_bytes(), recipient.into_word());
 
         let json = serde_json::to_value(&summary).expect("summary should serialize");
         assert!(
@@ -1461,13 +1827,7 @@ mod tests {
             Some(format!("0x{}", hex::encode(solana_sender_word)).as_str())
         );
 
-        let round_tripped: ParsedV2MessageSummary =
-            serde_json::from_value(json).expect("non-EVM summary should round-trip");
-        assert_eq!(round_tripped, summary);
-        assert_eq!(round_tripped.sender, None);
-        assert_eq!(round_tripped.sender_bytes, solana_sender_word);
-        assert_eq!(round_tripped.burn_token, None);
-        assert_eq!(round_tripped.burn_token_bytes, solana_burn_token_word);
+        assert_eq!(summary.message().encode(), encoded);
     }
 
     #[test]
@@ -1478,7 +1838,6 @@ mod tests {
         let starknet_mint_recipient_word = FixedBytes::<32>::from([0x99u8; 32]);
 
         let header = MessageHeader::new(
-            1,
             DomainId::Ethereum,
             DomainId::StarknetTestnet,
             FixedBytes::from([0x22u8; 32]),
@@ -1488,42 +1847,41 @@ mod tests {
             FinalityThreshold::Standard.as_u32(),
             FinalityThreshold::Standard.as_u32(),
         );
-        let body = BurnMessageV2 {
-            version: 1,
-            burn_token: address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF").into_word(),
-            mint_recipient: starknet_mint_recipient_word,
-            amount: U256::from(1_000_000u64),
-            message_sender: sender.into_word(),
-            max_fee: U256::ZERO,
-            fee_executed: U256::ZERO,
-            expiration_block: U256::ZERO,
-            hook_data: Bytes::new(),
-        };
-        let message = ParsedV2Message { header, body };
+        let body = BurnMessageV2::from_raw_words(
+            address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF").into_word(),
+            starknet_mint_recipient_word,
+            U256::from(1_000_000u64),
+            sender.into_word(),
+            U256::ZERO,
+            U256::ZERO,
+            U256::ZERO,
+            Bytes::new(),
+        );
+        let message = ParsedV2Message::new(header, body).expect("valid non-EVM destination words");
         let parsed = ParsedV2Message::parse(&message.encode())
             .expect("non-EVM destination mint recipient words must parse");
 
-        assert!(!parsed.header.is_permissionless());
-        assert_eq!(parsed.header.sender_address(), Some(sender));
-        assert_eq!(parsed.header.recipient_address(), None);
-        assert_eq!(parsed.header.destination_caller_address(), None);
-        assert_eq!(parsed.body.mint_recipient, starknet_mint_recipient_word);
-        assert_eq!(parsed.body.mint_recipient_address(), None);
+        assert!(!parsed.header().is_permissionless());
+        assert_eq!(parsed.header().sender_address(), Some(sender));
+        assert_eq!(parsed.header().recipient_address(), None);
+        assert_eq!(parsed.header().destination_caller_address(), None);
+        assert_eq!(parsed.body().mint_recipient(), starknet_mint_recipient_word);
+        assert_eq!(parsed.body().mint_recipient_address(), None);
 
         let summary = parsed.summary();
-        assert_eq!(summary.sender, Some(sender));
-        assert_eq!(summary.recipient, None);
-        assert_eq!(summary.recipient_bytes, starknet_recipient_word);
-        assert_eq!(summary.destination_caller, None);
-        assert_eq!(summary.destination_caller_bytes, starknet_caller_word);
-        assert!(!summary.permissionless_relay);
+        assert_eq!(summary.sender(), Some(sender));
+        assert_eq!(summary.recipient(), None);
+        assert_eq!(summary.recipient_bytes(), starknet_recipient_word);
+        assert_eq!(summary.destination_caller(), None);
+        assert_eq!(summary.destination_caller_bytes(), starknet_caller_word);
+        assert!(!summary.permissionless_relay());
         assert_eq!(
-            summary.burn_token,
+            summary.burn_token(),
             Some(address!("A2d2a41577ce14e20a6c2de999A8Ec2BD9fe34aF"))
         );
-        assert_eq!(summary.mint_recipient, None);
-        assert_eq!(summary.mint_recipient_bytes, starknet_mint_recipient_word);
-        assert_eq!(summary.message_sender, Some(sender));
+        assert_eq!(summary.mint_recipient(), None);
+        assert_eq!(summary.mint_recipient_bytes(), starknet_mint_recipient_word);
+        assert_eq!(summary.message_sender(), Some(sender));
 
         let json = serde_json::to_value(&summary).expect("summary should serialize");
         assert!(
@@ -1547,7 +1905,6 @@ mod tests {
         let solana_caller_word = FixedBytes::<32>::from([0x44u8; 32]);
 
         let header = MessageHeader::new(
-            1,
             DomainId::Ethereum,
             DomainId::Solana,
             FixedBytes::from([0x55u8; 32]),
@@ -1563,15 +1920,15 @@ mod tests {
             U256::from(2_500_000u64),
             sender,
         );
-        let message = ParsedV2Message { header, body };
+        let message = ParsedV2Message::new(header, body).expect("valid non-EVM destination words");
 
         let summary = message.summary();
-        assert_eq!(summary.recipient, None);
-        assert_eq!(summary.recipient_bytes, solana_recipient_word);
-        assert_eq!(summary.destination_caller, None);
-        assert_eq!(summary.destination_caller_bytes, solana_caller_word);
+        assert_eq!(summary.recipient(), None);
+        assert_eq!(summary.recipient_bytes(), solana_recipient_word);
+        assert_eq!(summary.destination_caller(), None);
+        assert_eq!(summary.destination_caller_bytes(), solana_caller_word);
         assert!(
-            !summary.permissionless_relay,
+            !summary.permissionless_relay(),
             "non-zero caller word must not be reported as permissionless even \
              when the destination is non-EVM and destination_caller is None"
         );
