@@ -544,6 +544,25 @@ match PollingConfig::try_new(max_attempts, poll_interval_secs) {
 }
 ```
 
+Amount failures likewise carry a typed `AmountError`. Decimal parsing groups
+incidental syntax branches by caller action, while fee-relationship failures
+retain the atomic values involved:
+
+```rust
+use cctp_rs::{AmountError, CctpError, UsdcAmount};
+
+match UsdcAmount::parse_decimal("1.0000001") {
+    Ok(amount) => println!("Atomic units: {}", amount.atomic()),
+    Err(CctpError::InvalidAmount(AmountError::TooManyDecimalPlaces { actual })) => {
+        println!("USDC supports six decimal places, got {actual}");
+    }
+    Err(CctpError::InvalidAmount(AmountError::Zero)) => {
+        println!("Transfer amount must be positive");
+    }
+    Err(error) => println!("Amount validation failed: {error}"),
+}
+```
+
 ```rust
 use cctp_rs::{CctpError, PollingConfig};
 

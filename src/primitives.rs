@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::chain::addresses;
-use crate::{CctpError, CctpV2, ConfigError, DomainId, Result};
+use crate::{AmountError, CctpError, CctpV2, ConfigError, DomainId, Result};
 
 const USDC_SCALE: u128 = 1_000_000;
 
@@ -196,39 +196,38 @@ impl UsdcAmount {
     ///
     /// Examples: `"1"`, `"1.25"`, `".5"`, and `"0.000001"` are valid.
     /// Values with more than six decimal places are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::InvalidAmount`] with a typed [`AmountError`] when
+    /// the input is malformed, too precise, too large, or resolves to zero.
     pub fn parse_decimal(input: &str) -> Result<Self> {
         let trimmed = input.trim();
         if trimmed.is_empty() {
-            return Err(invalid_amount("amount must not be empty"));
+            return Err(AmountError::InvalidDecimal.into());
         }
         if trimmed.starts_with('-') || trimmed.starts_with('+') {
-            return Err(invalid_amount("amount must be unsigned"));
+            return Err(AmountError::InvalidDecimal.into());
         }
 
         let mut parts = trimmed.split('.');
         let whole = parts.next().unwrap_or_default();
         let fraction = parts.next();
         if parts.next().is_some() {
-            return Err(invalid_amount(
-                "amount must contain at most one decimal point",
-            ));
+            return Err(AmountError::InvalidDecimal.into());
         }
 
         if whole.is_empty() && fraction.is_none_or(str::is_empty) {
-            return Err(invalid_amount("amount must include digits"));
+            return Err(AmountError::InvalidDecimal.into());
         }
         if !whole.chars().all(|c| c.is_ascii_digit()) {
-            return Err(invalid_amount(
-                "amount whole-number part must contain only digits",
-            ));
+            return Err(AmountError::InvalidDecimal.into());
         }
 
         let whole_units = if whole.is_empty() {
             0
         } else {
-            whole
-                .parse::<u128>()
-                .map_err(|_| invalid_amount("amount whole-number part is too large"))?
+            whole.parse::<u128>().map_err(|_| AmountError::TooLarge)?
         };
 
         let fractional_units = match fraction {
@@ -239,10 +238,10 @@ impl UsdcAmount {
         let atomic_units = whole_units
             .checked_mul(USDC_SCALE)
             .and_then(|value| value.checked_add(fractional_units))
-            .ok_or_else(|| invalid_amount("amount is too large"))?;
+            .ok_or(AmountError::TooLarge)?;
 
         if atomic_units == 0 {
-            return Err(invalid_amount("amount must be greater than zero"));
+            return Err(AmountError::Zero.into());
         }
 
         Ok(Self {
@@ -461,33 +460,20 @@ fn unsupported_asset_route(
 }
 
 fn parse_usdc_fraction(input: &str) -> Result<u128> {
-    if input.len() > 6 {
-        return Err(invalid_amount(
-            "USDC amounts support at most 6 decimal places",
-        ));
-    }
     if !input.chars().all(|c| c.is_ascii_digit()) {
-        return Err(invalid_amount(
-            "amount fractional part must contain only digits",
-        ));
+        return Err(AmountError::InvalidDecimal.into());
+    }
+    if input.len() > 6 {
+        return Err(AmountError::TooManyDecimalPlaces {
+            actual: input.len(),
+        }
+        .into());
     }
 
-    let mut padded = input.to_owned();
-    while padded.len() < 6 {
-        padded.push('0');
-    }
-
-    if padded.is_empty() {
-        return Ok(0);
-    }
-
-    padded
-        .parse::<u128>()
-        .map_err(|_| invalid_amount("amount fractional part is too large"))
-}
-
-fn invalid_amount(message: &str) -> CctpError {
-    CctpError::InvalidAmount(message.to_string())
+    let value = input
+        .bytes()
+        .fold(0_u128, |value, digit| value * 10 + u128::from(digit - b'0'));
+    Ok(value * 10_u128.pow((6 - input.len()) as u32))
 }
 
 #[cfg(test)]
@@ -509,6 +495,12 @@ mod tests {
             U256::from(1_250_000u64)
         );
         assert_eq!(
+            UsdcAmount::parse_decimal("1.")
+                .expect("valid amount")
+                .atomic(),
+            U256::from(1_000_000u64)
+        );
+        assert_eq!(
             UsdcAmount::parse_decimal(".5")
                 .expect("valid amount")
                 .atomic(),
@@ -523,12 +515,49 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_usdc_amounts() {
-        for amount in ["", "0", "-1", "+1", "1.0000001", "1.2.3", "abc", "1.a"] {
+    fn rejects_malformed_usdc_decimals_with_typed_error() {
+        for amount in ["", "-1", "+1", ".", "1.2.3", "abc", "1.a", "1.abcdefg"] {
             assert!(
-                UsdcAmount::parse_decimal(amount).is_err(),
-                "{amount} should fail"
+                matches!(
+                    UsdcAmount::parse_decimal(amount),
+                    Err(CctpError::InvalidAmount(AmountError::InvalidDecimal))
+                ),
+                "{amount} should be rejected as a malformed decimal"
             );
+        }
+    }
+
+    #[test]
+    fn rejects_excess_usdc_precision_with_actual_count() {
+        assert!(matches!(
+            UsdcAmount::parse_decimal("1.0000001"),
+            Err(CctpError::InvalidAmount(
+                AmountError::TooManyDecimalPlaces { actual: 7 }
+            ))
+        ));
+    }
+
+    #[test]
+    fn rejects_usdc_amounts_outside_atomic_range() {
+        for amount in [
+            "340282366920938463463374607431768211456",
+            "340282366920938463463374607431768211455",
+            "340282366920938463463374607431768.211456",
+        ] {
+            assert!(matches!(
+                UsdcAmount::parse_decimal(amount),
+                Err(CctpError::InvalidAmount(AmountError::TooLarge))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_zero_usdc_amounts_with_typed_error() {
+        for amount in ["0", "0.0", ".0", " 0.000000 "] {
+            assert!(matches!(
+                UsdcAmount::parse_decimal(amount),
+                Err(CctpError::InvalidAmount(AmountError::Zero))
+            ));
         }
     }
 

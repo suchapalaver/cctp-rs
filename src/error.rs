@@ -6,7 +6,7 @@
 use crate::primitives::CctpTransferAsset;
 use alloy_chains::NamedChain;
 use alloy_json_rpc::RpcError;
-use alloy_primitives::TxHash;
+use alloy_primitives::{TxHash, U256};
 use alloy_transport::TransportErrorKind;
 use std::fmt;
 use thiserror::Error;
@@ -85,6 +85,30 @@ pub enum ConfigError {
     },
 }
 
+/// Categorical reasons SDK amount validation can fail.
+///
+/// Carried by [`CctpError::InvalidAmount`] so callers can distinguish invalid
+/// user input from fee-relationship failures without parsing display text.
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AmountError {
+    /// Decimal input does not use the accepted unsigned decimal grammar.
+    #[error("amount must be an unsigned decimal number")]
+    InvalidDecimal,
+    /// Decimal USDC input exceeds the token's six supported decimal places.
+    #[error("USDC amounts support at most 6 decimal places, got {actual}")]
+    TooManyDecimalPlaces { actual: usize },
+    /// The amount cannot be represented in the SDK's atomic-unit range.
+    #[error("amount is too large")]
+    TooLarge,
+    /// A transfer amount resolved to zero atomic units.
+    #[error("amount must be greater than zero")]
+    Zero,
+    /// A Standard Transfer fee cap was not smaller than the burn amount.
+    #[error("Standard Transfer max_fee ({max_fee}) must be less than the burn amount ({amount})")]
+    StandardTransferFeeNotLessThanAmount { max_fee: U256, amount: U256 },
+}
+
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum CctpError {
@@ -153,7 +177,7 @@ pub enum CctpError {
     InvalidConfig(#[from] ConfigError),
 
     #[error("Invalid amount: {0}")]
-    InvalidAmount(String),
+    InvalidAmount(#[from] AmountError),
 
     #[error(
         "Transfer fee unavailable for route {source_domain}->{destination_domain} at finality threshold {finality_threshold}"
@@ -481,6 +505,41 @@ mod tests {
             assert_eq!(
                 CctpError::from(kind).to_string(),
                 format!("Invalid configuration: {expected}")
+            );
+        }
+    }
+
+    #[test]
+    fn test_amount_error_kinds_render_structured_context() {
+        let cases = [
+            (
+                AmountError::InvalidDecimal,
+                "amount must be an unsigned decimal number".to_string(),
+            ),
+            (
+                AmountError::TooManyDecimalPlaces { actual: 7 },
+                "USDC amounts support at most 6 decimal places, got 7".to_string(),
+            ),
+            (AmountError::TooLarge, "amount is too large".to_string()),
+            (
+                AmountError::Zero,
+                "amount must be greater than zero".to_string(),
+            ),
+            (
+                AmountError::StandardTransferFeeNotLessThanAmount {
+                    max_fee: U256::from(1_000_000_u64),
+                    amount: U256::from(1_000_000_u64),
+                },
+                "Standard Transfer max_fee (1000000) must be less than the burn amount (1000000)"
+                    .to_string(),
+            ),
+        ];
+
+        for (kind, expected) in cases {
+            assert_eq!(kind.to_string(), expected);
+            assert_eq!(
+                CctpError::from(kind).to_string(),
+                format!("Invalid amount: {expected}")
             );
         }
     }

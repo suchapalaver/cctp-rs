@@ -62,8 +62,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Migration: replace message or substring matching on
   `CctpError::InvalidConfig(message)` with typed matching on
   `CctpError::InvalidConfig(ConfigError::...)`. Keep a wildcard arm because
-  both public error enums are non-exhaustive. The separate
-  `InvalidAmount(String)` migration is tracked in issue #134.
+  both public error enums are non-exhaustive.
+- **Breaking (planned for 9.0.0):** replaced the free-form `String` inside
+  `CctpError::InvalidAmount` with the public, non-exhaustive `AmountError`
+  enum. Decimal grammar, precision, range, and zero failures now have stable
+  categories, while an invalid Standard Transfer fee relationship preserves
+  both `max_fee` and the burn `amount`.
+
+  Migration: replace broad or message-based matching on
+  `CctpError::InvalidAmount(message)` with typed matching on
+  `CctpError::InvalidAmount(AmountError::...)`. Keep a wildcard arm because
+  both public error enums are non-exhaustive.
 - **Breaking (planned for 9.0.0):** replaced the private reason `String` in
   `ParseMessageError` with a public, non-exhaustive enum covering truncated
   headers/bodies, unsupported versions, unknown source/destination domains,

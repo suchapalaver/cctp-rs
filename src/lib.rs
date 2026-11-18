@@ -124,7 +124,7 @@
 //! - [`ParsedV2Message`] and [`ParsedV2MessageSummary`] - Parse canonical v2 messages into serializable structs
 //! - [`ParseMessageError`] - Error type for canonical v2 message parsing
 //! - [`InvalidDomainId`] and [`InvalidFinalityThreshold`] - Errors returned by `TryFrom<u32>` for [`DomainId`] / [`FinalityThreshold`]
-//! - [`CctpError`], [`ConfigError`], and [`Result`] - Error types for error handling
+//! - [`CctpError`], [`AmountError`], [`ConfigError`], and [`Result`] - Error types for error handling
 //! - Contract wrappers for direct contract interaction:
 //!   - v1: [`TokenMessengerContract`], [`MessageTransmitterContract`]
 //!   - v2: [`TokenMessengerV2Contract`], [`MessageTransmitterV2Contract`]
@@ -179,7 +179,7 @@ pub use contracts::{
         TokenMessengerV2Contract,
     },
 };
-pub use error::{AttestationFailureKind, CctpError, ConfigError, Result};
+pub use error::{AmountError, AttestationFailureKind, CctpError, ConfigError, Result};
 pub use primitives::{CctpTransferAsset, CctpV2Route, UsdcAmount};
 pub use protocol::{
     AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId,
