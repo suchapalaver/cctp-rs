@@ -178,8 +178,10 @@ Mapped to the checklist in issue #11:
    represented; `TransferMode` makes invalid fee/finality/hook combinations
    unrepresentable; `CctpV2Route::new` is a fallible constructor rejecting
    unsupported chains, self-routes, and mainnet/testnet mixes; `UsdcAmount`
-   confines six-decimal parsing to one boundary; parse failures are typed
-   (`ParseMessageError`, `InvalidDomainId`, `InvalidFinalityThreshold`).
+   confines six-decimal parsing to one boundary; parser rejection categories
+   are exact `ParseMessageError` variants correspondence-tested against Lean,
+   while standalone conversions use `InvalidDomainId` and
+   `InvalidFinalityThreshold`.
    Memory safety is Rust's; the crate contains no `unsafe`.
 2. **Lean specification and proof.** The modules above. All proofs are
    `sorry`-free and re-checked by `lake build` in CI.
