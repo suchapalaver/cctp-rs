@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::error::{AttestationFailureKind, CctpError, Result};
+use crate::error::{AmountError, AttestationFailureKind, CctpError, Result};
 use crate::protocol::{
     AttestationBytes, AttestationState, FastTransferAllowance, FinalityThreshold, TransferFee,
     V2Attestation,
@@ -942,6 +942,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// Returns [`CctpError::FastTransferUnsupported`] before making an RPC call
     /// when a fast transfer mode is configured for a source chain where Circle
     /// marks Fast Transfer N/A.
+    /// Returns [`CctpError::InvalidAmount`] before RPC when a Standard Transfer
+    /// fee-switch mode has a `max_fee` greater than or equal to `amount`.
     ///
     /// # Example
     ///
@@ -969,9 +971,11 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         if self.transfer_mode.uses_standard_transfer_fee_switch()
             && self.transfer_mode.max_fee() >= amount
         {
-            return Err(CctpError::InvalidAmount(
-                "Standard Transfer max_fee must be less than the burn amount".to_string(),
-            ));
+            return Err(AmountError::StandardTransferFeeNotLessThanAmount {
+                max_fee: self.transfer_mode.max_fee(),
+                amount,
+            }
+            .into());
         }
         let token_messenger_address = self.token_messenger_v2_contract()?;
         let destination_domain = self.destination_domain_id()?;
@@ -3493,7 +3497,16 @@ mod tests {
                 )
                 .await
                 .expect_err("the contract requires maxFee < amount");
-            assert!(matches!(err, CctpError::InvalidAmount(_)));
+            assert!(matches!(
+                err,
+                CctpError::InvalidAmount(
+                    AmountError::StandardTransferFeeNotLessThanAmount {
+                        max_fee,
+                        amount,
+                    }
+                ) if max_fee == U256::from(1_000_000_u64)
+                    && amount == U256::from(1_000_000_u64)
+            ));
             assert!(captured.lock().expect("captured-request mutex").is_empty());
         }
 

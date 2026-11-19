@@ -126,7 +126,7 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `AttestationResponse`, `AttestationStatus`, `V2AttestationResponse` | Iris API response types | `src/protocol/attestation.rs` |
 | `ParsedV2Message`, `ParsedV2MessageSummary`, `BurnMessageV2`, `MessageHeader`, `V2Message` | Canonical v2 message parsing | `src/protocol/message.rs` |
 | `DomainId`, `FinalityThreshold` | Protocol constants | `src/protocol/` |
-| `CctpError`, `ConfigError`, `Result`, `ParseMessageError` | Error types | `src/error.rs`, `src/protocol/message.rs` |
+| `CctpError`, `AmountError`, `ConfigError`, `Result`, `ParseMessageError` | Error types | `src/error.rs`, `src/protocol/message.rs` |
 | `ProviderConfig*`, `estimate_gas_with_buffer`, `calculate_gas_price_with_buffer` | Provider tuning helpers | `src/provider.rs` |
 | `spans` module | OpenTelemetry instrumentation hooks | `src/spans.rs` |
 
