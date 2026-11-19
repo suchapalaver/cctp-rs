@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Extended the Lean route model and generated Rust correspondence vectors to
   cover every newly enabled bridge network and official testnet.
+- **Breaking (planned for 9.0.0):** validated lower-level protocol metadata
+  and provider settings at their construction boundaries. Iris Fast Transfer
+  allowance timestamps now use `IrisTimestamp`, static known fees carry the
+  existing unit-safe `FeeBps` type, and `ProviderConfig` prevents zero timeouts
+  and zero request-per-second limits. Provider fields are private and exposed
+  through read-only accessors; zero retry attempts remain valid and explicitly
+  mean no retries after the initial request.
+
+  Migration: parse external timestamp text with `IrisTimestamp::parse`; pass an
+  `IrisTimestamp` to `FastTransferAllowance::new`; construct known static fees
+  with `FeeBps::from_hundredths`; replace provider field reads with
+  `retry_attempts()`, `timeout()`, and `rate_limit_rps()`; and handle the
+  `Result` returned by `ProviderConfig::rate_limited` and
+  `ProviderConfigBuilder::build`.
 - **Breaking (planned for 9.0.0):** made `MessageHeader`, `BurnMessageV2`,
   `ParsedV2Message`, and `ParsedV2MessageSummary` durable validated types.
   Their fields are private and exposed through read-only accessors;

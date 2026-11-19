@@ -39,7 +39,7 @@ pub enum FinalityThreshold {
     /// Fast Transfer - Attestation at confirmed block level (threshold: 1000)
     ///
     /// - Settlement time: Under 30 seconds
-    /// - Fee: 0-14 basis points (chain-dependent)
+    /// - Fee: route-dependent and subject to change
     /// - Use case: Time-sensitive operations, arbitrage, real-time `DeFi`
     Fast = 1000,
 

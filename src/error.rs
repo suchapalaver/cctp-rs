@@ -72,6 +72,12 @@ pub enum ConfigError {
     /// A polling loop was configured to retry without sleeping.
     #[error("PollingConfig.poll_interval_secs must be greater than 0")]
     PollingIntervalZero,
+    /// A provider was configured to time out immediately.
+    #[error("ProviderConfig.timeout must be greater than zero")]
+    ProviderTimeoutZero,
+    /// A provider throttle was configured to permit no requests.
+    #[error("ProviderConfig.rate_limit_rps must be greater than zero when set")]
+    ProviderRateLimitZero,
     /// A CCTP route used the same chain as both endpoints.
     #[error("source and destination chains must differ (both were {chain:?})")]
     RouteSameChain { chain: NamedChain },
@@ -484,6 +490,14 @@ mod tests {
             (
                 ConfigError::PollingIntervalZero,
                 "PollingConfig.poll_interval_secs must be greater than 0",
+            ),
+            (
+                ConfigError::ProviderTimeoutZero,
+                "ProviderConfig.timeout must be greater than zero",
+            ),
+            (
+                ConfigError::ProviderRateLimitZero,
+                "ProviderConfig.rate_limit_rps must be greater than zero when set",
             ),
             (
                 ConfigError::RouteSameChain {
