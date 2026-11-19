@@ -117,8 +117,8 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `TokenState`, `batch_token_state` | ERC-20 allowance/balance helpers | `src/bridge/` |
 | `CctpTransferAsset`, `CctpV2Route`, `UsdcAmount` | Asset, route, and amount primitives | `src/primitives.rs` |
 | `CctpV1`, `CctpV2` traits | Chain config on `NamedChain` | `src/chain/config.rs`, `src/chain/v2.rs` |
-| `FastTransferFee` | `Known(u32)` / `Unknown` — static per-chain fee metadata; not current route quotes | `src/chain/v2.rs` |
-| `FeeBps`, `TransferFee`, `FastTransferAllowance` | Live Iris route-fee and allowance response types plus max-fee helpers | `src/protocol/fees.rs` |
+| `FastTransferFee` | `Known(FeeBps)` / `Unknown` — static per-chain fee metadata; not current route quotes | `src/chain/v2.rs` |
+| `FeeBps`, `TransferFee`, `FastTransferAllowance`, `IrisTimestamp` | Live Iris route-fee and allowance response types plus max-fee helpers | `src/protocol/fees.rs` |
 | `CCTP_V2_*_MAINNET/TESTNET`, `*_USDC_ADDRESS`, `*_EURC_ADDRESS` | Unified v2 contract addresses and native token addresses | `src/chain/addresses.rs` |
 | `TokenMessengerContract`, `MessageTransmitterContract` | V1 contract wrappers | `src/contracts/` |
 | `TokenMessengerV2Contract`, `MessageTransmitterV2Contract` | V2 contract wrappers | `src/contracts/v2/` |

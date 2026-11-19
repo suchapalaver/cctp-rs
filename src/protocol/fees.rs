@@ -8,13 +8,75 @@ use alloy_primitives::U256;
 use serde::de::{self, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
-use std::fmt;
+use std::{fmt, str::FromStr};
+use thiserror::Error;
 
 use super::FinalityThreshold;
 
 const BPS_HUNDREDTH_DENOMINATOR: u64 = 1_000_000;
 const BUFFER_PERCENT_DENOMINATOR: u64 = 100;
 const USDC_ATOMIC_SCALE: u64 = 1_000_000;
+
+/// A validated RFC 3339 timestamp returned by Circle Iris.
+///
+/// Iris timestamps are parsed at the JSON boundary, so an
+/// `IrisTimestamp` always identifies a concrete instant. Its JSON and display
+/// representations use UTC RFC 3339 syntax.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IrisTimestamp(jiff::Timestamp);
+
+impl IrisTimestamp {
+    /// Parses an Iris timestamp from RFC 3339 text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidIrisTimestamp`] when `value` does not identify an
+    /// RFC 3339 instant.
+    pub fn parse(value: &str) -> Result<Self, InvalidIrisTimestamp> {
+        value.parse()
+    }
+}
+
+impl FromStr for IrisTimestamp {
+    type Err = InvalidIrisTimestamp;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        value
+            .parse::<jiff::Timestamp>()
+            .map(Self)
+            .map_err(|_| InvalidIrisTimestamp)
+    }
+}
+
+impl fmt::Display for IrisTimestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Serialize for IrisTimestamp {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for IrisTimestamp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).map_err(de::Error::custom)
+    }
+}
+
+/// An Iris timestamp did not identify an RFC 3339 instant.
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[error("invalid Iris timestamp: expected an RFC 3339 instant")]
+pub struct InvalidIrisTimestamp;
 
 /// A CCTP transfer fee in basis points, stored as hundredths of a basis point.
 ///
@@ -234,16 +296,16 @@ pub struct FastTransferAllowance {
     #[serde(serialize_with = "serialize_usdc_atomic_decimal")]
     pub allowance: U256,
     /// Server timestamp from Iris.
-    pub last_updated: String,
+    pub last_updated: IrisTimestamp,
 }
 
 impl FastTransferAllowance {
     /// Creates an allowance response from atomic USDC units and an Iris timestamp.
     #[must_use]
-    pub fn new(allowance: U256, last_updated: impl Into<String>) -> Self {
+    pub const fn new(allowance: U256, last_updated: IrisTimestamp) -> Self {
         Self {
             allowance,
-            last_updated: last_updated.into(),
+            last_updated,
         }
     }
 
@@ -263,7 +325,7 @@ impl<'de> Deserialize<'de> for FastTransferAllowance {
         #[serde(rename_all = "camelCase")]
         struct WireAllowance {
             allowance: Box<RawValue>,
-            last_updated: String,
+            last_updated: IrisTimestamp,
         }
 
         let wire = WireAllowance::deserialize(deserializer)?;
@@ -416,6 +478,10 @@ fn format_usdc_atomic(allowance: U256) -> String {
 mod tests {
     use super::*;
 
+    fn iris_timestamp(value: &str) -> IrisTimestamp {
+        IrisTimestamp::parse(value).unwrap()
+    }
+
     #[test]
     fn transfer_fee_deserializes_circle_response_shape() {
         let json = r#"[
@@ -468,7 +534,7 @@ mod tests {
             allowance,
             FastTransferAllowance::new(
                 U256::from(52_455_615_650_179_u64),
-                "2026-09-23T12:42:40.722Z"
+                iris_timestamp("2026-09-23T12:42:40.722Z")
             )
         );
         assert!(allowance.is_sufficient_for(U256::from(52_455_615_650_179_u64)));
@@ -503,7 +569,7 @@ mod tests {
     fn fast_transfer_allowance_serializes_atomic_units_as_decimal_string() {
         let allowance = FastTransferAllowance::new(
             U256::from(52_455_615_650_179_u64),
-            "2026-09-23T12:42:40.722Z",
+            iris_timestamp("2026-09-23T12:42:40.722Z"),
         );
 
         let json = serde_json::to_value(allowance).unwrap();
@@ -511,10 +577,34 @@ mod tests {
         assert_eq!(json["allowance"], "52455615.650179");
         assert_eq!(json["lastUpdated"], "2026-09-23T12:42:40.722Z");
 
-        let sub_usdc = FastTransferAllowance::new(U256::from(1_u64), "timestamp");
+        let sub_usdc =
+            FastTransferAllowance::new(U256::from(1_u64), iris_timestamp("2026-09-23T12:42:40Z"));
         let json = serde_json::to_value(sub_usdc).unwrap();
 
         assert_eq!(json["allowance"], "0.000001");
+    }
+
+    #[test]
+    fn iris_timestamp_rejects_invalid_text_at_json_boundary() {
+        let json = r#"{
+            "allowance": "1",
+            "lastUpdated": "not-a-timestamp"
+        }"#;
+
+        let result = serde_json::from_str::<FastTransferAllowance>(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn iris_timestamp_serde_round_trip_uses_rfc3339_string() {
+        let timestamp = iris_timestamp("2026-09-23T08:42:40.722-04:00");
+
+        let json = serde_json::to_string(&timestamp).unwrap();
+        let decoded: IrisTimestamp = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(json, r#""2026-09-23T12:42:40.722Z""#);
+        assert_eq!(decoded, timestamp);
     }
 
     #[test]

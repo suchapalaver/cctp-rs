@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+// SPDX-FileCopyrightText: 2026 Joseph Livesey <jlivesey@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -46,13 +47,13 @@
 //!         attempts += 1;
 //!         match f().await {
 //!             Ok(result) => return Ok(result),
-//!             Err(e) if e.is_transient() && attempts < config.retry_attempts => {
+//!             Err(e) if e.is_transient() && attempts < config.retry_attempts() => {
 //!                 // Transient error - retry with exponential backoff
 //!                 let backoff = Duration::from_millis(200 * 2u64.pow(attempts - 1));
-//!                 sleep(backoff.min(config.timeout)).await;
+//!                 sleep(backoff.min(config.timeout())).await;
 //!                 continue;
 //!             }
-//!             Err(e) if e.is_rate_limited() && attempts < config.retry_attempts => {
+//!             Err(e) if e.is_rate_limited() && attempts < config.retry_attempts() => {
 //!                 // Rate limited - wait longer before retry
 //!                 sleep(Duration::from_secs(5)).await;
 //!                 continue;
@@ -75,15 +76,15 @@
 //! |----------|--------------|-------------|
 //! | Fast transfers | `ProviderConfig::fast_transfer()` | 5 retries, 15s timeout |
 //! | Reliable batch ops | `ProviderConfig::high_reliability()` | 10 retries, 60s timeout |
-//! | Public endpoints | `ProviderConfig::rate_limited(5)` | 3 retries, 30s timeout, 5 RPS |
+//! | Public endpoints | `ProviderConfig::rate_limited(5)?` | 3 retries, 30s timeout, 5 RPS |
 //! | Default | `ProviderConfig::default()` | 3 retries, 30s timeout |
 
-use crate::error::Result;
+use crate::error::{ConfigError, Result};
 use alloy_network::Ethereum;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionRequest;
-use std::time::Duration;
+use std::{num::NonZeroU32, time::Duration};
 
 /// Default gas buffer percentage (20%)
 pub const DEFAULT_GAS_BUFFER_PERCENT: u64 = 20;
@@ -151,25 +152,26 @@ pub async fn estimate_gas_with_buffer<P: Provider<Ethereum>>(
 /// let config = ProviderConfig::builder()
 ///     .retry_attempts(5)
 ///     .timeout(Duration::from_secs(60))
-///     .build();
+///     .build().unwrap();
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderConfig {
     /// Number of retry attempts for failed requests
-    pub retry_attempts: u32,
+    retry_attempts: u32,
     /// Request timeout duration
-    pub timeout: Duration,
+    timeout: Duration,
     /// Optional rate limit (requests per second)
-    pub rate_limit_rps: Option<u32>,
+    rate_limit_rps: Option<NonZeroU32>,
 }
 
 impl Default for ProviderConfig {
     fn default() -> Self {
-        Self {
-            retry_attempts: DEFAULT_RETRY_ATTEMPTS,
-            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
-            rate_limit_rps: None,
-        }
+        Self::try_new(
+            DEFAULT_RETRY_ATTEMPTS,
+            Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            None,
+        )
+        .expect("default provider timeout is nonzero")
     }
 }
 
@@ -179,16 +181,65 @@ impl ProviderConfig {
         ProviderConfigBuilder::default()
     }
 
+    /// Creates a provider configuration after validating operational values.
+    ///
+    /// Zero retry attempts are accepted and mean that a caller should make one
+    /// request without retrying it. A zero timeout or zero request-per-second
+    /// limit is rejected because neither can perform useful provider work.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::CctpError::InvalidConfig`] when `timeout` is zero or
+    /// `rate_limit_rps` is `Some(0)`.
+    pub fn try_new(
+        retry_attempts: u32,
+        timeout: Duration,
+        rate_limit_rps: Option<u32>,
+    ) -> Result<Self> {
+        if timeout.is_zero() {
+            return Err(ConfigError::ProviderTimeoutZero.into());
+        }
+        let rate_limit_rps = rate_limit_rps
+            .map(|rps| NonZeroU32::new(rps).ok_or(ConfigError::ProviderRateLimitZero))
+            .transpose()?;
+
+        Ok(Self {
+            retry_attempts,
+            timeout,
+            rate_limit_rps,
+        })
+    }
+
+    /// Returns the configured retry-attempt value.
+    ///
+    /// Zero disables retries; callers can still make an initial request.
+    #[must_use]
+    pub const fn retry_attempts(&self) -> u32 {
+        self.retry_attempts
+    }
+
+    /// Returns the nonzero request timeout.
+    #[must_use]
+    pub const fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    /// Returns the optional nonzero request-per-second limit.
+    #[must_use]
+    pub const fn rate_limit_rps(&self) -> Option<u32> {
+        match self.rate_limit_rps {
+            Some(rps) => Some(rps.get()),
+            None => None,
+        }
+    }
+
     /// Creates a configuration optimized for fast transfers
     ///
     /// Uses shorter timeouts and more aggressive retry settings
     /// suitable for time-sensitive fast transfer operations.
     pub fn fast_transfer() -> Self {
-        Self {
-            retry_attempts: 5,
-            timeout: Duration::from_secs(15),
-            rate_limit_rps: None,
-        }
+        Self::try_new(5, Duration::from_secs(15), None)
+            .expect("fast-transfer provider timeout is nonzero")
     }
 
     /// Creates a configuration for high-reliability operations
@@ -196,23 +247,24 @@ impl ProviderConfig {
     /// Uses longer timeouts and more retry attempts for
     /// operations where reliability is more important than speed.
     pub fn high_reliability() -> Self {
-        Self {
-            retry_attempts: 10,
-            timeout: Duration::from_secs(60),
-            rate_limit_rps: None,
-        }
+        Self::try_new(10, Duration::from_secs(60), None)
+            .expect("high-reliability provider timeout is nonzero")
     }
 
     /// Creates a configuration for rate-limited public endpoints
     ///
     /// Includes rate limiting to avoid hitting provider limits
     /// on public RPC endpoints.
-    pub fn rate_limited(rps: u32) -> Self {
-        Self {
-            retry_attempts: DEFAULT_RETRY_ATTEMPTS,
-            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
-            rate_limit_rps: Some(rps),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::CctpError::InvalidConfig`] when `rps` is zero.
+    pub fn rate_limited(rps: u32) -> Result<Self> {
+        Self::try_new(
+            DEFAULT_RETRY_ATTEMPTS,
+            Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            Some(rps),
+        )
     }
 }
 
@@ -243,15 +295,19 @@ impl ProviderConfigBuilder {
         self
     }
 
-    /// Builds the `ProviderConfig`
-    pub fn build(self) -> ProviderConfig {
-        ProviderConfig {
-            retry_attempts: self.retry_attempts.unwrap_or(DEFAULT_RETRY_ATTEMPTS),
-            timeout: self
-                .timeout
+    /// Builds and validates the `ProviderConfig`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::CctpError::InvalidConfig`] for a zero timeout or zero
+    /// request-per-second limit.
+    pub fn build(self) -> Result<ProviderConfig> {
+        ProviderConfig::try_new(
+            self.retry_attempts.unwrap_or(DEFAULT_RETRY_ATTEMPTS),
+            self.timeout
                 .unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),
-            rate_limit_rps: self.rate_limit_rps,
-        }
+            self.rate_limit_rps,
+        )
     }
 }
 
@@ -302,13 +358,14 @@ pub fn calculate_gas_price_with_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CctpError;
 
     #[test]
     fn test_provider_config_default() {
         let config = ProviderConfig::default();
-        assert_eq!(config.retry_attempts, 3);
-        assert_eq!(config.timeout, Duration::from_secs(30));
-        assert!(config.rate_limit_rps.is_none());
+        assert_eq!(config.retry_attempts(), 3);
+        assert_eq!(config.timeout(), Duration::from_secs(30));
+        assert!(config.rate_limit_rps().is_none());
     }
 
     #[test]
@@ -317,31 +374,74 @@ mod tests {
             .retry_attempts(5)
             .timeout(Duration::from_secs(60))
             .rate_limit_rps(10)
-            .build();
+            .build()
+            .unwrap();
 
-        assert_eq!(config.retry_attempts, 5);
-        assert_eq!(config.timeout, Duration::from_secs(60));
-        assert_eq!(config.rate_limit_rps, Some(10));
+        assert_eq!(config.retry_attempts(), 5);
+        assert_eq!(config.timeout(), Duration::from_secs(60));
+        assert_eq!(config.rate_limit_rps(), Some(10));
     }
 
     #[test]
     fn test_provider_config_fast_transfer() {
         let config = ProviderConfig::fast_transfer();
-        assert_eq!(config.retry_attempts, 5);
-        assert_eq!(config.timeout, Duration::from_secs(15));
+        assert_eq!(config.retry_attempts(), 5);
+        assert_eq!(config.timeout(), Duration::from_secs(15));
     }
 
     #[test]
     fn test_provider_config_high_reliability() {
         let config = ProviderConfig::high_reliability();
-        assert_eq!(config.retry_attempts, 10);
-        assert_eq!(config.timeout, Duration::from_secs(60));
+        assert_eq!(config.retry_attempts(), 10);
+        assert_eq!(config.timeout(), Duration::from_secs(60));
     }
 
     #[test]
     fn test_provider_config_rate_limited() {
-        let config = ProviderConfig::rate_limited(5);
-        assert_eq!(config.rate_limit_rps, Some(5));
+        let config = ProviderConfig::rate_limited(5).unwrap();
+        assert_eq!(config.rate_limit_rps(), Some(5));
+    }
+
+    #[test]
+    fn provider_config_allows_zero_retries() {
+        let config = ProviderConfig::try_new(0, Duration::from_secs(1), None).unwrap();
+
+        assert_eq!(config.retry_attempts(), 0);
+    }
+
+    #[test]
+    fn provider_config_rejects_zero_timeout() {
+        let result = ProviderConfig::try_new(3, Duration::ZERO, None);
+
+        assert!(matches!(
+            result,
+            Err(CctpError::InvalidConfig(ConfigError::ProviderTimeoutZero))
+        ));
+    }
+
+    #[test]
+    fn provider_config_rejects_zero_rate_limit() {
+        let result = ProviderConfig::rate_limited(0);
+
+        assert!(matches!(
+            result,
+            Err(CctpError::InvalidConfig(ConfigError::ProviderRateLimitZero))
+        ));
+    }
+
+    #[test]
+    fn provider_config_builder_validates_at_build_boundary() {
+        let zero_timeout = ProviderConfig::builder().timeout(Duration::ZERO).build();
+        let zero_rate_limit = ProviderConfig::builder().rate_limit_rps(0).build();
+
+        assert!(matches!(
+            zero_timeout,
+            Err(CctpError::InvalidConfig(ConfigError::ProviderTimeoutZero))
+        ));
+        assert!(matches!(
+            zero_rate_limit,
+            Err(CctpError::InvalidConfig(ConfigError::ProviderRateLimitZero))
+        ));
     }
 
     #[test]

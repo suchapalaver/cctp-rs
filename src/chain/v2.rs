@@ -16,7 +16,7 @@ use super::addresses::{
     CCTP_V2_MESSAGE_TRANSMITTER_MAINNET, CCTP_V2_MESSAGE_TRANSMITTER_TESTNET,
     CCTP_V2_TOKEN_MESSENGER_MAINNET, CCTP_V2_TOKEN_MESSENGER_TESTNET,
 };
-use crate::{CctpError, DomainId, Result};
+use crate::{protocol::FeeBps, CctpError, DomainId, Result};
 
 /// Static Fast Transfer fee metadata for a CCTP v2 chain, in basis points.
 ///
@@ -31,18 +31,17 @@ use crate::{CctpError, DomainId, Result};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FastTransferFee {
-    /// Fee is confirmed at this value in basis points (0-14).
+    /// Fee is confirmed at this value in basis points.
     ///
-    /// A `Known(0)` is a sourced zero fee, semantically distinct from
-    /// [`FastTransferFee::Unknown`].
-    Known(u32),
+    /// A known zero-valued [`FeeBps`] is a sourced zero fee, semantically
+    /// distinct from [`FastTransferFee::Unknown`].
+    Known(FeeBps),
     /// Fee data has not yet been confirmed for this chain.
     ///
     /// Callers must not assume zero. Coercing `Unknown` to zero would
     /// reintroduce the placeholder behavior this enum exists to
-    /// prevent — Circle's published range is 0-14 bps, so a default
-    /// of zero is plausible enough to mask a real fee from downstream
-    /// consumers.
+    /// prevent. Zero is a plausible real fee, so using it as a default can
+    /// mask unknown data from downstream consumers.
     Unknown,
 }
 
@@ -54,7 +53,7 @@ pub enum FastTransferFee {
 /// # v2 Features
 ///
 /// - **Fast Transfer**: Chains that support fast transfer (finality threshold 1000)
-/// - **Dynamic Fees**: Some chains charge fees for fast transfer (0-14 bps)
+/// - **Dynamic Fees**: Fast Transfer fees vary by route and can change over time
 /// - **v2 Contracts**: Updated contract addresses for `TokenMessengerV2` and `MessageTransmitterV2`
 /// - **Expanded Chains**: Bridge SDK routes 21 v2-capable chain families
 ///   (the 7 v1 families plus 14 v2-only families) across mainnet and selected
@@ -681,10 +680,12 @@ mod tests {
 
     #[test]
     fn fast_transfer_fee_unknown_is_distinct_from_known_zero() {
-        // Sanity: Known(0) and Unknown are not equal. This is the
-        // invariant issue #215 cared about — a confirmed-zero fee must
-        // not collide with the "we haven't sourced this" state.
-        assert_ne!(FastTransferFee::Known(0), FastTransferFee::Unknown);
+        // A confirmed-zero fee must not collide with the
+        // "we haven't sourced this" state.
+        assert_ne!(
+            FastTransferFee::Known(FeeBps::from_hundredths(0)),
+            FastTransferFee::Unknown
+        );
     }
 
     #[test]

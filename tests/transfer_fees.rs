@@ -19,7 +19,9 @@ use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
-use cctp_rs::{CctpError, CctpTransferAsset, CctpV2Bridge, FastTransferAllowance, FeeBps};
+use cctp_rs::{
+    CctpError, CctpTransferAsset, CctpV2Bridge, FastTransferAllowance, FeeBps, IrisTimestamp,
+};
 use url::Url;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -201,7 +203,10 @@ async fn fetches_fast_transfer_allowance() {
 
     assert_eq!(
         allowance,
-        FastTransferAllowance::new(U256::from(123_456_789_u64), "2026-09-23T12:42:40.722Z")
+        FastTransferAllowance::new(
+            U256::from(123_456_789_u64),
+            IrisTimestamp::parse("2026-09-23T12:42:40.722Z").unwrap()
+        )
     );
     assert!(allowance.is_sufficient_for(U256::from(123_456_789_u64)));
     assert!(!allowance.is_sufficient_for(U256::from(123_456_790_u64)));
@@ -424,7 +429,7 @@ async fn live_sandbox_fast_transfer_allowance_smoke_test() {
         .expect("Iris sandbox allowance response should decode");
 
     assert!(
-        !allowance.last_updated.is_empty(),
+        !allowance.last_updated.to_string().is_empty(),
         "Iris sandbox should report an allowance timestamp"
     );
 }
@@ -447,7 +452,7 @@ async fn live_mainnet_fast_transfer_allowance_smoke_test() {
         .expect("Iris mainnet allowance response should decode");
 
     assert!(
-        !allowance.last_updated.is_empty(),
+        !allowance.last_updated.to_string().is_empty(),
         "Iris mainnet should report an allowance timestamp"
     );
 }
