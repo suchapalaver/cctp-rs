@@ -6,14 +6,87 @@
 //! Shared domain primitives for CCTP applications.
 
 use alloy_chains::NamedChain;
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{Address, FixedBytes, U256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::chain::addresses;
-use crate::{AmountError, CctpError, CctpV2, ConfigError, DomainId, Result};
+use crate::{
+    AmountError, CctpError, CctpV2, ConfigError, DomainId, InvalidDestinationCaller, Result,
+};
 
 const USDC_SCALE: u128 = 1_000_000;
+
+/// A nonzero CCTP `destinationCaller` word that restricts destination-chain
+/// message execution to one caller.
+///
+/// The protocol field is canonically `bytes32`, not an EVM `address`. Keeping
+/// the full word avoids locking the type to EVM destinations. It does not by
+/// itself enable non-EVM bridge routes or construct chain-specific forwarding
+/// payloads. Use [`Self::from_evm_address`] for the currently supported EVM
+/// restricted-call flow.
+///
+/// The all-zero word is deliberately rejected because CCTP assigns it the
+/// distinct meaning “permissionless.” Existing bridge helpers continue to use
+/// that permissionless default; this type is for the advanced restricted-call
+/// contract APIs.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RestrictedDestinationCaller(FixedBytes<32>);
+
+impl RestrictedDestinationCaller {
+    /// Validates a canonical 32-byte destination caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidDestinationCaller`] for the all-zero word, which CCTP
+    /// interprets as permissionless rather than restricted.
+    pub fn new(caller: FixedBytes<32>) -> std::result::Result<Self, InvalidDestinationCaller> {
+        if caller == FixedBytes::ZERO {
+            return Err(InvalidDestinationCaller);
+        }
+        Ok(Self(caller))
+    }
+
+    /// Converts and validates an EVM address as a left-padded CCTP `bytes32`
+    /// destination caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidDestinationCaller`] when `caller` is the zero address.
+    pub fn from_evm_address(
+        caller: Address,
+    ) -> std::result::Result<Self, InvalidDestinationCaller> {
+        Self::new(caller.into_word())
+    }
+
+    /// Returns the canonical CCTP `bytes32` wire value.
+    #[must_use]
+    pub const fn as_bytes32(self) -> FixedBytes<32> {
+        self.0
+    }
+}
+
+impl TryFrom<FixedBytes<32>> for RestrictedDestinationCaller {
+    type Error = InvalidDestinationCaller;
+
+    fn try_from(caller: FixedBytes<32>) -> std::result::Result<Self, Self::Error> {
+        Self::new(caller)
+    }
+}
+
+impl TryFrom<Address> for RestrictedDestinationCaller {
+    type Error = InvalidDestinationCaller;
+
+    fn try_from(caller: Address) -> std::result::Result<Self, Self::Error> {
+        Self::from_evm_address(caller)
+    }
+}
+
+impl From<RestrictedDestinationCaller> for FixedBytes<32> {
+    fn from(caller: RestrictedDestinationCaller) -> Self {
+        caller.as_bytes32()
+    }
+}
 
 /// CCTP transfer asset modeled by the SDK.
 ///
@@ -479,6 +552,37 @@ fn parse_usdc_fraction(input: &str) -> Result<u128> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restricted_destination_caller_preserves_canonical_bytes32() {
+        let word = FixedBytes::repeat_byte(0x42);
+        let caller = RestrictedDestinationCaller::new(word)
+            .expect("nonzero bytes32 is a restricted destination caller");
+
+        assert_eq!(caller.as_bytes32(), word);
+        assert_eq!(FixedBytes::<32>::from(caller), word);
+    }
+
+    #[test]
+    fn restricted_evm_destination_caller_is_left_padded() {
+        let address = Address::repeat_byte(0x42);
+        let caller = RestrictedDestinationCaller::from_evm_address(address)
+            .expect("nonzero EVM address is a restricted destination caller");
+
+        assert_eq!(caller.as_bytes32(), address.into_word());
+    }
+
+    #[test]
+    fn zero_destination_caller_cannot_be_misrepresented_as_restricted() {
+        assert_eq!(
+            RestrictedDestinationCaller::new(FixedBytes::ZERO),
+            Err(InvalidDestinationCaller)
+        );
+        assert_eq!(
+            RestrictedDestinationCaller::from_evm_address(Address::ZERO),
+            Err(InvalidDestinationCaller)
+        );
+    }
 
     #[test]
     fn parses_usdc_amounts() {
