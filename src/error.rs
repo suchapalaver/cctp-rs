@@ -121,6 +121,9 @@ pub enum AmountError {
     /// A Standard Transfer fee cap was not smaller than the burn amount.
     #[error("Standard Transfer max_fee ({max_fee}) must be less than the burn amount ({amount})")]
     StandardTransferFeeNotLessThanAmount { max_fee: U256, amount: U256 },
+    /// A Forwarding Service fee cap was not smaller than the burn amount.
+    #[error("Forwarding Service max_fee ({max_fee}) must be less than the burn amount ({amount})")]
+    ForwardingFeeNotLessThanAmount { max_fee: U256, amount: U256 },
 }
 
 #[derive(Error, Debug)]
@@ -138,6 +141,14 @@ pub enum CctpError {
         "Standard Transfer fee switch is not available from source chain {source_chain:?}; use TransferMode::Standard with a zero maxFee"
     )]
     StandardTransferFeeSwitchUnsupported { source_chain: NamedChain },
+
+    #[error(
+        "Circle Forwarding Service is not available for destination chain {destination_chain:?}"
+    )]
+    ForwardingServiceUnsupported { destination_chain: NamedChain },
+
+    #[error("Circle Forwarding Service is modeled for USDC only, not {asset}")]
+    ForwardingServiceAssetUnsupported { asset: CctpTransferAsset },
 
     #[error("Unsupported CCTP asset {asset} on chain {chain:?}: {reason}")]
     UnsupportedAssetChain {

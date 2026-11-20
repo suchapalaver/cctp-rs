@@ -21,7 +21,7 @@
 
 use alloy_primitives::{Bytes, U256};
 
-use crate::protocol::FinalityThreshold;
+use crate::{protocol::FinalityThreshold, ForwardingServiceHookData};
 
 /// Selects which CCTP v2 burn variant the bridge sends.
 ///
@@ -100,6 +100,19 @@ pub enum TransferMode {
         hook_data: Bytes,
     },
 
+    /// Standard-finality burn submitted through Circle's Forwarding Service.
+    ///
+    /// Unlike [`Self::StandardWithFeeAndHook`], this fee cap pays Circle's
+    /// forwarding fee and does not require the source deployment's optional
+    /// Standard Transfer fee switch. The destination capability is validated
+    /// before RPC.
+    StandardForwarded {
+        /// Maximum combined protocol and forwarding fee.
+        max_fee: U256,
+        /// Canonical forwarding hook from a validated route.
+        hook_data: ForwardingServiceHookData,
+    },
+
     /// Burn carrying hook data at confirmed (fast) finality.
     ///
     /// Combines a fast-finality attestation with a post-mint hook. Both
@@ -110,6 +123,14 @@ pub enum TransferMode {
         max_fee: U256,
         /// Hook payload forwarded to the destination chain.
         hook_data: Bytes,
+    },
+
+    /// Fast-finality burn submitted through Circle's Forwarding Service.
+    FastForwarded {
+        /// Maximum combined protocol and forwarding fee.
+        max_fee: U256,
+        /// Canonical forwarding hook from a validated route.
+        hook_data: ForwardingServiceHookData,
     },
 }
 
@@ -122,8 +143,11 @@ impl TransferMode {
             Self::Standard
             | Self::StandardWithFee { .. }
             | Self::StandardWithHook { .. }
-            | Self::StandardWithFeeAndHook { .. } => FinalityThreshold::Standard,
-            Self::Fast { .. } | Self::FastWithHook { .. } => FinalityThreshold::Fast,
+            | Self::StandardWithFeeAndHook { .. }
+            | Self::StandardForwarded { .. } => FinalityThreshold::Standard,
+            Self::Fast { .. } | Self::FastWithHook { .. } | Self::FastForwarded { .. } => {
+                FinalityThreshold::Fast
+            }
         }
     }
 
@@ -132,11 +156,12 @@ impl TransferMode {
     #[must_use]
     pub const fn is_fast(&self) -> bool {
         match self {
-            Self::Fast { .. } | Self::FastWithHook { .. } => true,
+            Self::Fast { .. } | Self::FastWithHook { .. } | Self::FastForwarded { .. } => true,
             Self::Standard
             | Self::StandardWithFee { .. }
             | Self::StandardWithHook { .. }
-            | Self::StandardWithFeeAndHook { .. } => false,
+            | Self::StandardWithFeeAndHook { .. }
+            | Self::StandardForwarded { .. } => false,
         }
     }
 
@@ -147,7 +172,9 @@ impl TransferMode {
         match self {
             Self::StandardWithHook { .. }
             | Self::StandardWithFeeAndHook { .. }
-            | Self::FastWithHook { .. } => true,
+            | Self::StandardForwarded { .. }
+            | Self::FastWithHook { .. }
+            | Self::FastForwarded { .. } => true,
             Self::Standard | Self::StandardWithFee { .. } | Self::Fast { .. } => false,
         }
     }
@@ -163,11 +190,21 @@ impl TransferMode {
         )
     }
 
+    /// Returns `true` when Circle's Forwarding Service will relay the mint.
+    #[inline]
+    #[must_use]
+    pub const fn is_forwarding(&self) -> bool {
+        matches!(
+            self,
+            Self::StandardForwarded { .. } | Self::FastForwarded { .. }
+        )
+    }
+
     /// Returns `true` when the mode carries an explicit `maxFee` cap.
     #[inline]
     #[must_use]
     pub const fn has_explicit_fee_cap(&self) -> bool {
-        self.is_fast() || self.uses_standard_transfer_fee_switch()
+        self.is_fast() || self.uses_standard_transfer_fee_switch() || self.is_forwarding()
     }
 
     /// Returns the transfer fee cap sent on-chain.
@@ -180,8 +217,10 @@ impl TransferMode {
         match self {
             Self::StandardWithFee { max_fee }
             | Self::StandardWithFeeAndHook { max_fee, .. }
+            | Self::StandardForwarded { max_fee, .. }
             | Self::Fast { max_fee }
-            | Self::FastWithHook { max_fee, .. } => *max_fee,
+            | Self::FastWithHook { max_fee, .. }
+            | Self::FastForwarded { max_fee, .. } => *max_fee,
             Self::Standard | Self::StandardWithHook { .. } => U256::ZERO,
         }
     }
@@ -194,6 +233,9 @@ impl TransferMode {
             Self::StandardWithHook { hook_data }
             | Self::StandardWithFeeAndHook { hook_data, .. }
             | Self::FastWithHook { hook_data, .. } => Some(hook_data),
+            Self::StandardForwarded { hook_data, .. } | Self::FastForwarded { hook_data, .. } => {
+                Some(hook_data.as_bytes())
+            }
             Self::Standard | Self::StandardWithFee { .. } | Self::Fast { .. } => None,
         }
     }
@@ -202,6 +244,8 @@ impl TransferMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ForwardingServiceRoute;
+    use alloy_chains::NamedChain;
 
     #[test]
     fn standard_defaults() {
@@ -279,5 +323,24 @@ mod tests {
         assert!(mode.uses_standard_transfer_fee_switch());
         assert_eq!(mode.max_fee(), U256::from(42));
         assert_eq!(mode.hook_data(), Some(&hook));
+    }
+
+    #[test]
+    fn forwarding_modes_are_distinct_from_standard_fee_switch() {
+        let route = ForwardingServiceRoute::new(NamedChain::Base, NamedChain::Avalanche).unwrap();
+        let hook_data = route.hook_data();
+        let expected_hook = hook_data.as_bytes().clone();
+        let mode = TransferMode::StandardForwarded {
+            max_fee: U256::from(58_843_u64),
+            hook_data,
+        };
+
+        assert_eq!(mode.finality_threshold(), FinalityThreshold::Standard);
+        assert!(!mode.is_fast());
+        assert!(mode.is_forwarding());
+        assert!(!mode.uses_standard_transfer_fee_switch());
+        assert!(mode.has_explicit_fee_cap());
+        assert_eq!(mode.max_fee(), U256::from(58_843_u64));
+        assert_eq!(mode.hook_data(), Some(&expected_hook));
     }
 }

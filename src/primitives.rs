@@ -6,7 +6,7 @@
 //! Shared domain primitives for CCTP applications.
 
 use alloy_chains::NamedChain;
-use alloy_primitives::{Address, FixedBytes, U256};
+use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -16,6 +16,56 @@ use crate::{
 };
 
 const USDC_SCALE: u128 = 1_000_000;
+const FORWARDING_SERVICE_HOOK_NAME: &[u8] = b"cctp-forward";
+const FORWARDING_SERVICE_HOOK_VERSION: u32 = 1;
+
+/// Canonical version-1 hook data for Circle's Forwarding Service.
+///
+/// Values of this type can only be constructed from a validated
+/// [`ForwardingServiceRoute`]. The encoded frame contains Circle's
+/// `cctp-forward` hook name, version `1`, and an empty payload.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ForwardingServiceHookData {
+    bytes32: FixedBytes<32>,
+    bytes: Bytes,
+}
+
+impl ForwardingServiceHookData {
+    fn canonical() -> Self {
+        let mut bytes = [0_u8; 32];
+        bytes[..FORWARDING_SERVICE_HOOK_NAME.len()].copy_from_slice(FORWARDING_SERVICE_HOOK_NAME);
+        bytes[24..28].copy_from_slice(&FORWARDING_SERVICE_HOOK_VERSION.to_be_bytes());
+        Self {
+            bytes32: FixedBytes::from(bytes),
+            bytes: Bytes::copy_from_slice(&bytes),
+        }
+    }
+
+    /// Returns the canonical 32-byte version-1 forwarding frame.
+    #[must_use]
+    pub const fn as_bytes32(&self) -> FixedBytes<32> {
+        self.bytes32
+    }
+
+    /// Borrows the canonical frame as hook bytes.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &Bytes {
+        &self.bytes
+    }
+
+    /// Returns the forwarding frame as hook bytes accepted by
+    /// [`TransferMode`](crate::TransferMode).
+    #[must_use]
+    pub fn into_bytes(self) -> Bytes {
+        self.bytes
+    }
+}
+
+impl From<ForwardingServiceHookData> for Bytes {
+    fn from(hook: ForwardingServiceHookData) -> Self {
+        hook.into_bytes()
+    }
+}
 
 /// A nonzero CCTP `destinationCaller` word that restricts destination-chain
 /// message execution to one caller.
@@ -366,6 +416,54 @@ pub struct CctpV2Route {
     destination: NamedChain,
 }
 
+/// A validated USDC CCTP v2 route whose destination accepts Circle's
+/// Forwarding Service.
+///
+/// This type covers Circle's generic Forwarding Service for bridge-supported
+/// EVM destinations. Stellar's separate `CctpForwarder` flow is intentionally
+/// outside this type because it requires a non-EVM provider, seven-decimal
+/// USDC amounts, full-width Stellar addresses, and Soroban submission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ForwardingServiceRoute(CctpV2Route);
+
+impl ForwardingServiceRoute {
+    /// Validates a USDC route and its destination Forwarding Service
+    /// capability.
+    pub fn new(source: NamedChain, destination: NamedChain) -> Result<Self> {
+        let route = CctpV2Route::for_asset(source, destination, CctpTransferAsset::Usdc)?;
+        if !destination.supports_forwarding_service()? {
+            return Err(CctpError::ForwardingServiceUnsupported {
+                destination_chain: destination,
+            });
+        }
+        Ok(Self(route))
+    }
+
+    /// Underlying validated CCTP v2 route.
+    #[must_use]
+    pub const fn route(self) -> CctpV2Route {
+        self.0
+    }
+
+    /// Source chain.
+    #[must_use]
+    pub const fn source_chain(self) -> NamedChain {
+        self.0.source_chain()
+    }
+
+    /// Destination chain.
+    #[must_use]
+    pub const fn destination_chain(self) -> NamedChain {
+        self.0.destination_chain()
+    }
+
+    /// Canonical version-1 hook data for the Forwarding Service request.
+    #[must_use]
+    pub fn hook_data(self) -> ForwardingServiceHookData {
+        ForwardingServiceHookData::canonical()
+    }
+}
+
 impl CctpV2Route {
     /// Validates and creates a CCTP v2 route.
     pub fn new(source: NamedChain, destination: NamedChain) -> Result<Self> {
@@ -552,6 +650,29 @@ fn parse_usdc_fraction(input: &str) -> Result<u128> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forwarding_service_route_constructs_canonical_version_one_hook() {
+        let route = ForwardingServiceRoute::new(NamedChain::Base, NamedChain::Avalanche)
+            .expect("Avalanche accepts Circle Forwarding Service requests");
+
+        assert_eq!(route.source_chain(), NamedChain::Base);
+        assert_eq!(route.destination_chain(), NamedChain::Avalanche);
+        assert_eq!(
+            alloy_primitives::hex::encode(route.hook_data().as_bytes32()),
+            "636374702d666f72776172640000000000000000000000000000000100000000"
+        );
+    }
+
+    #[test]
+    fn forwarding_service_route_rejects_unsupported_destination() {
+        assert!(matches!(
+            ForwardingServiceRoute::new(NamedChain::Mainnet, NamedChain::Injective),
+            Err(CctpError::ForwardingServiceUnsupported {
+                destination_chain: NamedChain::Injective
+            })
+        ));
+    }
 
     #[test]
     fn restricted_destination_caller_preserves_canonical_bytes32() {
