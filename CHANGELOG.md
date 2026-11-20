@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added typed, opt-in restricted `destinationCaller` support to the direct
+  `TokenMessengerV2Contract` wrapper. `RestrictedDestinationCaller` preserves
+  the canonical 32-byte protocol word, rejects the permissionless zero value,
+  and is accepted by both plain and hook burn transaction builders. High-level
+  bridge burns remain permissionless by default. Tracks issue #2.
 - Expanded USDC CCTP v2 bridge routing from 11 to 21 mainnet chain families
   and from 6 to 21 testnet networks, adding World Chain, Monad, XDC, Ink,
   Plume, Arc, Injective EVM, Pharos, Cronos, and Plasma with Circle-published

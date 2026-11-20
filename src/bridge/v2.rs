@@ -3377,12 +3377,12 @@ mod tests {
                 .input()
                 .expect("transaction request carries calldata");
 
-            // `destinationCaller` is hard-coded to `Address::ZERO` so that any
-            // attester can submit `receiveMessage` on the destination chain
-            // (`src/contracts/v2/token_messenger_v2.rs:77,236`). A future
-            // refactor that wires a real caller into the helpers would silently
-            // lock burns to a single relayer — pinning the zero value here
-            // makes that drift fail this test instead of stranding funds.
+            // High-level bridge helpers keep `destinationCaller` at zero so
+            // any relayer can submit `receiveMessage` on the destination
+            // chain. Restricted caller support lives only in the explicitly
+            // named direct-contract builders. Pinning zero here makes an
+            // accidental bridge-level restriction fail this test instead of
+            // stranding funds.
             let expected_destination_caller = Address::ZERO.into_word();
 
             match expected_call {

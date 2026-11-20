@@ -11,6 +11,14 @@ use alloy_transport::TransportErrorKind;
 use std::fmt;
 use thiserror::Error;
 
+/// Error returned when a restricted CCTP destination caller is the zero word.
+///
+/// CCTP reserves the all-zero `destinationCaller` for permissionless relay, so
+/// it cannot express a restricted caller.
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[error("restricted destination caller must be a non-zero bytes32 value")]
+pub struct InvalidDestinationCaller;
+
 /// Known revert reason patterns that indicate a message was already processed.
 /// These are matched case-insensitively against error messages.
 const ALREADY_RELAYED_PATTERNS: &[&str] = &[

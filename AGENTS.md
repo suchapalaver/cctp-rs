@@ -61,6 +61,17 @@ behavior.
 - **`recipient` is `bytes32`, not `address`.** It's the 20-byte address
   left-padded to 32 bytes. The builder accepts an `Address` and handles padding;
   if you go around the builder, do the padding yourself.
+- **Restricted `destinationCaller` is an advanced contract flow.** High-level
+  bridge burns remain permissionless. Direct callers can use
+  `RestrictedDestinationCaller` with the restricted
+  `TokenMessengerV2Contract` transaction builders; the type preserves the
+  full protocol `bytes32` word and rejects zero. A wrong value can permanently
+  strand funds. Ordinary Forwarding Service hooks do not support a restricted
+  wrapper caller; Stellar's separate `CctpForwarder` flow requires its full
+  32-byte contract ID as both mint recipient and destination caller. The
+  current restricted transaction builders still take an EVM `Address` mint
+  recipient and do not implement that Stellar flow; it remains tracked in
+  #30.
 - **Mainnet vs testnet hit different Iris hosts** (`iris-api.circle.com` vs
   `iris-api-sandbox.circle.com`). Selection is automatic from the chain — but
   if you stub the API in tests, stub both.
@@ -115,7 +126,7 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `MintResult` | `Minted(TxHash)` / `AlreadyRelayed` | `src/bridge/v2.rs` |
 | `PollingConfig` | Attestation polling tuning | `src/bridge/config.rs` |
 | `TokenState`, `batch_token_state` | ERC-20 allowance/balance helpers | `src/bridge/` |
-| `CctpTransferAsset`, `CctpV2Route`, `UsdcAmount` | Asset, route, and amount primitives | `src/primitives.rs` |
+| `CctpTransferAsset`, `CctpV2Route`, `RestrictedDestinationCaller`, `UsdcAmount` | Asset, route, restricted-caller, and amount primitives | `src/primitives.rs` |
 | `CctpV1`, `CctpV2` traits | Chain config on `NamedChain` | `src/chain/config.rs`, `src/chain/v2.rs` |
 | `FastTransferFee` | `Known(FeeBps)` / `Unknown` — static per-chain fee metadata; not current route quotes | `src/chain/v2.rs` |
 | `FeeBps`, `TransferFee`, `FastTransferAllowance`, `IrisTimestamp` | Live Iris route-fee and allowance response types plus max-fee helpers | `src/protocol/fees.rs` |
@@ -126,7 +137,7 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `AttestationResponse`, `AttestationStatus`, `V2AttestationResponse` | Iris API response types | `src/protocol/attestation.rs` |
 | `ParsedV2Message`, `ParsedV2MessageSummary`, `BurnMessageV2`, `MessageHeader`, `V2Message` | Canonical v2 message parsing | `src/protocol/message.rs` |
 | `DomainId`, `FinalityThreshold` | Protocol constants | `src/protocol/` |
-| `CctpError`, `AmountError`, `ConfigError`, `Result`, `ParseMessageError` | Error types | `src/error.rs`, `src/protocol/message.rs` |
+| `CctpError`, `AmountError`, `ConfigError`, `InvalidDestinationCaller`, `Result`, `ParseMessageError` | Error types | `src/error.rs`, `src/protocol/message.rs` |
 | `ProviderConfig*`, `estimate_gas_with_buffer`, `calculate_gas_price_with_buffer` | Provider tuning helpers | `src/provider.rs` |
 | `spans` module | OpenTelemetry instrumentation hooks | `src/spans.rs` |
 

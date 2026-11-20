@@ -119,11 +119,11 @@
 //! - [`CctpV1`] and [`CctpV2`] - Traits for chain-specific configurations
 //! - [`PollingConfig`] - Configuration for attestation polling behavior
 //! - [`TransferMode`] - Selects which v2 burn variant (standard / fast / with hook) the bridge sends
-//! - [`CctpTransferAsset`], [`CctpV2Route`], and [`UsdcAmount`] - Shared application primitives for asset, route, and amount validation
+//! - [`CctpTransferAsset`], [`CctpV2Route`], [`RestrictedDestinationCaller`], and [`UsdcAmount`] - Shared application primitives for asset, route, caller, and amount validation
 //! - [`FeeBps`] and [`TransferFee`] - Live Iris transfer-fee response types and max-fee helpers
 //! - [`ParsedV2Message`] and [`ParsedV2MessageSummary`] - Parse canonical v2 messages into serializable structs
 //! - [`ParseMessageError`] - Error type for canonical v2 message parsing
-//! - [`InvalidDomainId`] and [`InvalidFinalityThreshold`] - Errors returned by `TryFrom<u32>` for [`DomainId`] / [`FinalityThreshold`]
+//! - [`InvalidDestinationCaller`], [`InvalidDomainId`], and [`InvalidFinalityThreshold`] - Typed primitive-construction errors
 //! - [`CctpError`], [`AmountError`], [`ConfigError`], and [`Result`] - Error types for error handling
 //! - Contract wrappers for direct contract interaction:
 //!   - v1: [`TokenMessengerContract`], [`MessageTransmitterContract`]
@@ -179,8 +179,10 @@ pub use contracts::{
         TokenMessengerV2Contract,
     },
 };
-pub use error::{AmountError, AttestationFailureKind, CctpError, ConfigError, Result};
-pub use primitives::{CctpTransferAsset, CctpV2Route, UsdcAmount};
+pub use error::{
+    AmountError, AttestationFailureKind, CctpError, ConfigError, InvalidDestinationCaller, Result,
+};
+pub use primitives::{CctpTransferAsset, CctpV2Route, RestrictedDestinationCaller, UsdcAmount};
 pub use protocol::{
     AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId,
     FastTransferAllowance, FeeBps, FinalityThreshold, InvalidDomainId, InvalidFinalityThreshold,

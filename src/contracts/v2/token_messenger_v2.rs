@@ -11,7 +11,7 @@
 #![allow(dead_code)] // Public API methods not used internally
 
 use alloy_network::Ethereum;
-use alloy_primitives::{Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionRequest;
 use alloy_sol_types::sol;
@@ -19,6 +19,7 @@ use tracing::{debug, info};
 
 use crate::protocol::DomainId;
 use crate::spans;
+use crate::RestrictedDestinationCaller;
 use TokenMessengerV2::TokenMessengerV2Instance;
 
 /// The CCTP v2 Token Messenger contract wrapper
@@ -67,7 +68,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
         amount: U256,
         max_fee: U256,
         min_finality_threshold: u32,
-        destination_caller: Address,
+        destination_caller: FixedBytes<32>,
     ) -> TransactionRequest {
         self.instance
             .depositForBurn(
@@ -75,7 +76,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
                 destination_domain.as_u32(),
                 recipient.into_word(),
                 token_address,
-                destination_caller.into_word(),
+                destination_caller,
                 max_fee,
                 min_finality_threshold,
             )
@@ -128,6 +129,67 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
         max_fee: U256,
         min_finality_threshold: u32,
     ) -> TransactionRequest {
+        self.deposit_for_burn_configured_transaction(
+            from_address,
+            recipient,
+            destination_domain,
+            token_address,
+            amount,
+            max_fee,
+            min_finality_threshold,
+            FixedBytes::ZERO,
+        )
+    }
+
+    /// Create a `depositForBurn` transaction restricted to one destination
+    /// caller.
+    ///
+    /// This is an advanced alternative to the permissionless bridge helpers.
+    /// The caller is a validated, nonzero CCTP `bytes32` word, so the protocol
+    /// value is not coupled to an EVM-only representation. Only that caller
+    /// may submit `receiveMessage` on the destination chain; a wrong value can
+    /// permanently strand funds.
+    ///
+    /// Circle's ordinary Forwarding Service does not support wrapper-contract
+    /// flows with `destinationCaller` set. This method still takes an EVM
+    /// `Address` mint recipient and does not implement Stellar's separate
+    /// `CctpForwarder` recipient and hook requirements.
+    #[allow(clippy::too_many_arguments)]
+    pub fn deposit_for_burn_restricted_transaction(
+        &self,
+        from_address: Address,
+        recipient: Address,
+        destination_domain: DomainId,
+        token_address: Address,
+        amount: U256,
+        max_fee: U256,
+        min_finality_threshold: u32,
+        destination_caller: RestrictedDestinationCaller,
+    ) -> TransactionRequest {
+        self.deposit_for_burn_configured_transaction(
+            from_address,
+            recipient,
+            destination_domain,
+            token_address,
+            amount,
+            max_fee,
+            min_finality_threshold,
+            destination_caller.as_bytes32(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn deposit_for_burn_configured_transaction(
+        &self,
+        from_address: Address,
+        recipient: Address,
+        destination_domain: DomainId,
+        token_address: Address,
+        amount: U256,
+        max_fee: U256,
+        min_finality_threshold: u32,
+        destination_caller: FixedBytes<32>,
+    ) -> TransactionRequest {
         let span = spans::deposit_for_burn(
             &from_address,
             &recipient,
@@ -144,6 +206,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             token_address = %token_address,
             amount = %amount,
             max_fee = %max_fee,
+            destination_caller = %destination_caller,
             contract_address = %self.instance.address(),
             version = "v2",
             finality_threshold = min_finality_threshold,
@@ -158,7 +221,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             amount,
             max_fee,
             min_finality_threshold,
-            Address::ZERO, // destination_caller: 0x0 = anyone
+            destination_caller,
         )
     }
 
@@ -227,7 +290,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             amount,
             max_fee,
             min_finality_threshold,
-            Address::ZERO, // destination_caller: 0x0 = anyone
+            FixedBytes::ZERO, // destination_caller: 0x0 = anyone
         )
     }
 
@@ -264,6 +327,66 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
         min_finality_threshold: u32,
         hook_data: Bytes,
     ) -> TransactionRequest {
+        self.deposit_for_burn_with_hooks_configured_transaction(
+            from_address,
+            recipient,
+            destination_domain,
+            token_address,
+            amount,
+            max_fee,
+            min_finality_threshold,
+            FixedBytes::ZERO,
+            hook_data,
+        )
+    }
+
+    /// Create a `depositForBurnWithHook` transaction restricted to one
+    /// destination caller.
+    ///
+    /// This preserves the full CCTP `bytes32` caller word. Use it only when the
+    /// destination contract flow is designed to invoke `receiveMessage`; the
+    /// normal bridge APIs deliberately remain permissionless. This method does
+    /// not implement Stellar's separate `CctpForwarder` recipient and hook
+    /// requirements.
+    #[allow(clippy::too_many_arguments)]
+    pub fn deposit_for_burn_with_hooks_restricted_transaction(
+        &self,
+        from_address: Address,
+        recipient: Address,
+        destination_domain: DomainId,
+        token_address: Address,
+        amount: U256,
+        max_fee: U256,
+        min_finality_threshold: u32,
+        destination_caller: RestrictedDestinationCaller,
+        hook_data: Bytes,
+    ) -> TransactionRequest {
+        self.deposit_for_burn_with_hooks_configured_transaction(
+            from_address,
+            recipient,
+            destination_domain,
+            token_address,
+            amount,
+            max_fee,
+            min_finality_threshold,
+            destination_caller.as_bytes32(),
+            hook_data,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn deposit_for_burn_with_hooks_configured_transaction(
+        &self,
+        from_address: Address,
+        recipient: Address,
+        destination_domain: DomainId,
+        token_address: Address,
+        amount: U256,
+        max_fee: U256,
+        min_finality_threshold: u32,
+        destination_caller: FixedBytes<32>,
+        hook_data: Bytes,
+    ) -> TransactionRequest {
         info!(
             from_address = %from_address,
             recipient = %recipient,
@@ -271,6 +394,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
             token_address = %token_address,
             amount = %amount,
             max_fee = %max_fee,
+            destination_caller = %destination_caller,
             hook_data_len = hook_data.len(),
             contract_address = %self.instance.address(),
             version = "v2",
@@ -285,7 +409,7 @@ impl<P: Provider<Ethereum>> TokenMessengerV2Contract<P> {
                 destination_domain.as_u32(),
                 recipient.into_word(),
                 token_address,
-                Address::ZERO.into_word(), // destination_caller: 0x0 = anyone
+                destination_caller,
                 max_fee,
                 min_finality_threshold,
                 hook_data,
@@ -307,3 +431,73 @@ sol!(
     TokenMessengerV2,
     "abis/v2/token_messenger_v2.json"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_provider::ProviderBuilder;
+    use alloy_sol_types::SolCall;
+
+    fn contract() -> TokenMessengerV2Contract<impl Provider<Ethereum>> {
+        let provider = ProviderBuilder::new().connect_http("http://127.0.0.1:1/".parse().unwrap());
+        TokenMessengerV2Contract::new(Address::repeat_byte(0x11), provider)
+    }
+
+    #[test]
+    fn restricted_burn_encodes_full_destination_caller_word() {
+        let from = Address::repeat_byte(0x22);
+        let recipient = Address::repeat_byte(0x33);
+        let token = Address::repeat_byte(0x44);
+        let caller_address = Address::repeat_byte(0x55);
+        let caller_word = caller_address.into_word();
+        let caller = RestrictedDestinationCaller::from_evm_address(caller_address).unwrap();
+
+        let transaction = contract().deposit_for_burn_restricted_transaction(
+            from,
+            recipient,
+            DomainId::Base,
+            token,
+            U256::from(1_000_000_u64),
+            U256::from(100_u64),
+            1_000,
+            caller,
+        );
+
+        assert_eq!(transaction.from, Some(from));
+        let calldata = transaction.input.input().expect("burn calldata");
+        let decoded = TokenMessengerV2::depositForBurnCall::abi_decode(calldata)
+            .expect("depositForBurn calldata");
+        assert_eq!(decoded.destinationCaller, caller_word);
+        assert_eq!(decoded.mintRecipient, recipient.into_word());
+        assert_eq!(decoded.destinationDomain, DomainId::Base.as_u32());
+        assert_eq!(decoded.maxFee, U256::from(100_u64));
+        assert_eq!(decoded.minFinalityThreshold, 1_000);
+    }
+
+    #[test]
+    fn restricted_hook_burn_encodes_caller_and_hook_data() {
+        let caller_address = Address::repeat_byte(0x66);
+        let caller_word = caller_address.into_word();
+        let caller = RestrictedDestinationCaller::from_evm_address(caller_address).unwrap();
+        let hook_data = Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]);
+
+        let transaction = contract().deposit_for_burn_with_hooks_restricted_transaction(
+            Address::repeat_byte(0x22),
+            Address::repeat_byte(0x33),
+            DomainId::Base,
+            Address::repeat_byte(0x44),
+            U256::from(1_000_000_u64),
+            U256::ZERO,
+            2_000,
+            caller,
+            hook_data.clone(),
+        );
+
+        let calldata = transaction.input.input().expect("hook burn calldata");
+        let decoded = TokenMessengerV2::depositForBurnWithHookCall::abi_decode(calldata)
+            .expect("depositForBurnWithHook calldata");
+        assert_eq!(decoded.destinationCaller, caller_word);
+        assert_eq!(decoded.hookData, hook_data);
+        assert_eq!(decoded.minFinalityThreshold, 2_000);
+    }
+}

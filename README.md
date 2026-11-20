@@ -637,6 +637,29 @@ println!("V2 Fast Transfer: {} seconds", fast_time);
 println!("V2 Standard Transfer: {} seconds", standard_time);
 ```
 
+### Restricted Destination Callers (V2)
+
+High-level `CctpV2Bridge` burns deliberately keep `destinationCaller` at the
+all-zero word so any relayer can complete the transfer. Advanced contract
+flows can opt into a restricted caller through
+`TokenMessengerV2Contract::deposit_for_burn_restricted_transaction` or
+`deposit_for_burn_with_hooks_restricted_transaction`.
+
+Construct the caller with `RestrictedDestinationCaller::new(bytes32)` so the
+full protocol word is retained without coupling the type to EVM forever. The
+constructor rejects zero because CCTP assigns zero the distinct meaning
+“permissionless.” For the currently supported EVM flow,
+`RestrictedDestinationCaller::from_evm_address` performs the required
+left-padding.
+
+A wrong restricted caller can permanently strand funds. Circle's ordinary
+Forwarding Service does not support wrapper-contract flows with
+`destinationCaller` set. Stellar is a separate case: Circle requires both the
+mint recipient and destination caller to be the full 32-byte `CctpForwarder`
+contract ID and requires its documented hook encoding. These direct builders
+still accept an EVM `Address` mint recipient and therefore do not claim to
+implement that Stellar flow; issue #30 tracks its typed construction.
+
 ### Relayer-Aware Patterns (V2)
 
 CCTP v2 is **permissionless** - anyone can relay a message once Circle's attestation is available. Third-party relayers (Synapse, LI.FI, etc.) actively monitor for burns and may complete transfers before your application does. This is a feature, not a bug!
