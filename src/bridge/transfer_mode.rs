@@ -100,6 +100,18 @@ pub enum TransferMode {
         hook_data: Bytes,
     },
 
+    /// Burn carrying hook data at confirmed (fast) finality.
+    ///
+    /// Combines a fast-finality attestation with a post-mint hook. Both
+    /// `maxFee` and `hookData` are passed through to
+    /// `depositForBurnWithHook` on-chain.
+    FastWithHook {
+        /// Maximum fast-transfer fee, in burn-token atomic units.
+        max_fee: U256,
+        /// Hook payload forwarded to the destination chain.
+        hook_data: Bytes,
+    },
+
     /// Standard-finality burn submitted through Circle's Forwarding Service.
     ///
     /// Unlike [`Self::StandardWithFeeAndHook`], this fee cap pays Circle's
@@ -111,18 +123,6 @@ pub enum TransferMode {
         max_fee: U256,
         /// Canonical forwarding hook from a validated route.
         hook_data: ForwardingServiceHookData,
-    },
-
-    /// Burn carrying hook data at confirmed (fast) finality.
-    ///
-    /// Combines a fast-finality attestation with a post-mint hook. Both
-    /// `maxFee` and `hookData` are passed through to
-    /// `depositForBurnWithHook` on-chain.
-    FastWithHook {
-        /// Maximum fast-transfer fee, in burn-token atomic units.
-        max_fee: U256,
-        /// Hook payload forwarded to the destination chain.
-        hook_data: Bytes,
     },
 
     /// Fast-finality burn submitted through Circle's Forwarding Service.

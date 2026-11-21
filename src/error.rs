@@ -124,6 +124,15 @@ pub enum AmountError {
     /// A Forwarding Service fee cap was not smaller than the burn amount.
     #[error("Forwarding Service max_fee ({max_fee}) must be less than the burn amount ({amount})")]
     ForwardingFeeNotLessThanAmount { max_fee: U256, amount: U256 },
+    /// The percentage protocol fee could not be represented in the on-chain
+    /// `uint256` range.
+    #[error(
+        "Forwarding Service protocol fee exceeds uint256 for recipient amount {recipient_amount} at {fee_hundredths} hundredths of a basis point"
+    )]
+    ForwardingProtocolFeeOverflow {
+        recipient_amount: U256,
+        fee_hundredths: u32,
+    },
     /// The protocol and Forwarding Service fees could not be added without
     /// exceeding the on-chain `uint256` range.
     #[error(

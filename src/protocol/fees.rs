@@ -126,6 +126,17 @@ impl FeeBps {
         )
     }
 
+    fn checked_apply_to_amount(self, amount: U256) -> Option<U256> {
+        let denominator = U256::from(BPS_HUNDREDTH_DENOMINATOR);
+        let multiplier = U256::from(self.hundredths);
+
+        // Split before multiplying so an intermediate `uint256` overflow does
+        // not corrupt a mathematically representable quotient.
+        let whole = (amount / denominator).checked_mul(multiplier)?;
+        let remainder = (amount % denominator).checked_mul(multiplier)?;
+        whole.checked_add(ceil_div(remainder, denominator))
+    }
+
     /// Calculates the fee amount with a percentage buffer.
     ///
     /// `buffer_percent = 20` returns `fee * 1.2`, rounded up to an atomic unit.
@@ -425,14 +436,22 @@ impl ForwardingTransferFee {
     ///
     /// # Errors
     ///
-    /// Returns [`AmountError::ForwardingFeeOverflow`] when the protocol and
-    /// forwarding fee sum exceeds the on-chain `uint256` range.
+    /// Returns [`AmountError::ForwardingProtocolFeeOverflow`] when the exact
+    /// percentage fee exceeds the on-chain `uint256` range, or
+    /// [`AmountError::ForwardingFeeOverflow`] when the protocol and forwarding
+    /// fee sum exceeds that range.
     pub fn minimum_max_fee(
         self,
         recipient_amount: U256,
         level: ForwardingFeeLevel,
     ) -> Result<U256, AmountError> {
-        let protocol_fee = self.minimum_fee.apply_to_amount(recipient_amount);
+        let protocol_fee = self
+            .minimum_fee
+            .checked_apply_to_amount(recipient_amount)
+            .ok_or(AmountError::ForwardingProtocolFeeOverflow {
+                recipient_amount,
+                fee_hundredths: self.minimum_fee.as_hundredths(),
+            })?;
         let forwarding_fee = self.forward_fee.at(level);
         protocol_fee
             .checked_add(forwarding_fee)
@@ -739,6 +758,45 @@ mod tests {
                 protocol_fee,
                 forwarding_fee: U256::MAX,
             }) if protocol_fee == U256::from(1)
+        ));
+    }
+
+    #[test]
+    fn forwarding_transfer_fee_avoids_intermediate_percentage_overflow() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Fast.as_u32(),
+            FeeBps::from_hundredths(130),
+            ForwardingFee::new(U256::ZERO, U256::ZERO, U256::ZERO),
+        );
+        let recipient_amount = U256::MAX / U256::from(130_u64) + U256::from(1_u64);
+        let expected = U256::from_str_radix(
+            "115792089237316195423570985008687907853269984665640564039457584007913130",
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fee.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium)
+                .unwrap(),
+            expected
+        );
+        assert!(recipient_amount.checked_add(expected).is_some());
+    }
+
+    #[test]
+    fn forwarding_transfer_fee_rejects_protocol_fee_overflow() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Fast.as_u32(),
+            FeeBps::from_hundredths(u32::MAX),
+            ForwardingFee::new(U256::ZERO, U256::ZERO, U256::ZERO),
+        );
+
+        assert!(matches!(
+            fee.minimum_max_fee(U256::MAX, ForwardingFeeLevel::Medium),
+            Err(AmountError::ForwardingProtocolFeeOverflow {
+                recipient_amount: U256::MAX,
+                fee_hundredths: u32::MAX,
+            })
         ));
     }
 
