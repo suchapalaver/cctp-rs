@@ -51,6 +51,10 @@ use crate::contracts::erc20::Erc20Contract;
 use crate::contracts::message_transmitter::MessageTransmitter::MessageSent;
 use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contract};
 
+/// Circle Iris query parameter that opts a route-fee request into Forwarding
+/// Service fee tiers.
+const FORWARDING_SERVICE_QUERY_PARAMETER: &str = "forward";
+
 /// CCTP v2 bridge implementation
 ///
 /// This struct provides the core functionality for bridging modeled CCTP assets
@@ -381,7 +385,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     pub fn create_forwarding_fees_url(&self) -> Result<Url> {
         self.forwarding_service_route()?;
         let mut url = self.create_transfer_fees_url()?;
-        url.query_pairs_mut().append_pair("forward", "true");
+        url.query_pairs_mut()
+            .append_pair(FORWARDING_SERVICE_QUERY_PARAMETER, "true");
         Ok(url)
     }
 
