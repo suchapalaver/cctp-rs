@@ -662,8 +662,8 @@ let quote = bridge
     .into_iter()
     .find(|fee| fee.finality() == Some(FinalityThreshold::Fast))
     .expect("Iris returned a Fast Transfer forwarding quote");
-let max_fee = quote.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium);
-let burn_amount = recipient_amount + max_fee;
+let max_fee = quote.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium)?;
+let burn_amount = recipient_amount.checked_add(max_fee).expect("USDC amount fits uint256");
 let mode = TransferMode::FastForwarded {
     max_fee,
     hook_data: route.hook_data(),
@@ -675,6 +675,13 @@ forwarding fee and percentage protocol fee are deducted so the recipient gets
 the intended amount. Circle recommends the medium tier or higher. The generic
 Forwarding Service requires the all-zero, permissionless `destinationCaller`,
 which the high-level bridge already preserves.
+
+Do not call `transfer()` or `transfer_asset()` with a forwarding mode: those
+helpers self-submit the destination mint, while the Forwarding Service makes
+Circle the relayer. They return `ForwardingServiceSelfRelayUnsupported` before
+the source burn. Call `burn()` or `burn_asset()`, fetch the canonical message
+with `get_attestation()`, and use `wait_for_receive()` to observe Circle's
+destination mint.
 
 Stellar's `CctpForwarder` is a different Soroban flow, not a destination served
 by Circle's generic Forwarding Service. It requires seven-decimal USDC amounts,

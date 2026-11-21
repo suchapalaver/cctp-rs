@@ -198,7 +198,9 @@ async fn forwarding_fee_lookup_validates_route_and_decodes_fixed_fee_tiers() {
         .expect("forwarding fee response should decode");
     assert_eq!(fees.len(), 1);
     assert_eq!(
-        fees[0].minimum_max_fee(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium),
+        fees[0]
+            .minimum_max_fee(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium)
+            .expect("documented fee components fit uint256"),
         U256::from(58_843_u64)
     );
 }

@@ -110,7 +110,9 @@ behavior.
   keep `destinationCaller` permissionless as Circle requires. Injective
   and Pharos remain valid direct bridge destinations but do not support
   forwarding. Stellar's separate `CctpForwarder`/Soroban flow remains outside
-  the EVM bridge surface.
+  the EVM bridge surface. Forwarding modes use `burn`/`burn_asset` followed by
+  `wait_for_receive`; `transfer`/`transfer_asset` reject them before the burn
+  because those helpers self-submit the destination mint.
 - **Parser address projections are domain-aware.** `ParsedV2MessageSummary`
   always exposes canonical 32-byte `*_bytes` fields. EVM-shaped `Address`
   projections are `None` for non-EVM source or destination domains so tooling

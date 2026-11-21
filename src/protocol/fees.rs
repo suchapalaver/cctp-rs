@@ -11,6 +11,8 @@ use serde_json::value::RawValue;
 use std::{fmt, str::FromStr};
 use thiserror::Error;
 
+use crate::error::AmountError;
+
 use super::FinalityThreshold;
 
 const BPS_HUNDREDTH_DENOMINATOR: u64 = 1_000_000;
@@ -420,9 +422,24 @@ impl ForwardingTransferFee {
     /// desired recipient amount and the selected fixed forwarding tier.
     /// Burn `recipient_amount + minimum_max_fee(...)` so the destination
     /// recipient receives the intended amount after fees.
-    #[must_use]
-    pub fn minimum_max_fee(self, recipient_amount: U256, level: ForwardingFeeLevel) -> U256 {
-        self.minimum_fee.apply_to_amount(recipient_amount) + self.forward_fee.at(level)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AmountError::ForwardingFeeOverflow`] when the protocol and
+    /// forwarding fee sum exceeds the on-chain `uint256` range.
+    pub fn minimum_max_fee(
+        self,
+        recipient_amount: U256,
+        level: ForwardingFeeLevel,
+    ) -> Result<U256, AmountError> {
+        let protocol_fee = self.minimum_fee.apply_to_amount(recipient_amount);
+        let forwarding_fee = self.forward_fee.at(level);
+        protocol_fee
+            .checked_add(forwarding_fee)
+            .ok_or(AmountError::ForwardingFeeOverflow {
+                protocol_fee,
+                forwarding_fee,
+            })
     }
 }
 
@@ -702,9 +719,27 @@ mod tests {
         assert_eq!(fee.forward_fee().medium(), U256::from(57_543_u64));
         assert_eq!(fee.forward_fee().high(), U256::from(59_052_u64));
         assert_eq!(
-            fee.minimum_max_fee(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium),
+            fee.minimum_max_fee(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium)
+                .unwrap(),
             U256::from(58_843_u64)
         );
+    }
+
+    #[test]
+    fn forwarding_transfer_fee_rejects_combined_fee_overflow() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Standard.as_u32(),
+            FeeBps::from_hundredths(1),
+            ForwardingFee::new(U256::MAX, U256::MAX, U256::MAX),
+        );
+
+        assert!(matches!(
+            fee.minimum_max_fee(U256::from(1), ForwardingFeeLevel::Medium),
+            Err(AmountError::ForwardingFeeOverflow {
+                protocol_fee,
+                forwarding_fee: U256::MAX,
+            }) if protocol_fee == U256::from(1)
+        ));
     }
 
     #[test]

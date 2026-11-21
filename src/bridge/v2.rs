@@ -1732,6 +1732,13 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ///
     /// Tuple of (`burn_tx_hash`, `mint_tx_hash`)
     ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::ForwardingServiceSelfRelayUnsupported`] before the
+    /// source burn when a forwarding mode is configured. Forwarded burns must
+    /// let Circle relay the destination mint; use [`Self::burn`] or
+    /// [`Self::burn_asset`] followed by [`Self::wait_for_receive`].
+    ///
     /// # Example
     ///
     /// ```rust,ignore
@@ -1755,6 +1762,10 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         from: Address,
         token_address: Address,
     ) -> Result<(TxHash, TxHash)> {
+        if self.transfer_mode.is_forwarding() {
+            return Err(CctpError::ForwardingServiceSelfRelayUnsupported);
+        }
+
         info!(
             amount = %amount,
             from = %from,
@@ -3662,6 +3673,32 @@ mod tests {
             assert!(
                 captured.lock().expect("captured-request mutex").is_empty(),
                 "invalid forwarding fee caps must fail before eth_sendTransaction"
+            );
+        }
+
+        #[tokio::test]
+        async fn forwarded_transfer_rejects_self_relay_before_burn() {
+            let (bridge, captured) = build_bridge(TransferMode::StandardForwarded {
+                max_fee: U256::from(58_843_u64),
+                hook_data: forwarding_hook_data(),
+            });
+
+            let err = bridge
+                .transfer(
+                    U256::from(10_058_843_u64),
+                    Address::repeat_byte(0xaa),
+                    Address::repeat_byte(0xbb),
+                )
+                .await
+                .expect_err("Circle, not the SDK, must relay a forwarded transfer");
+
+            assert!(matches!(
+                err,
+                CctpError::ForwardingServiceSelfRelayUnsupported
+            ));
+            assert!(
+                captured.lock().expect("captured-request mutex").is_empty(),
+                "forwarded transfer() must fail before the source burn"
             );
         }
 

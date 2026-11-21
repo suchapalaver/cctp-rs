@@ -124,6 +124,15 @@ pub enum AmountError {
     /// A Forwarding Service fee cap was not smaller than the burn amount.
     #[error("Forwarding Service max_fee ({max_fee}) must be less than the burn amount ({amount})")]
     ForwardingFeeNotLessThanAmount { max_fee: U256, amount: U256 },
+    /// The protocol and Forwarding Service fees could not be added without
+    /// exceeding the on-chain `uint256` range.
+    #[error(
+        "combined Forwarding Service fee exceeds uint256 (protocol fee {protocol_fee}, forwarding fee {forwarding_fee})"
+    )]
+    ForwardingFeeOverflow {
+        protocol_fee: U256,
+        forwarding_fee: U256,
+    },
 }
 
 #[derive(Error, Debug)]
@@ -149,6 +158,11 @@ pub enum CctpError {
 
     #[error("Circle Forwarding Service is modeled for USDC only, not {asset}")]
     ForwardingServiceAssetUnsupported { asset: CctpTransferAsset },
+
+    #[error(
+        "Circle Forwarding Service modes cannot use CctpV2Bridge::transfer because Circle relays the destination mint; use burn or burn_asset and wait_for_receive"
+    )]
+    ForwardingServiceSelfRelayUnsupported,
 
     #[error("Unsupported CCTP asset {asset} on chain {chain:?}: {reason}")]
     UnsupportedAssetChain {
