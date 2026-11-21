@@ -5,11 +5,12 @@
 
 use crate::error::{AmountError, AttestationFailureKind, CctpError, Result};
 use crate::protocol::{
-    AttestationBytes, AttestationState, FastTransferAllowance, FinalityThreshold, TransferFee,
-    V2Attestation,
+    AttestationBytes, AttestationState, FastTransferAllowance, FinalityThreshold,
+    ForwardingTransferFee, TransferFee, V2Attestation,
 };
 use crate::{
-    spans, CctpTransferAsset, CctpV2 as CctpV2Trait, CctpV2Route, DomainId, V2AttestationResponse,
+    spans, CctpTransferAsset, CctpV2 as CctpV2Trait, CctpV2Route, DomainId, ForwardingServiceRoute,
+    V2AttestationResponse,
 };
 use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
@@ -49,6 +50,10 @@ use super::config::{
 use crate::contracts::erc20::Erc20Contract;
 use crate::contracts::message_transmitter::MessageTransmitter::MessageSent;
 use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contract};
+
+/// Circle Iris query parameter that opts a route-fee request into Forwarding
+/// Service fee tiers.
+const FORWARDING_SERVICE_QUERY_PARAMETER: &str = "forward";
 
 /// CCTP v2 bridge implementation
 ///
@@ -115,7 +120,9 @@ use crate::contracts::v2::{MessageTransmitterV2Contract, TokenMessengerV2Contrac
 /// | [`Fast`](TransferMode::Fast) | 1000 (confirmed) | none | `depositForBurn` |
 /// | [`StandardWithHook`](TransferMode::StandardWithHook) | 2000 | yes | `depositForBurnWithHook` |
 /// | [`StandardWithFeeAndHook`](TransferMode::StandardWithFeeAndHook) | 2000 | yes | `depositForBurnWithHook` |
+/// | [`StandardForwarded`](TransferMode::StandardForwarded) | 2000 | typed forwarding | `depositForBurnWithHook` |
 /// | [`FastWithHook`](TransferMode::FastWithHook) | 1000 | yes | `depositForBurnWithHook` |
+/// | [`FastForwarded`](TransferMode::FastForwarded) | 1000 | typed forwarding | `depositForBurnWithHook` |
 ///
 /// Earlier versions exposed `fast_transfer`, `hook_data`, and `max_fee` as
 /// independent builder fields. That shape allowed contradictory configs
@@ -287,6 +294,9 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         if self.transfer_mode.uses_standard_transfer_fee_switch() {
             self.ensure_standard_transfer_fee_switch_supported()?;
         }
+        if self.transfer_mode.is_forwarding() {
+            self.forwarding_service_route()?;
+        }
         Ok(())
     }
 
@@ -354,6 +364,30 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         Ok(self.api_url().join(&format!(
             "{TRANSFER_FEES_PATH_V2_PREFIX}{asset_segment}/fees/{source_domain}/{destination_domain}"
         ))?)
+    }
+
+    /// Validates this bridge as a USDC route accepted by Circle's Forwarding
+    /// Service.
+    ///
+    /// The returned route owns construction of the canonical version-1
+    /// `cctp-forward` hook frame. High-level bridge burns keep
+    /// `destinationCaller` permissionless, as required by Circle's generic
+    /// Forwarding Service.
+    pub fn forwarding_service_route(&self) -> Result<ForwardingServiceRoute> {
+        ForwardingServiceRoute::new(self.source_chain, self.destination_chain)
+    }
+
+    /// Constructs the Iris fee URL for a Forwarding Service quote.
+    ///
+    /// Circle's forwarding quote extends the normal USDC route-fee endpoint
+    /// with `forward=true` and returns fixed forwarding fee tiers alongside
+    /// the percentage protocol fee.
+    pub fn create_forwarding_fees_url(&self) -> Result<Url> {
+        self.forwarding_service_route()?;
+        let mut url = self.create_transfer_fees_url()?;
+        url.query_pairs_mut()
+            .append_pair(FORWARDING_SERVICE_QUERY_PARAMETER, "true");
+        Ok(url)
     }
 
     /// Constructs the Iris API v2 URL for the global USDC Fast Transfer allowance.
@@ -425,6 +459,45 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         info!(
             fee_count = fees.len(),
             event = "transfer_fee_request_complete"
+        );
+
+        Ok(fees)
+    }
+
+    /// Fetches live protocol and Forwarding Service fees for this USDC route.
+    ///
+    /// Each response entry includes the route's percentage protocol fee plus
+    /// low, medium, and high fixed forwarding fee tiers in atomic USDC units.
+    /// Circle recommends the medium tier or higher. Use
+    /// [`ForwardingTransferFee::minimum_max_fee`] to combine both components.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::ForwardingServiceUnsupported`] when the
+    /// destination is not accepted by Circle's Forwarding Service, or an error
+    /// when the Iris request or response is invalid.
+    pub async fn get_forwarding_fees(&self) -> Result<Vec<ForwardingTransferFee>> {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(CctpError::Network)?;
+        let url = self.create_forwarding_fees_url()?;
+
+        info!(
+            url = %url,
+            source_chain = %self.source_chain,
+            destination_chain = %self.destination_chain,
+            event = "forwarding_fee_request_started"
+        );
+
+        let response = self.fetch_iris_json_response(&client, &url).await?;
+        response.error_for_status_ref()?;
+        let response_text = response.text().await?;
+        let fees: Vec<ForwardingTransferFee> = serde_json::from_str(&response_text)?;
+
+        info!(
+            fee_count = fees.len(),
+            event = "forwarding_fee_request_complete"
         );
 
         Ok(fees)
@@ -926,6 +999,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// `MessageSent` event. Prefer [`Self::burn_asset`] for modeled assets such
     /// as USDC or EURC so the SDK validates route support and resolves the
     /// source token address before submitting RPC.
+    /// Raw callers selecting a forwarding mode are responsible for passing
+    /// USDC; [`Self::burn_asset`] enforces that asset boundary.
     ///
     /// # Arguments
     ///
@@ -943,7 +1018,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// when a fast transfer mode is configured for a source chain where Circle
     /// marks Fast Transfer N/A.
     /// Returns [`CctpError::InvalidAmount`] before RPC when a Standard Transfer
-    /// fee-switch mode has a `max_fee` greater than or equal to `amount`.
+    /// fee-switch or forwarding mode has a `max_fee` greater than or equal to
+    /// `amount`.
     ///
     /// # Example
     ///
@@ -968,14 +1044,14 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         token_address: Address,
     ) -> Result<TxHash> {
         self.validate_transfer_mode()?;
-        if self.transfer_mode.uses_standard_transfer_fee_switch()
-            && self.transfer_mode.max_fee() >= amount
-        {
-            return Err(AmountError::StandardTransferFeeNotLessThanAmount {
-                max_fee: self.transfer_mode.max_fee(),
-                amount,
-            }
-            .into());
+        let max_fee = self.transfer_mode.max_fee();
+        if self.transfer_mode.uses_standard_transfer_fee_switch() && max_fee >= amount {
+            return Err(
+                AmountError::StandardTransferFeeNotLessThanAmount { max_fee, amount }.into(),
+            );
+        }
+        if self.transfer_mode.is_forwarding() && max_fee >= amount {
+            return Err(AmountError::ForwardingFeeNotLessThanAmount { max_fee, amount }.into());
         }
         let token_messenger_address = self.token_messenger_v2_contract()?;
         let destination_domain = self.destination_domain_id()?;
@@ -987,7 +1063,6 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         // expose, so `finality_threshold()` / `max_fee()` and the on-chain
         // `minFinalityThreshold` / `maxFee` cannot drift apart — the structural
         // defense behind the issue #218 fix.
-        let max_fee = self.transfer_mode.max_fee();
         let min_finality_threshold = self.transfer_mode.finality_threshold().as_u32();
 
         // Match the enum variants directly: `TransferMode` is `#[non_exhaustive]`
@@ -1034,6 +1109,18 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
                     max_fee,
                     min_finality_threshold,
                     hook_data.clone(),
+                ),
+            TransferMode::StandardForwarded { hook_data, .. }
+            | TransferMode::FastForwarded { hook_data, .. } => token_messenger
+                .deposit_for_burn_with_hooks_transaction(
+                    from,
+                    self.recipient,
+                    destination_domain,
+                    token_address,
+                    amount,
+                    max_fee,
+                    min_finality_threshold,
+                    hook_data.as_bytes().clone(),
                 ),
         };
 
@@ -1642,6 +1729,13 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     ///
     /// Tuple of (`burn_tx_hash`, `mint_tx_hash`)
     ///
+    /// # Errors
+    ///
+    /// Returns [`CctpError::ForwardingServiceSelfRelayUnsupported`] before the
+    /// source burn when a forwarding mode is configured. Forwarded burns must
+    /// let Circle relay the destination mint; use [`Self::burn`] or
+    /// [`Self::burn_asset`] followed by [`Self::wait_for_receive`].
+    ///
     /// # Example
     ///
     /// ```rust,ignore
@@ -1665,6 +1759,10 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         from: Address,
         token_address: Address,
     ) -> Result<(TxHash, TxHash)> {
+        if self.transfer_mode.is_forwarding() {
+            return Err(CctpError::ForwardingServiceSelfRelayUnsupported);
+        }
+
         info!(
             amount = %amount,
             from = %from,
@@ -1783,6 +1881,9 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     }
 
     fn validated_asset_route(&self, asset: CctpTransferAsset) -> Result<CctpV2Route> {
+        if self.transfer_mode.is_forwarding() && asset != CctpTransferAsset::Usdc {
+            return Err(CctpError::ForwardingServiceAssetUnsupported { asset });
+        }
         CctpV2Route::for_asset(self.source_chain, self.destination_chain, asset)
     }
 
@@ -3280,6 +3381,16 @@ mod tests {
             DepositForBurnWithHook,
         }
 
+        fn forwarding_hook_data() -> crate::ForwardingServiceHookData {
+            ForwardingServiceRoute::new(NamedChain::Mainnet, NamedChain::Base)
+                .expect("Base supports forwarding")
+                .hook_data()
+        }
+
+        fn forwarding_hook_bytes() -> Bytes {
+            forwarding_hook_data().into_bytes()
+        }
+
         #[rstest]
         #[case::standard(
             TransferMode::Standard,
@@ -3319,6 +3430,16 @@ mod tests {
             U256::from(42_u64),
             Some(Bytes::from_static(&[0xca, 0xfe])),
         )]
+        #[case::standard_forwarded(
+            TransferMode::StandardForwarded {
+                max_fee: U256::from(58_843_u64),
+                hook_data: forwarding_hook_data(),
+            },
+            ExpectedCall::DepositForBurnWithHook,
+            2000_u32,
+            U256::from(58_843_u64),
+            Some(forwarding_hook_bytes()),
+        )]
         #[case::fast_with_hook(
             TransferMode::FastWithHook {
                 max_fee: U256::from(2500_u64),
@@ -3328,6 +3449,16 @@ mod tests {
             1000_u32,
             U256::from(2500_u64),
             Some(Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef])),
+        )]
+        #[case::fast_forwarded(
+            TransferMode::FastForwarded {
+                max_fee: U256::from(58_843_u64),
+                hook_data: forwarding_hook_data(),
+            },
+            ExpectedCall::DepositForBurnWithHook,
+            1000_u32,
+            U256::from(58_843_u64),
+            Some(forwarding_hook_bytes()),
         )]
         #[tokio::test]
         async fn burn_emits_expected_calldata(
@@ -3449,6 +3580,122 @@ mod tests {
             assert!(
                 captured.lock().expect("captured-request mutex").is_empty(),
                 "unsupported fast burns must fail before eth_sendTransaction"
+            );
+        }
+
+        #[tokio::test]
+        async fn forwarded_burn_rejects_unsupported_destination_before_rpc() {
+            let (bridge, captured) = build_bridge_for_route(
+                NamedChain::Mainnet,
+                NamedChain::Injective,
+                TransferMode::StandardForwarded {
+                    max_fee: U256::from(58_843_u64),
+                    hook_data: forwarding_hook_data(),
+                },
+            );
+
+            let err = bridge
+                .burn(
+                    U256::from(10_058_843_u64),
+                    Address::repeat_byte(0xaa),
+                    Address::repeat_byte(0xbb),
+                )
+                .await
+                .expect_err("Injective is not a Forwarding Service destination");
+
+            assert!(matches!(
+                err,
+                CctpError::ForwardingServiceUnsupported {
+                    destination_chain: NamedChain::Injective
+                }
+            ));
+            assert!(
+                captured.lock().expect("captured-request mutex").is_empty(),
+                "unsupported forwarded burns must fail before eth_sendTransaction"
+            );
+        }
+
+        #[tokio::test]
+        async fn forwarded_asset_burn_rejects_non_usdc_before_rpc() {
+            let (bridge, captured) = build_bridge(TransferMode::StandardForwarded {
+                max_fee: U256::from(58_843_u64),
+                hook_data: forwarding_hook_data(),
+            });
+
+            let err = bridge
+                .burn_asset(
+                    CctpTransferAsset::Eurc,
+                    U256::from(10_058_843_u64),
+                    Address::repeat_byte(0xaa),
+                )
+                .await
+                .expect_err("Circle Forwarding Service is modeled for USDC only");
+
+            assert!(matches!(
+                err,
+                CctpError::ForwardingServiceAssetUnsupported {
+                    asset: CctpTransferAsset::Eurc
+                }
+            ));
+            assert!(
+                captured.lock().expect("captured-request mutex").is_empty(),
+                "non-USDC forwarded burns must fail before eth_sendTransaction"
+            );
+        }
+
+        #[tokio::test]
+        async fn forwarding_fee_cap_must_be_less_than_burn_amount_before_rpc() {
+            let (bridge, captured) = build_bridge(TransferMode::StandardForwarded {
+                max_fee: U256::from(1_000_000_u64),
+                hook_data: forwarding_hook_data(),
+            });
+
+            let err = bridge
+                .burn(
+                    U256::from(1_000_000_u64),
+                    Address::repeat_byte(0xaa),
+                    Address::repeat_byte(0xbb),
+                )
+                .await
+                .expect_err("forwarding maxFee must leave a positive recipient amount");
+
+            assert!(matches!(
+                err,
+                CctpError::InvalidAmount(AmountError::ForwardingFeeNotLessThanAmount {
+                    max_fee,
+                    amount
+                }) if max_fee == U256::from(1_000_000_u64)
+                    && amount == U256::from(1_000_000_u64)
+            ));
+            assert!(
+                captured.lock().expect("captured-request mutex").is_empty(),
+                "invalid forwarding fee caps must fail before eth_sendTransaction"
+            );
+        }
+
+        #[tokio::test]
+        async fn forwarded_transfer_rejects_self_relay_before_burn() {
+            let (bridge, captured) = build_bridge(TransferMode::StandardForwarded {
+                max_fee: U256::from(58_843_u64),
+                hook_data: forwarding_hook_data(),
+            });
+
+            let err = bridge
+                .transfer(
+                    U256::from(10_058_843_u64),
+                    Address::repeat_byte(0xaa),
+                    Address::repeat_byte(0xbb),
+                )
+                .await
+                .expect_err("Circle, not the SDK, must relay a forwarded transfer");
+
+            assert!(matches!(
+                err,
+                CctpError::ForwardingServiceSelfRelayUnsupported
+            ));
+            assert!(
+                captured.lock().expect("captured-request mutex").is_empty(),
+                "forwarded transfer() must fail before the source burn"
             );
         }
 

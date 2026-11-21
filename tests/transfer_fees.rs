@@ -20,10 +20,11 @@ use alloy_network::Ethereum;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use cctp_rs::{
-    CctpError, CctpTransferAsset, CctpV2Bridge, FastTransferAllowance, FeeBps, IrisTimestamp,
+    CctpError, CctpTransferAsset, CctpV2Bridge, FastTransferAllowance, FeeBps, ForwardingFeeLevel,
+    IrisTimestamp,
 };
 use url::Url;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn dummy_provider() -> impl Provider<Ethereum> + Clone {
@@ -161,6 +162,63 @@ fn usdc_fee_url_is_built_from_asset_segment() {
         url.as_str(),
         "https://iris-api.circle.com/v2/burn/USDC/fees/0/11"
     );
+}
+
+#[tokio::test]
+async fn forwarding_fee_lookup_validates_route_and_decodes_fixed_fee_tiers() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v2/burn/USDC/fees/6/1"))
+        .and(query_param("forward", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {
+                "finalityThreshold": 1000,
+                "minimumFee": 1.3,
+                "forwardFee": { "low": 56035, "med": 57543, "high": 59052 }
+            }
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api_override = Url::parse(&server.uri()).expect("wiremock URI parses as Url");
+    let bridge = bridge_for_route(api_override, NamedChain::Base, NamedChain::Avalanche);
+
+    let route = bridge
+        .forwarding_service_route()
+        .expect("Avalanche accepts forwarding requests");
+    assert_eq!(
+        alloy_primitives::hex::encode(route.hook_data().as_bytes32()),
+        "636374702d666f72776172640000000000000000000000000000000100000000"
+    );
+
+    let fees = bridge
+        .get_forwarding_fees()
+        .await
+        .expect("forwarding fee response should decode");
+    assert_eq!(fees.len(), 1);
+    assert_eq!(
+        fees[0]
+            .minimum_max_fee(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium)
+            .expect("documented fee components fit uint256"),
+        U256::from(58_843_u64)
+    );
+}
+
+#[test]
+fn forwarding_fee_url_rejects_unsupported_destination_before_network_io() {
+    let bridge = bridge_for_route(
+        Url::parse("https://iris-api.circle.com").expect("valid URL"),
+        NamedChain::Mainnet,
+        NamedChain::Injective,
+    );
+
+    assert!(matches!(
+        bridge.create_forwarding_fees_url(),
+        Err(CctpError::ForwardingServiceUnsupported {
+            destination_chain: NamedChain::Injective
+        })
+    ));
 }
 
 #[test]

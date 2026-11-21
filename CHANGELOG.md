@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added typed Circle Forwarding Service routes, canonical version-1 hook data,
+  live forwarding-fee quotes with low/medium/high atomic-USDC tiers, and
+  dedicated Standard/Fast forwarding transfer modes. The EVM bridge path
+  validates destination capability, rejects self-relaying transfer helpers,
+  checks percentage and combined-fee overflow, and remains permissionless;
+  Stellar's distinct `CctpForwarder`/Soroban flow stays explicitly out of
+  scope. Tracks issue #30.
 - Added typed, opt-in restricted `destinationCaller` support to the direct
   `TokenMessengerV2Contract` wrapper. `RestrictedDestinationCaller` preserves
   the canonical 32-byte protocol word, rejects the permissionless zero value,

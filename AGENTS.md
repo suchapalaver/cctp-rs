@@ -103,10 +103,16 @@ behavior.
   `supports_fast_transfer()` before offering a fast mode; fast-only metadata
   and burns return `FastTransferUnsupported` for N/A sources before RPC.
 - **Forwarding Service capability belongs to the destination chain.** Use
-  `supports_forwarding_service()` before offering a forwarded route. This SDK
-  exposes Circle's capability metadata but does not submit Forwarding Service
-  requests; Injective and Pharos are valid direct bridge destinations even
-  though Circle does not support forwarding to them.
+  `ForwardingServiceRoute` to validate an EVM route and construct Circle's
+  canonical version-1 hook, and `get_forwarding_fees()` immediately before the
+  burn to quote the fixed forwarding fee plus protocol fee. Select
+  `TransferMode::StandardForwarded` or `FastForwarded`; high-level bridge burns
+  keep `destinationCaller` permissionless as Circle requires. Injective
+  and Pharos remain valid direct bridge destinations but do not support
+  forwarding. Stellar's separate `CctpForwarder`/Soroban flow remains outside
+  the EVM bridge surface. Forwarding modes use `burn`/`burn_asset` followed by
+  `wait_for_receive`; `transfer`/`transfer_asset` reject them before the burn
+  because those helpers self-submit the destination mint.
 - **Parser address projections are domain-aware.** `ParsedV2MessageSummary`
   always exposes canonical 32-byte `*_bytes` fields. EVM-shaped `Address`
   projections are `None` for non-EVM source or destination domains so tooling
@@ -126,10 +132,10 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `MintResult` | `Minted(TxHash)` / `AlreadyRelayed` | `src/bridge/v2.rs` |
 | `PollingConfig` | Attestation polling tuning | `src/bridge/config.rs` |
 | `TokenState`, `batch_token_state` | ERC-20 allowance/balance helpers | `src/bridge/` |
-| `CctpTransferAsset`, `CctpV2Route`, `RestrictedDestinationCaller`, `UsdcAmount` | Asset, route, restricted-caller, and amount primitives | `src/primitives.rs` |
+| `CctpTransferAsset`, `CctpV2Route`, `ForwardingServiceRoute`, `RestrictedDestinationCaller`, `UsdcAmount` | Asset, route, forwarding, restricted-caller, and amount primitives | `src/primitives.rs` |
 | `CctpV1`, `CctpV2` traits | Chain config on `NamedChain` | `src/chain/config.rs`, `src/chain/v2.rs` |
 | `FastTransferFee` | `Known(FeeBps)` / `Unknown` — static per-chain fee metadata; not current route quotes | `src/chain/v2.rs` |
-| `FeeBps`, `TransferFee`, `FastTransferAllowance`, `IrisTimestamp` | Live Iris route-fee and allowance response types plus max-fee helpers | `src/protocol/fees.rs` |
+| `FeeBps`, `TransferFee`, `ForwardingTransferFee`, `FastTransferAllowance`, `IrisTimestamp` | Live Iris route-fee, forwarding-fee, and allowance response types plus max-fee helpers | `src/protocol/fees.rs` |
 | `CCTP_V2_*_MAINNET/TESTNET`, `*_USDC_ADDRESS`, `*_EURC_ADDRESS` | Unified v2 contract addresses and native token addresses | `src/chain/addresses.rs` |
 | `TokenMessengerContract`, `MessageTransmitterContract` | V1 contract wrappers | `src/contracts/` |
 | `TokenMessengerV2Contract`, `MessageTransmitterV2Contract` | V2 contract wrappers | `src/contracts/v2/` |

@@ -119,8 +119,8 @@
 //! - [`CctpV1`] and [`CctpV2`] - Traits for chain-specific configurations
 //! - [`PollingConfig`] - Configuration for attestation polling behavior
 //! - [`TransferMode`] - Selects which v2 burn variant (standard / fast / with hook) the bridge sends
-//! - [`CctpTransferAsset`], [`CctpV2Route`], [`RestrictedDestinationCaller`], and [`UsdcAmount`] - Shared application primitives for asset, route, caller, and amount validation
-//! - [`FeeBps`] and [`TransferFee`] - Live Iris transfer-fee response types and max-fee helpers
+//! - [`CctpTransferAsset`], [`CctpV2Route`], [`ForwardingServiceRoute`], [`RestrictedDestinationCaller`], and [`UsdcAmount`] - Shared application primitives for asset, route, forwarding, caller, and amount validation
+//! - [`FeeBps`], [`TransferFee`], and [`ForwardingTransferFee`] - Live Iris fee response types and max-fee helpers
 //! - [`ParsedV2Message`] and [`ParsedV2MessageSummary`] - Parse canonical v2 messages into serializable structs
 //! - [`ParseMessageError`] - Error type for canonical v2 message parsing
 //! - [`InvalidDestinationCaller`], [`InvalidDomainId`], and [`InvalidFinalityThreshold`] - Typed primitive-construction errors
@@ -182,12 +182,16 @@ pub use contracts::{
 pub use error::{
     AmountError, AttestationFailureKind, CctpError, ConfigError, InvalidDestinationCaller, Result,
 };
-pub use primitives::{CctpTransferAsset, CctpV2Route, RestrictedDestinationCaller, UsdcAmount};
+pub use primitives::{
+    CctpTransferAsset, CctpV2Route, ForwardingServiceHookData, ForwardingServiceRoute,
+    RestrictedDestinationCaller, UsdcAmount,
+};
 pub use protocol::{
     AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId,
-    FastTransferAllowance, FeeBps, FinalityThreshold, InvalidDomainId, InvalidFinalityThreshold,
-    InvalidIrisTimestamp, IrisTimestamp, MessageHeader, ParseMessageError, ParsedV2Message,
-    ParsedV2MessageSummary, TransferFee, V2AttestationResponse, V2Message,
+    FastTransferAllowance, FeeBps, FinalityThreshold, ForwardingFee, ForwardingFeeLevel,
+    ForwardingTransferFee, InvalidDomainId, InvalidFinalityThreshold, InvalidIrisTimestamp,
+    IrisTimestamp, MessageHeader, ParseMessageError, ParsedV2Message, ParsedV2MessageSummary,
+    TransferFee, V2AttestationResponse, V2Message,
 };
 pub use provider::{
     calculate_gas_price_with_buffer, estimate_gas_with_buffer, ProviderConfig,

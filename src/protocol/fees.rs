@@ -8,8 +8,10 @@ use alloy_primitives::U256;
 use serde::de::{self, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
-use std::{fmt, str::FromStr};
+use std::{borrow::Cow, fmt, str::FromStr};
 use thiserror::Error;
+
+use crate::error::AmountError;
 
 use super::FinalityThreshold;
 
@@ -122,6 +124,17 @@ impl FeeBps {
             amount * U256::from(self.hundredths),
             U256::from(BPS_HUNDREDTH_DENOMINATOR),
         )
+    }
+
+    fn checked_apply_to_amount(self, amount: U256) -> Option<U256> {
+        let denominator = U256::from(BPS_HUNDREDTH_DENOMINATOR);
+        let multiplier = U256::from(self.hundredths);
+
+        // Split before multiplying so an intermediate `uint256` overflow does
+        // not corrupt a mathematically representable quotient.
+        let whole = (amount / denominator).checked_mul(multiplier)?;
+        let remainder = (amount % denominator).checked_mul(multiplier)?;
+        whole.checked_add(ceil_div(remainder, denominator))
     }
 
     /// Calculates the fee amount with a percentage buffer.
@@ -284,6 +297,171 @@ impl TransferFee {
     }
 }
 
+/// Forwarding Service fee tier selected from Circle's route quote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ForwardingFeeLevel {
+    /// Lowest quoted forwarding fee; may provide less execution headroom.
+    Low,
+    /// Circle's recommended default forwarding fee tier.
+    Medium,
+    /// Highest quoted forwarding fee; provides the most execution headroom.
+    High,
+}
+
+/// Atomic-USDC fee tiers returned by Circle's Forwarding Service quote.
+///
+/// These values are fixed atomic amounts, not basis points. They must be added
+/// to the percentage protocol fee when constructing `maxFee`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ForwardingFee {
+    low: U256,
+    medium: U256,
+    high: U256,
+}
+
+impl ForwardingFee {
+    /// Creates forwarding fee tiers from atomic USDC amounts.
+    #[must_use]
+    pub const fn new(low: U256, medium: U256, high: U256) -> Self {
+        Self { low, medium, high }
+    }
+
+    /// Lowest quoted forwarding fee in atomic USDC units.
+    #[must_use]
+    pub const fn low(self) -> U256 {
+        self.low
+    }
+
+    /// Medium quoted forwarding fee in atomic USDC units.
+    #[must_use]
+    pub const fn medium(self) -> U256 {
+        self.medium
+    }
+
+    /// Highest quoted forwarding fee in atomic USDC units.
+    #[must_use]
+    pub const fn high(self) -> U256 {
+        self.high
+    }
+
+    /// Returns the atomic fee for the selected tier.
+    #[must_use]
+    pub const fn at(self, level: ForwardingFeeLevel) -> U256 {
+        match level {
+            ForwardingFeeLevel::Low => self.low,
+            ForwardingFeeLevel::Medium => self.medium,
+            ForwardingFeeLevel::High => self.high,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ForwardingFee {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireForwardingFee {
+            low: Box<RawValue>,
+            med: Box<RawValue>,
+            high: Box<RawValue>,
+        }
+
+        let wire = WireForwardingFee::deserialize(deserializer)?;
+        Ok(Self {
+            low: parse_atomic_units_raw(wire.low.get()).map_err(de::Error::custom)?,
+            medium: parse_atomic_units_raw(wire.med.get()).map_err(de::Error::custom)?,
+            high: parse_atomic_units_raw(wire.high.get()).map_err(de::Error::custom)?,
+        })
+    }
+}
+
+/// A single entry from Circle's Forwarding Service fee query.
+///
+/// The protocol fee is percentage-based while the forwarding fee is a fixed
+/// atomic-USDC amount. Use [`Self::minimum_max_fee`] to combine them without
+/// floating-point money math.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardingTransferFee {
+    finality_threshold: u32,
+    minimum_fee: FeeBps,
+    forward_fee: ForwardingFee,
+}
+
+impl ForwardingTransferFee {
+    /// Creates a forwarding quote entry.
+    #[must_use]
+    pub const fn new(
+        finality_threshold: u32,
+        minimum_fee: FeeBps,
+        forward_fee: ForwardingFee,
+    ) -> Self {
+        Self {
+            finality_threshold,
+            minimum_fee,
+            forward_fee,
+        }
+    }
+
+    /// Finality threshold this quote applies to.
+    #[must_use]
+    pub const fn finality_threshold(self) -> u32 {
+        self.finality_threshold
+    }
+
+    /// Typed finality threshold, when currently recognized by CCTP v2.
+    #[must_use]
+    pub const fn finality(self) -> Option<FinalityThreshold> {
+        FinalityThreshold::from_u32(self.finality_threshold)
+    }
+
+    /// Minimum protocol fee rate.
+    #[must_use]
+    pub const fn minimum_fee(self) -> FeeBps {
+        self.minimum_fee
+    }
+
+    /// Fixed Forwarding Service fee tiers.
+    #[must_use]
+    pub const fn forward_fee(self) -> ForwardingFee {
+        self.forward_fee
+    }
+
+    /// Minimum `maxFee` covering both the percentage protocol fee on the
+    /// desired recipient amount and the selected fixed forwarding tier.
+    /// Burn `recipient_amount + minimum_max_fee(...)` so the destination
+    /// recipient receives the intended amount after fees.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AmountError::ForwardingProtocolFeeOverflow`] when the exact
+    /// percentage fee exceeds the on-chain `uint256` range, or
+    /// [`AmountError::ForwardingFeeOverflow`] when the protocol and forwarding
+    /// fee sum exceeds that range.
+    pub fn minimum_max_fee(
+        self,
+        recipient_amount: U256,
+        level: ForwardingFeeLevel,
+    ) -> Result<U256, AmountError> {
+        let protocol_fee = self
+            .minimum_fee
+            .checked_apply_to_amount(recipient_amount)
+            .ok_or(AmountError::ForwardingProtocolFeeOverflow {
+                recipient_amount,
+                fee_hundredths: self.minimum_fee.as_hundredths(),
+            })?;
+        let forwarding_fee = self.forward_fee.at(level);
+        protocol_fee
+            .checked_add(forwarding_fee)
+            .ok_or(AmountError::ForwardingFeeOverflow {
+                protocol_fee,
+                forwarding_fee,
+            })
+    }
+}
+
 /// Fast Transfer allowance returned by Circle Iris.
 ///
 /// Circle's endpoint exposes a global USDC allowance, not a per-route value.
@@ -391,15 +569,32 @@ fn parse_fee_hundredths(input: &str) -> Result<FeeBps, String> {
 }
 
 fn parse_usdc_atomic_raw(input: &str) -> Result<U256, String> {
-    let trimmed = input.trim();
-    let decimal = if trimmed.starts_with('"') {
-        serde_json::from_str::<String>(trimmed)
-            .map_err(|error| format!("allowance string is not valid JSON: {error}"))?
-    } else {
-        trimmed.to_string()
-    };
-
+    let decimal = parse_raw_decimal_text(input, "allowance")?;
     parse_usdc_atomic_decimal(&decimal)
+}
+
+fn parse_atomic_units_raw(input: &str) -> Result<U256, String> {
+    let decimal = parse_raw_decimal_text(input, "atomic-unit")?;
+
+    if decimal.is_empty() {
+        return Err("atomic-unit amount cannot be empty".to_string());
+    }
+    if !decimal.chars().all(|character| character.is_ascii_digit()) {
+        return Err("atomic-unit amount must be an unsigned integer".to_string());
+    }
+
+    U256::from_str_radix(&decimal, 10).map_err(|_| "atomic-unit amount overflowed U256".to_string())
+}
+
+fn parse_raw_decimal_text<'a>(input: &'a str, subject: &str) -> Result<Cow<'a, str>, String> {
+    let trimmed = input.trim();
+    if trimmed.starts_with('"') {
+        serde_json::from_str::<String>(trimmed)
+            .map(Cow::Owned)
+            .map_err(|error| format!("{subject} string is not valid JSON: {error}"))
+    } else {
+        Ok(Cow::Borrowed(trimmed))
+    }
 }
 
 fn parse_usdc_atomic_decimal(input: &str) -> Result<U256, String> {
@@ -519,6 +714,99 @@ mod tests {
             fees,
             vec![TransferFee::new(1000, FeeBps::from_hundredths(130))]
         );
+    }
+
+    #[test]
+    fn forwarding_transfer_fee_preserves_atomic_tiers_and_combines_protocol_fee() {
+        let json = r#"{
+            "finalityThreshold": 1000,
+            "minimumFee": 1.3,
+            "forwardFee": {
+                "low": 56035,
+                "med": 57543,
+                "high": "59052"
+            }
+        }"#;
+
+        let fee: ForwardingTransferFee = serde_json::from_str(json).unwrap();
+
+        assert_eq!(fee.finality(), Some(FinalityThreshold::Fast));
+        assert_eq!(fee.minimum_fee(), FeeBps::from_hundredths(130));
+        assert_eq!(fee.forward_fee().low(), U256::from(56_035_u64));
+        assert_eq!(fee.forward_fee().medium(), U256::from(57_543_u64));
+        assert_eq!(fee.forward_fee().high(), U256::from(59_052_u64));
+        assert_eq!(
+            fee.minimum_max_fee(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium)
+                .unwrap(),
+            U256::from(58_843_u64)
+        );
+    }
+
+    #[test]
+    fn forwarding_transfer_fee_rejects_combined_fee_overflow() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Standard.as_u32(),
+            FeeBps::from_hundredths(1),
+            ForwardingFee::new(U256::MAX, U256::MAX, U256::MAX),
+        );
+
+        assert!(matches!(
+            fee.minimum_max_fee(U256::from(1), ForwardingFeeLevel::Medium),
+            Err(AmountError::ForwardingFeeOverflow {
+                protocol_fee,
+                forwarding_fee: U256::MAX,
+            }) if protocol_fee == U256::from(1)
+        ));
+    }
+
+    #[test]
+    fn forwarding_transfer_fee_avoids_intermediate_percentage_overflow() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Fast.as_u32(),
+            FeeBps::from_hundredths(130),
+            ForwardingFee::new(U256::ZERO, U256::ZERO, U256::ZERO),
+        );
+        let recipient_amount = U256::MAX / U256::from(130_u64) + U256::from(1_u64);
+        let expected = U256::from_str_radix(
+            "115792089237316195423570985008687907853269984665640564039457584007913130",
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fee.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium)
+                .unwrap(),
+            expected
+        );
+        assert!(recipient_amount.checked_add(expected).is_some());
+    }
+
+    #[test]
+    fn forwarding_transfer_fee_rejects_protocol_fee_overflow() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Fast.as_u32(),
+            FeeBps::from_hundredths(u32::MAX),
+            ForwardingFee::new(U256::ZERO, U256::ZERO, U256::ZERO),
+        );
+
+        assert!(matches!(
+            fee.minimum_max_fee(U256::MAX, ForwardingFeeLevel::Medium),
+            Err(AmountError::ForwardingProtocolFeeOverflow {
+                recipient_amount: U256::MAX,
+                fee_hundredths: u32::MAX,
+            })
+        ));
+    }
+
+    #[test]
+    fn forwarding_transfer_fee_rejects_fractional_atomic_tier() {
+        let json = r#"{
+            "finalityThreshold": 2000,
+            "minimumFee": 0,
+            "forwardFee": { "low": 1.5, "med": 2, "high": 3 }
+        }"#;
+
+        assert!(serde_json::from_str::<ForwardingTransferFee>(json).is_err());
     }
 
     #[test]

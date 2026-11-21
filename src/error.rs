@@ -121,6 +121,27 @@ pub enum AmountError {
     /// A Standard Transfer fee cap was not smaller than the burn amount.
     #[error("Standard Transfer max_fee ({max_fee}) must be less than the burn amount ({amount})")]
     StandardTransferFeeNotLessThanAmount { max_fee: U256, amount: U256 },
+    /// A Forwarding Service fee cap was not smaller than the burn amount.
+    #[error("Forwarding Service max_fee ({max_fee}) must be less than the burn amount ({amount})")]
+    ForwardingFeeNotLessThanAmount { max_fee: U256, amount: U256 },
+    /// The percentage protocol fee could not be represented in the on-chain
+    /// `uint256` range.
+    #[error(
+        "Forwarding Service protocol fee exceeds uint256 for recipient amount {recipient_amount} at {fee_hundredths} hundredths of a basis point"
+    )]
+    ForwardingProtocolFeeOverflow {
+        recipient_amount: U256,
+        fee_hundredths: u32,
+    },
+    /// The protocol and Forwarding Service fees could not be added without
+    /// exceeding the on-chain `uint256` range.
+    #[error(
+        "combined Forwarding Service fee exceeds uint256 (protocol fee {protocol_fee}, forwarding fee {forwarding_fee})"
+    )]
+    ForwardingFeeOverflow {
+        protocol_fee: U256,
+        forwarding_fee: U256,
+    },
 }
 
 #[derive(Error, Debug)]
@@ -138,6 +159,19 @@ pub enum CctpError {
         "Standard Transfer fee switch is not available from source chain {source_chain:?}; use TransferMode::Standard with a zero maxFee"
     )]
     StandardTransferFeeSwitchUnsupported { source_chain: NamedChain },
+
+    #[error(
+        "Circle Forwarding Service is not available for destination chain {destination_chain:?}"
+    )]
+    ForwardingServiceUnsupported { destination_chain: NamedChain },
+
+    #[error("Circle Forwarding Service is modeled for USDC only, not {asset}")]
+    ForwardingServiceAssetUnsupported { asset: CctpTransferAsset },
+
+    #[error(
+        "Circle Forwarding Service modes cannot use CctpV2Bridge::transfer because Circle relays the destination mint; use burn or burn_asset and wait_for_receive"
+    )]
+    ForwardingServiceSelfRelayUnsupported,
 
     #[error("Unsupported CCTP asset {asset} on chain {chain:?}: {reason}")]
     UnsupportedAssetChain {

@@ -89,7 +89,9 @@ Every row below is a Standard Transfer source and destination in Circle's
 current table. Fast is a source capability; Forwarding is a destination
 capability. `CctpV2::supports_fast_transfer()` and
 `supports_forwarding_service()` expose those directional capabilities for
-bridge-enabled chains. Official testnets inherit their mainnet row except where
+bridge-enabled chains. `ForwardingServiceRoute` turns the destination
+capability into a validated route and canonical hook instead of leaving it as
+an unchecked boolean. Official testnets inherit their mainnet row except where
 Circle documents an exception.
 
 | Domain | Chain | Alloy `NamedChain` | Fast | Forwarding | Bridge SDK decision |
@@ -637,6 +639,57 @@ println!("V2 Fast Transfer: {} seconds", fast_time);
 println!("V2 Standard Transfer: {} seconds", standard_time);
 ```
 
+### Circle Forwarding Service (V2)
+
+For bridge-supported EVM destinations, `ForwardingServiceRoute` validates that
+Circle accepts the destination and constructs the canonical composable
+version-1 `cctp-forward` hook. Use `get_forwarding_fees()` immediately before
+the burn: the response keeps the percentage protocol fee distinct from
+Circle's fixed low/medium/high forwarding tiers.
+
+```rust
+use alloy_chains::NamedChain;
+use alloy_primitives::U256;
+use cctp_rs::{
+    FinalityThreshold, ForwardingFeeLevel, ForwardingServiceRoute, TransferMode,
+};
+
+let route = ForwardingServiceRoute::new(NamedChain::Base, NamedChain::Avalanche)?;
+let recipient_amount = U256::from(10_000_000_u64); // 10 USDC
+let quote = bridge
+    .get_forwarding_fees()
+    .await?
+    .into_iter()
+    .find(|fee| fee.finality() == Some(FinalityThreshold::Fast))
+    .expect("Iris returned a Fast Transfer forwarding quote");
+let max_fee = quote.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium)?;
+let burn_amount = recipient_amount.checked_add(max_fee).expect("USDC amount fits uint256");
+let mode = TransferMode::FastForwarded {
+    max_fee,
+    hook_data: route.hook_data(),
+};
+```
+
+Pass `mode` when building the bridge, then burn `burn_amount`; the fixed
+forwarding fee and percentage protocol fee are deducted so the recipient gets
+the intended amount. Circle recommends the medium tier or higher. The generic
+Forwarding Service requires the all-zero, permissionless `destinationCaller`,
+which the high-level bridge already preserves.
+
+Do not call `transfer()` or `transfer_asset()` with a forwarding mode: those
+helpers self-submit the destination mint, while the Forwarding Service makes
+Circle the relayer. They return `ForwardingServiceSelfRelayUnsupported` before
+the source burn. Call `burn()` or `burn_asset()`, fetch the canonical message
+with `get_attestation()`, and use `wait_for_receive()` to observe Circle's
+destination mint.
+
+Stellar's `CctpForwarder` is a different Soroban flow, not a destination served
+by Circle's generic Forwarding Service. It requires seven-decimal USDC amounts,
+validated Stellar `G`/`C`/`M` strkeys, the full forwarder contract ID in both
+`mintRecipient` and `destinationCaller`, and a Soroban `mint_and_forward`
+submission. This EVM SDK deliberately leaves that flow out of scope and keeps
+Stellar parser-only rather than offering a partial API that can strand funds.
+
 ### Restricted Destination Callers (V2)
 
 High-level `CctpV2Bridge` burns deliberately keep `destinationCaller` at the
@@ -658,7 +711,7 @@ Forwarding Service does not support wrapper-contract flows with
 mint recipient and destination caller to be the full 32-byte `CctpForwarder`
 contract ID and requires its documented hook encoding. These direct builders
 still accept an EVM `Address` mint recipient and therefore do not claim to
-implement that Stellar flow; issue #30 tracks its typed construction.
+implement that Stellar/Soroban flow.
 
 ### Relayer-Aware Patterns (V2)
 

@@ -20,8 +20,8 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::{keccak256, Bytes, FixedBytes, U256};
 use cctp_rs::{
-    CctpTransferAsset, CctpV2, CctpV2Route, DomainId, FinalityThreshold, MessageHeader,
-    ParseMessageError, ParsedV2Message, TransferMode,
+    CctpTransferAsset, CctpV2, CctpV2Route, DomainId, FinalityThreshold, ForwardingServiceRoute,
+    MessageHeader, ParseMessageError, ParsedV2Message, TransferMode,
 };
 use serde::Deserialize;
 
@@ -61,6 +61,7 @@ struct TransferModeVector {
     mode: String,
     min_finality_threshold: u32,
     is_fast: bool,
+    is_forwarding: bool,
     max_fee: String,
     hook_data: Option<String>,
 }
@@ -300,6 +301,28 @@ fn transfer_mode_dispatch_matches_lean_model() {
             ("fast_with_hook", Some(hook_data)) => {
                 TransferMode::FastWithHook { max_fee, hook_data }
             }
+            ("standard_forwarded", Some(hook_data)) => {
+                let typed_hook =
+                    ForwardingServiceRoute::new(NamedChain::Base, NamedChain::Avalanche)
+                        .expect("mode fixture uses a supported forwarding route")
+                        .hook_data();
+                assert_eq!(typed_hook.as_bytes(), &hook_data);
+                TransferMode::StandardForwarded {
+                    max_fee,
+                    hook_data: typed_hook,
+                }
+            }
+            ("fast_forwarded", Some(hook_data)) => {
+                let typed_hook =
+                    ForwardingServiceRoute::new(NamedChain::Base, NamedChain::Avalanche)
+                        .expect("mode fixture uses a supported forwarding route")
+                        .hook_data();
+                assert_eq!(typed_hook.as_bytes(), &hook_data);
+                TransferMode::FastForwarded {
+                    max_fee,
+                    hook_data: typed_hook,
+                }
+            }
             (other, hook) => panic!("unexpected mode vector: {other} (hook: {hook:?})"),
         };
 
@@ -310,6 +333,12 @@ fn transfer_mode_dispatch_matches_lean_model() {
             vector.mode
         );
         assert_eq!(mode.is_fast(), vector.is_fast, "mode {}", vector.mode);
+        assert_eq!(
+            mode.is_forwarding(),
+            vector.is_forwarding,
+            "mode {}",
+            vector.mode
+        );
         assert_eq!(mode.max_fee(), max_fee, "mode {}", vector.mode);
         assert_eq!(
             mode.hook_data().cloned(),

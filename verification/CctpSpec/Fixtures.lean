@@ -270,7 +270,9 @@ def transferModes : List TransferMode := [
   .fast 150,
   .standardWithHook (ofHex "deadbeef"),
   .standardWithFeeAndHook 314159 (ofHex "cafe"),
-  .fastWithHook 98765432109876543210 [0x00]
+  .fastWithHook 98765432109876543210 [0x00],
+  .standardForwarded 58843,
+  .fastForwarded 60123
 ]
 
 /-! ## Route-validity vectors -/
@@ -326,6 +328,7 @@ def transferModeJson (m : TransferMode) : Json :=
     ("mode", str m.jsonName),
     ("min_finality_threshold", toJson m.finalityThreshold.toU32),
     ("is_fast", toJson m.isFast),
+    ("is_forwarding", toJson m.isForwarding),
     ("max_fee", str (toString m.maxFee)),
     ("hook_data", match m.hookData? with
       | some h => str (hexOfBytes h)
