@@ -8,7 +8,7 @@ use alloy_primitives::U256;
 use serde::de::{self, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
-use std::{fmt, str::FromStr};
+use std::{borrow::Cow, fmt, str::FromStr};
 use thiserror::Error;
 
 use crate::error::AmountError;
@@ -569,25 +569,12 @@ fn parse_fee_hundredths(input: &str) -> Result<FeeBps, String> {
 }
 
 fn parse_usdc_atomic_raw(input: &str) -> Result<U256, String> {
-    let trimmed = input.trim();
-    let decimal = if trimmed.starts_with('"') {
-        serde_json::from_str::<String>(trimmed)
-            .map_err(|error| format!("allowance string is not valid JSON: {error}"))?
-    } else {
-        trimmed.to_string()
-    };
-
+    let decimal = parse_raw_decimal_text(input, "allowance")?;
     parse_usdc_atomic_decimal(&decimal)
 }
 
 fn parse_atomic_units_raw(input: &str) -> Result<U256, String> {
-    let trimmed = input.trim();
-    let decimal = if trimmed.starts_with('"') {
-        serde_json::from_str::<String>(trimmed)
-            .map_err(|error| format!("atomic-unit string is not valid JSON: {error}"))?
-    } else {
-        trimmed.to_string()
-    };
+    let decimal = parse_raw_decimal_text(input, "atomic-unit")?;
 
     if decimal.is_empty() {
         return Err("atomic-unit amount cannot be empty".to_string());
@@ -597,6 +584,17 @@ fn parse_atomic_units_raw(input: &str) -> Result<U256, String> {
     }
 
     U256::from_str_radix(&decimal, 10).map_err(|_| "atomic-unit amount overflowed U256".to_string())
+}
+
+fn parse_raw_decimal_text<'a>(input: &'a str, subject: &str) -> Result<Cow<'a, str>, String> {
+    let trimmed = input.trim();
+    if trimmed.starts_with('"') {
+        serde_json::from_str::<String>(trimmed)
+            .map(Cow::Owned)
+            .map_err(|error| format!("{subject} string is not valid JSON: {error}"))
+    } else {
+        Ok(Cow::Borrowed(trimmed))
+    }
 }
 
 fn parse_usdc_atomic_decimal(input: &str) -> Result<U256, String> {

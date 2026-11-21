@@ -1044,21 +1044,14 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         token_address: Address,
     ) -> Result<TxHash> {
         self.validate_transfer_mode()?;
-        if self.transfer_mode.uses_standard_transfer_fee_switch()
-            && self.transfer_mode.max_fee() >= amount
-        {
-            return Err(AmountError::StandardTransferFeeNotLessThanAmount {
-                max_fee: self.transfer_mode.max_fee(),
-                amount,
-            }
-            .into());
+        let max_fee = self.transfer_mode.max_fee();
+        if self.transfer_mode.uses_standard_transfer_fee_switch() && max_fee >= amount {
+            return Err(
+                AmountError::StandardTransferFeeNotLessThanAmount { max_fee, amount }.into(),
+            );
         }
-        if self.transfer_mode.is_forwarding() && self.transfer_mode.max_fee() >= amount {
-            return Err(AmountError::ForwardingFeeNotLessThanAmount {
-                max_fee: self.transfer_mode.max_fee(),
-                amount,
-            }
-            .into());
+        if self.transfer_mode.is_forwarding() && max_fee >= amount {
+            return Err(AmountError::ForwardingFeeNotLessThanAmount { max_fee, amount }.into());
         }
         let token_messenger_address = self.token_messenger_v2_contract()?;
         let destination_domain = self.destination_domain_id()?;
@@ -1070,7 +1063,6 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
         // expose, so `finality_threshold()` / `max_fee()` and the on-chain
         // `minFinalityThreshold` / `maxFee` cannot drift apart — the structural
         // defense behind the issue #218 fix.
-        let max_fee = self.transfer_mode.max_fee();
         let min_finality_threshold = self.transfer_mode.finality_threshold().as_u32();
 
         // Match the enum variants directly: `TransferMode` is `#[non_exhaustive]`
