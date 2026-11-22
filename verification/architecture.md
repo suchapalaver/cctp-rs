@@ -128,6 +128,7 @@ Failure modes:
 | `tests/lean_model_correspondence.rs` | `rust_resource` | tests Rust parser behavior against Lean fixture verdicts | Narrows, but does not close, the spec/implementation gap. |
 | `tests/authority_oracle.rs` | `rust_resource` | compares the independent authority artifact separately with Lean executable outputs and production Rust APIs | Blocks shared Lean/Rust table mistakes relative to the captured authority; mutation coverage pins both comparator paths. |
 | `.github/workflows/lean.yml` | `policy_resource` | blocks merge on proof errors, fixture drift, and proof-surface escape hatches | Required status check surface. |
+| Pull Request API Compatibility CI job | `policy_resource` | compares the candidate Rust API with its actual merge base and blocks unapproved SemVer regressions; a maintainer-reviewed `semver-major-approved` label changes the release type without skipping analysis | Required pull-request signal; independent of the published-release comparison. |
 | `verification/README.md` | `claim_resource` | documents proven/tested/assumed scope | Primary claim boundary for verification. |
 | `README.md`, rustdoc, `AGENTS.md` | `claim_resource` | document public SDK and verification claims | Must link back to `verification/README.md` and this file when claims change. |
 | GitHub-hosted Ubuntu 24.04 runners | `provider` | trusted by CI, Lean, release, protocol drift, live smoke, security, and dependency-refresh workflows | Explicit runner baseline; changes should be reviewed as CI maintenance. |

@@ -32,6 +32,8 @@ Fixes #(issue number)
 - [ ] I have run `cargo clippy` and addressed any issues
 - [ ] I have run `cargo fmt` to format my code
 - [ ] My commits are signed, and this PR should land with squash merge only
+- [ ] If this intentionally breaks the public API, I have documented its
+      major-release plan and asked a maintainer to apply `semver-major-approved`
 
 ## Documentation
 - [ ] I have updated the documentation accordingly
