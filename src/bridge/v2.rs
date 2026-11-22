@@ -469,7 +469,8 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
     /// Each response entry includes the route's percentage protocol fee plus
     /// low, medium, and high fixed forwarding fee tiers in atomic USDC units.
     /// Circle recommends the medium tier or higher. Use
-    /// [`ForwardingTransferFee::minimum_max_fee`] to combine both components.
+    /// [`ForwardingTransferFee::minimum_burn_plan`] to solve the final burn and
+    /// both fee components together from a desired recipient amount.
     ///
     /// # Errors
     ///
@@ -672,7 +673,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             });
         };
 
-        Ok(fee.max_fee_with_buffer_percent(amount, buffer_percent))
+        Ok(fee.max_fee_with_buffer_percent(amount, buffer_percent)?)
     }
 
     /// Gets the `MessageSent` event data from a CCTP v2 bridge transaction

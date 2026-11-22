@@ -318,7 +318,8 @@ impl UsdcAmount {
     /// Parses a decimal USDC amount using USDC's six decimal places.
     ///
     /// Examples: `"1"`, `"1.25"`, `".5"`, and `"0.000001"` are valid.
-    /// Values with more than six decimal places are rejected.
+    /// Values with more than six decimal places, or whose atomic-unit form
+    /// exceeds `uint256`, are rejected.
     ///
     /// # Errors
     ///
@@ -348,9 +349,9 @@ impl UsdcAmount {
         }
 
         let whole_units = if whole.is_empty() {
-            0
+            U256::ZERO
         } else {
-            whole.parse::<u128>().map_err(|_| AmountError::TooLarge)?
+            U256::from_str_radix(whole, 10).map_err(|_| AmountError::TooLarge)?
         };
 
         let fractional_units = match fraction {
@@ -359,11 +360,11 @@ impl UsdcAmount {
         };
 
         let atomic_units = whole_units
-            .checked_mul(USDC_SCALE)
-            .and_then(|value| value.checked_add(fractional_units))
+            .checked_mul(U256::from(USDC_SCALE))
+            .and_then(|value| value.checked_add(U256::from(fractional_units)))
             .ok_or(AmountError::TooLarge)?;
 
-        if atomic_units == 0 {
+        if atomic_units == U256::ZERO {
             return Err(AmountError::Zero.into());
         }
 
@@ -764,16 +765,23 @@ mod tests {
 
     #[test]
     fn rejects_usdc_amounts_outside_atomic_range() {
-        for amount in [
-            "340282366920938463463374607431768211456",
-            "340282366920938463463374607431768211455",
-            "340282366920938463463374607431768.211456",
-        ] {
-            assert!(matches!(
-                UsdcAmount::parse_decimal(amount),
-                Err(CctpError::InvalidAmount(AmountError::TooLarge))
-            ));
-        }
+        let first_whole_amount_above_range = (U256::MAX / U256::from(USDC_SCALE))
+            .checked_add(U256::from(1))
+            .expect("scaled maximum leaves room for one whole-unit increment")
+            .to_string();
+
+        assert!(matches!(
+            UsdcAmount::parse_decimal(&first_whole_amount_above_range),
+            Err(CctpError::InvalidAmount(AmountError::TooLarge))
+        ));
+    }
+
+    #[test]
+    fn parses_full_uint256_atomic_range() {
+        let formatted = UsdcAmount::from_atomic(U256::MAX).to_string();
+        let reparsed = UsdcAmount::parse_decimal(&formatted).expect("U256::MAX must round-trip");
+
+        assert_eq!(reparsed.atomic(), U256::MAX);
     }
 
     #[test]

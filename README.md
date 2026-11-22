@@ -662,19 +662,21 @@ let quote = bridge
     .into_iter()
     .find(|fee| fee.finality() == Some(FinalityThreshold::Fast))
     .expect("Iris returned a Fast Transfer forwarding quote");
-let max_fee = quote.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium)?;
-let burn_amount = recipient_amount.checked_add(max_fee).expect("USDC amount fits uint256");
+let burn_plan = quote.minimum_burn_plan(recipient_amount, ForwardingFeeLevel::Medium)?;
 let mode = TransferMode::FastForwarded {
-    max_fee,
+    max_fee: burn_plan.max_fee(),
     hook_data: route.hook_data(),
 };
 ```
 
-Pass `mode` when building the bridge, then burn `burn_amount`; the fixed
-forwarding fee and percentage protocol fee are deducted so the recipient gets
-the intended amount. Circle recommends the medium tier or higher. The generic
-Forwarding Service requires the all-zero, permissionless `destinationCaller`,
-which the high-level bridge already preserves.
+Pass `mode` when building the bridge, then burn `burn_plan.burn_amount()`; the fixed
+forwarding fee and percentage protocol fee are deducted from the burn. The plan
+solves the percentage fee against that final burn amount—not the smaller
+recipient amount—and returns the least integer burn and cap that do not
+underfund the intended recipient under the selected quote. Circle recommends
+the medium tier or higher. The generic Forwarding Service requires the all-zero,
+permissionless `destinationCaller`, which the high-level bridge already
+preserves.
 
 Do not call `transfer()` or `transfer_asset()` with a forwarding mode: those
 helpers self-submit the destination mint, while the Forwarding Service makes

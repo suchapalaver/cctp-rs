@@ -31,6 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (planned for 9.0.0):** made `FeeBps::apply_to_amount`,
+  `FeeBps::apply_to_amount_with_buffer_percent`, and
+  `TransferFee::max_fee_with_buffer_percent` return typed `AmountError` values
+  instead of silently wrapping fee calculations that exceed `uint256`.
+  `ForwardingTransferFee::minimum_burn_plan` now returns a typed
+  `ForwardingBurnPlan` that solves the percentage fee against the final burn
+  amount, contains the related fee cap and checked total, and rejects zero
+  recipients or unsatisfiable fee rates. `UsdcAmount` decimal parsing now covers
+  its full public `uint256` atomic-unit range.
+
+  Migration: handle the `Result` returned by percentage-fee helpers, and use
+  `minimum_burn_plan` instead of adding a forwarding fee cap with unchecked
+  arithmetic, then use its `max_fee()` and `burn_amount()` accessors. When the
+  lower-level `minimum_max_fee` is appropriate, pass the known total burn amount
+  rather than a desired post-fee recipient amount.
+- Updated the locked `url` dependency to 2.5.9 (and its `form_urlencoded`
+  companion to 1.2.3) to resolve RUSTSEC-2026-0592's nested-`blob:` URL stack
+  overflow.
 - Extended the Lean route model and generated Rust correspondence vectors to
   cover every newly enabled bridge network and official testnet.
 - **Breaking (planned for 9.0.0):** validated lower-level protocol metadata
