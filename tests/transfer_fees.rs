@@ -197,12 +197,18 @@ async fn forwarding_fee_lookup_validates_route_and_decodes_fixed_fee_tiers() {
         .await
         .expect("forwarding fee response should decode");
     assert_eq!(fees.len(), 1);
+    let quote = fees[0];
     assert_eq!(
-        fees[0]
+        quote
             .minimum_max_fee(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium)
             .expect("documented fee components fit uint256"),
         U256::from(58_843_u64)
     );
+    let plan = quote
+        .minimum_burn_plan(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium)
+        .expect("forwarding burn plan fits uint256");
+    assert_eq!(plan.max_fee(), U256::from(58_851_u64));
+    assert_eq!(plan.burn_amount(), U256::from(10_058_851_u64));
 }
 
 #[test]

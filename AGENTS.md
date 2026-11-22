@@ -107,7 +107,8 @@ behavior.
   canonical version-1 hook, and `get_forwarding_fees()` immediately before the
   burn to quote the fixed forwarding fee plus protocol fee. Use
   `ForwardingTransferFee::minimum_burn_plan()` to construct the related checked
-  `maxFee` and burn amount together. Select
+  `maxFee` and burn amount together; it solves the percentage fee against the
+  final burn amount so the cap cannot underquote the grossed-up transfer. Select
   `TransferMode::StandardForwarded` or `FastForwarded`; high-level bridge burns
   keep `destinationCaller` permissionless as Circle requires. Injective
   and Pharos remain valid direct bridge destinations but do not support

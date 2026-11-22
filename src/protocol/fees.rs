@@ -411,7 +411,8 @@ impl ForwardingBurnPlan {
         self.max_fee
     }
 
-    /// Total amount to burn so the recipient receives the intended amount.
+    /// Total amount to burn so the quoted fee cap does not underfund the
+    /// intended recipient amount.
     #[must_use]
     pub const fn burn_amount(self) -> U256 {
         self.burn_amount
@@ -421,9 +422,10 @@ impl ForwardingBurnPlan {
 /// A single entry from Circle's Forwarding Service fee query.
 ///
 /// The protocol fee is percentage-based while the forwarding fee is a fixed
-/// atomic-USDC amount. Use [`Self::minimum_max_fee`] when only the cap is
-/// needed, or [`Self::minimum_burn_plan`] to construct the related cap and burn
-/// amount without floating-point money math.
+/// atomic-USDC amount. Use [`Self::minimum_max_fee`] when the total burn amount
+/// is already known, or [`Self::minimum_burn_plan`] to solve the related cap and
+/// burn amount from a desired recipient amount without floating-point money
+/// math.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardingTransferFee {
@@ -471,10 +473,10 @@ impl ForwardingTransferFee {
         self.forward_fee
     }
 
-    /// Minimum `maxFee` covering both the percentage protocol fee on the
-    /// desired recipient amount and the selected fixed forwarding tier.
-    /// Use [`Self::minimum_burn_plan`] for the checked total that leaves the
-    /// intended amount with the destination recipient after fees.
+    /// Minimum `maxFee` covering both the percentage protocol fee on a
+    /// specified total burn amount and the selected fixed forwarding tier.
+    /// Use [`Self::minimum_burn_plan`] when starting from a desired recipient
+    /// amount so the burn and fee cap are solved together.
     ///
     /// # Errors
     ///
@@ -484,16 +486,15 @@ impl ForwardingTransferFee {
     /// fee sum exceeds that range.
     pub fn minimum_max_fee(
         self,
-        recipient_amount: U256,
+        burn_amount: U256,
         level: ForwardingFeeLevel,
     ) -> Result<U256, AmountError> {
-        let protocol_fee = self
-            .minimum_fee
-            .apply_to_amount(recipient_amount)
-            .map_err(|_| AmountError::ForwardingProtocolFeeOverflow {
-                recipient_amount,
+        let protocol_fee = self.minimum_fee.apply_to_amount(burn_amount).map_err(|_| {
+            AmountError::ForwardingProtocolFeeOverflow {
+                burn_amount,
                 fee_hundredths: self.minimum_fee.as_hundredths(),
-            })?;
+            }
+        })?;
         let forwarding_fee = self.forward_fee.at(level);
         protocol_fee
             .checked_add(forwarding_fee)
@@ -503,15 +504,21 @@ impl ForwardingTransferFee {
             })
     }
 
-    /// Checked fee cap and burn amount that leave `recipient_amount` after the
-    /// selected protocol and Forwarding Service fees.
+    /// Checked fee cap and burn amount that cover `recipient_amount` after the
+    /// selected quoted protocol and Forwarding Service fees are deducted from
+    /// the amount burned.
+    ///
+    /// This solves the burn-based percentage fee as a fixed point rather than
+    /// calculating it from the smaller recipient amount. The returned plan is
+    /// the least integer burn amount whose fee cap covers the selected fixed
+    /// tier plus the rounded-up protocol fee on that same burn amount.
     ///
     /// # Errors
     ///
-    /// Returns [`AmountError::Zero`] when `recipient_amount` is zero, the same
-    /// typed overflow errors as [`Self::minimum_max_fee`], or
-    /// [`AmountError::ForwardingBurnAmountOverflow`] when the fee fits but its
-    /// sum with the recipient amount does not.
+    /// Returns [`AmountError::Zero`] when `recipient_amount` is zero,
+    /// [`AmountError::ForwardingFeeRateTooHigh`] when the percentage fee is at
+    /// least 100%, or [`AmountError::ForwardingBurnAmountOverflow`] when the
+    /// grossed-up burn amount exceeds `uint256`.
     pub fn minimum_burn_plan(
         self,
         recipient_amount: U256,
@@ -521,13 +528,35 @@ impl ForwardingTransferFee {
             return Err(AmountError::Zero);
         }
 
-        let max_fee = self.minimum_max_fee(recipient_amount, level)?;
-        let burn_amount = recipient_amount.checked_add(max_fee).ok_or(
-            AmountError::ForwardingBurnAmountOverflow {
-                recipient_amount,
-                max_fee,
-            },
-        )?;
+        let fee_hundredths = self.minimum_fee.as_hundredths();
+        if u64::from(fee_hundredths) >= BPS_HUNDREDTH_DENOMINATOR {
+            return Err(AmountError::ForwardingFeeRateTooHigh { fee_hundredths });
+        }
+
+        let forwarding_fee = self.forward_fee.at(level);
+        let plan_overflow = || AmountError::ForwardingBurnAmountOverflow {
+            recipient_amount,
+            forwarding_fee,
+            fee_hundredths,
+        };
+        let amount_before_protocol_fee = recipient_amount
+            .checked_add(forwarding_fee)
+            .ok_or_else(plan_overflow)?;
+
+        // Let B be the burn, R the desired recipient amount, F the fixed
+        // forwarding fee, p the protocol rate, and D its denominator. The
+        // invariant B = R + F + ceil(B*p/D) is equivalent, over integers, to
+        // B >= ceil(D*(R+F)/(D-p)); the least such B is the minimal valid plan.
+        let burn_amount = checked_mul_div_ceil(
+            amount_before_protocol_fee,
+            U256::from(BPS_HUNDREDTH_DENOMINATOR),
+            U256::from(BPS_HUNDREDTH_DENOMINATOR - u64::from(fee_hundredths)),
+        )
+        .ok_or_else(plan_overflow)?;
+        let max_fee = burn_amount
+            .checked_sub(recipient_amount)
+            .ok_or_else(plan_overflow)?;
+
         Ok(ForwardingBurnPlan {
             max_fee,
             burn_amount,
@@ -813,6 +842,11 @@ mod tests {
                 .unwrap(),
             U256::from(58_843_u64)
         );
+        let plan = fee
+            .minimum_burn_plan(U256::from(10_000_000_u64), ForwardingFeeLevel::Medium)
+            .unwrap();
+        assert_eq!(plan.max_fee(), U256::from(58_851_u64));
+        assert_eq!(plan.burn_amount(), U256::from(10_058_851_u64));
     }
 
     #[test]
@@ -839,7 +873,7 @@ mod tests {
             FeeBps::from_hundredths(130),
             ForwardingFee::new(U256::ZERO, U256::ZERO, U256::ZERO),
         );
-        let recipient_amount = U256::MAX / U256::from(130_u64) + U256::from(1_u64);
+        let burn_amount = U256::MAX / U256::from(130_u64) + U256::from(1_u64);
         let expected = U256::from_str_radix(
             "115792089237316195423570985008687907853269984665640564039457584007913130",
             10,
@@ -847,11 +881,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            fee.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium)
+            fee.minimum_max_fee(burn_amount, ForwardingFeeLevel::Medium)
                 .unwrap(),
             expected
         );
-        assert!(recipient_amount.checked_add(expected).is_some());
+        assert!(burn_amount.checked_add(expected).is_some());
     }
 
     #[test]
@@ -865,7 +899,7 @@ mod tests {
         assert!(matches!(
             fee.minimum_max_fee(U256::MAX, ForwardingFeeLevel::Medium),
             Err(AmountError::ForwardingProtocolFeeOverflow {
-                recipient_amount: U256::MAX,
+                burn_amount: U256::MAX,
                 fee_hundredths: u32::MAX,
             })
         ));
@@ -886,6 +920,40 @@ mod tests {
         assert_eq!(
             fee.minimum_burn_plan(U256::ZERO, ForwardingFeeLevel::Medium),
             Err(AmountError::Zero)
+        );
+    }
+
+    #[test]
+    fn forwarding_burn_plan_rejects_unsatisfiable_fee_rate() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Fast.as_u32(),
+            FeeBps::from_hundredths(BPS_HUNDREDTH_DENOMINATOR as u32),
+            ForwardingFee::new(U256::ZERO, U256::ZERO, U256::ZERO),
+        );
+
+        assert_eq!(
+            fee.minimum_burn_plan(U256::from(1), ForwardingFeeLevel::Medium),
+            Err(AmountError::ForwardingFeeRateTooHigh {
+                fee_hundredths: BPS_HUNDREDTH_DENOMINATOR as u32,
+            })
+        );
+    }
+
+    #[test]
+    fn forwarding_burn_plan_reports_gross_up_overflow() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Fast.as_u32(),
+            FeeBps::from_hundredths(1),
+            ForwardingFee::new(U256::from(1), U256::from(1), U256::from(1)),
+        );
+
+        assert_eq!(
+            fee.minimum_burn_plan(U256::MAX, ForwardingFeeLevel::Medium),
+            Err(AmountError::ForwardingBurnAmountOverflow {
+                recipient_amount: U256::MAX,
+                forwarding_fee: U256::from(1),
+                fee_hundredths: 1,
+            })
         );
     }
 

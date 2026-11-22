@@ -127,10 +127,10 @@ pub enum AmountError {
     /// The percentage protocol fee could not be represented in the on-chain
     /// `uint256` range.
     #[error(
-        "Forwarding Service protocol fee exceeds uint256 for recipient amount {recipient_amount} at {fee_hundredths} hundredths of a basis point"
+        "Forwarding Service protocol fee exceeds uint256 for burn amount {burn_amount} at {fee_hundredths} hundredths of a basis point"
     )]
     ForwardingProtocolFeeOverflow {
-        recipient_amount: U256,
+        burn_amount: U256,
         fee_hundredths: u32,
     },
     /// The protocol and Forwarding Service fees could not be added without
@@ -142,14 +142,21 @@ pub enum AmountError {
         protocol_fee: U256,
         forwarding_fee: U256,
     },
-    /// The desired recipient amount and combined forwarding fee could not be
-    /// added without exceeding the on-chain `uint256` range.
+    /// A forwarding burn plan has no finite solution because the percentage
+    /// fee is at least 100% of the amount burned.
     #[error(
-        "Forwarding Service burn amount exceeds uint256 (recipient amount {recipient_amount}, max fee {max_fee})"
+        "Forwarding Service fee rate must be below 100%, got {fee_hundredths} hundredths of a basis point"
+    )]
+    ForwardingFeeRateTooHigh { fee_hundredths: u32 },
+    /// The grossed-up burn amount could not be represented in the on-chain
+    /// `uint256` range.
+    #[error(
+        "Forwarding Service burn plan exceeds uint256 (recipient amount {recipient_amount}, forwarding fee {forwarding_fee}, fee rate {fee_hundredths} hundredths of a basis point)"
     )]
     ForwardingBurnAmountOverflow {
         recipient_amount: U256,
-        max_fee: U256,
+        forwarding_fee: U256,
+        fee_hundredths: u32,
     },
     /// A percentage fee could not be represented in the on-chain `uint256`
     /// range.
@@ -607,6 +614,34 @@ mod tests {
                 },
                 "Standard Transfer max_fee (1000000) must be less than the burn amount (1000000)"
                     .to_string(),
+            ),
+            (
+                AmountError::ForwardingProtocolFeeOverflow {
+                    burn_amount: U256::MAX,
+                    fee_hundredths: 130,
+                },
+                format!(
+                    "Forwarding Service protocol fee exceeds uint256 for burn amount {} at 130 hundredths of a basis point",
+                    U256::MAX
+                ),
+            ),
+            (
+                AmountError::ForwardingFeeRateTooHigh {
+                    fee_hundredths: 1_000_000,
+                },
+                "Forwarding Service fee rate must be below 100%, got 1000000 hundredths of a basis point"
+                    .to_string(),
+            ),
+            (
+                AmountError::ForwardingBurnAmountOverflow {
+                    recipient_amount: U256::MAX,
+                    forwarding_fee: U256::from(1),
+                    fee_hundredths: 1,
+                },
+                format!(
+                    "Forwarding Service burn plan exceeds uint256 (recipient amount {}, forwarding fee 1, fee rate 1 hundredths of a basis point)",
+                    U256::MAX
+                ),
             ),
         ];
 

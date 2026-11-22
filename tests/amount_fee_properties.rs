@@ -63,6 +63,15 @@ fn fee_level(index: u8) -> ForwardingFeeLevel {
     }
 }
 
+fn forwarding_fee_hundredths_strategy() -> impl Strategy<Value = u32> {
+    prop_oneof![
+        Just(0),
+        Just(1),
+        Just((FEE_DENOMINATOR - 1) as u32),
+        0..FEE_DENOMINATOR as u32,
+    ]
+}
+
 fn invalid_decimal_strategy() -> impl Strategy<Value = String> {
     prop_oneof![
         (prop_oneof![Just('+'), Just('-')], "[0-9]{1,20}")
@@ -253,8 +262,8 @@ proptest! {
     }
 
     #[test]
-    fn forwarding_fee_and_burn_composition_match_wide_oracle(
-        recipient_amount in u256_strategy(),
+    fn forwarding_max_fee_matches_wide_oracle(
+        burn_amount in u256_strategy(),
         fee_hundredths in any::<u32>(),
         low in u256_strategy(),
         medium in u256_strategy(),
@@ -268,13 +277,13 @@ proptest! {
             ForwardingFee::new(low, medium, high),
         );
         let forwarding_fee = quote.forward_fee().at(level);
-        let protocol_wide = oracle_fee(recipient_amount, fee_hundredths);
+        let protocol_wide = oracle_fee(burn_amount, fee_hundredths);
         let combined_wide = protocol_wide + widen(forwarding_fee);
-        let actual_fee = quote.minimum_max_fee(recipient_amount, level);
+        let actual_fee = quote.minimum_max_fee(burn_amount, level);
 
         let expected_fee = match narrow(protocol_wide) {
             None => Err(AmountError::ForwardingProtocolFeeOverflow {
-                recipient_amount,
+                burn_amount,
                 fee_hundredths,
             }),
             Some(protocol_fee) => match narrow(combined_wide) {
@@ -286,31 +295,88 @@ proptest! {
             },
         };
         prop_assert_eq!(actual_fee, expected_fee);
+    }
 
+    #[test]
+    fn forwarding_burn_plan_satisfies_burn_based_fee_invariants(
+        recipient_amount in u256_strategy(),
+        fee_hundredths in forwarding_fee_hundredths_strategy(),
+        low in u256_strategy(),
+        medium in u256_strategy(),
+        high in u256_strategy(),
+        level_index in 0u8..3,
+    ) {
+        let level = fee_level(level_index);
+        let quote = ForwardingTransferFee::new(
+            1_000,
+            FeeBps::from_hundredths(fee_hundredths),
+            ForwardingFee::new(low, medium, high),
+        );
+        let forwarding_fee = quote.forward_fee().at(level);
         let actual_plan = quote.minimum_burn_plan(recipient_amount, level);
+
         if recipient_amount == U256::ZERO {
             prop_assert_eq!(actual_plan, Err(AmountError::Zero));
         } else {
-            match expected_fee {
-                Err(error) => prop_assert_eq!(actual_plan, Err(error)),
-                Ok(max_fee) => {
-                    let burn_wide = widen(recipient_amount) + widen(max_fee);
-                    match narrow(burn_wide) {
-                        Some(expected) => {
-                            let plan = actual_plan.expect("wide burn amount fits uint256");
-                            prop_assert_eq!(plan.max_fee(), max_fee);
-                            prop_assert_eq!(plan.burn_amount(), expected);
-                        }
-                        None => prop_assert_eq!(
-                            actual_plan,
-                            Err(AmountError::ForwardingBurnAmountOverflow {
-                                recipient_amount,
-                                max_fee,
-                            }),
-                        ),
+            let amount_before_protocol_fee = widen(recipient_amount) + widen(forwarding_fee);
+            let expected_burn = ceil_div(
+                amount_before_protocol_fee * U512::from(FEE_DENOMINATOR),
+                U512::from(FEE_DENOMINATOR - u64::from(fee_hundredths)),
+            );
+            match narrow(expected_burn) {
+                Some(expected_burn) => {
+                    let plan = actual_plan.expect("wide grossed-up burn amount fits uint256");
+                    let expected_max_fee = expected_burn - recipient_amount;
+                    let expected_protocol_fee = oracle_fee(expected_burn, fee_hundredths);
+
+                    prop_assert_eq!(plan.max_fee(), expected_max_fee);
+                    prop_assert_eq!(plan.burn_amount(), expected_burn);
+                    prop_assert!(plan.max_fee() < plan.burn_amount());
+                    prop_assert_eq!(
+                        widen(plan.burn_amount()),
+                        widen(recipient_amount) + widen(plan.max_fee()),
+                    );
+                    prop_assert_eq!(
+                        widen(expected_max_fee),
+                        widen(forwarding_fee) + expected_protocol_fee,
+                    );
+
+                    if expected_burn > recipient_amount {
+                        let previous_burn = expected_burn - U256::from(1);
+                        let previous_fee_budget = widen(previous_burn - recipient_amount);
+                        let previous_required_fee = widen(forwarding_fee)
+                            + oracle_fee(previous_burn, fee_hundredths);
+                        prop_assert!(previous_fee_budget < previous_required_fee);
                     }
                 }
+                None => prop_assert_eq!(
+                    actual_plan,
+                    Err(AmountError::ForwardingBurnAmountOverflow {
+                        recipient_amount,
+                        forwarding_fee,
+                        fee_hundredths,
+                    }),
+                ),
             }
         }
+    }
+
+    #[test]
+    fn forwarding_burn_plan_rejects_every_unsatisfiable_fee_rate(
+        recipient_amount in u256_strategy()
+            .prop_filter("recipient amount must be nonzero", |amount| *amount != U256::ZERO),
+        fee_hundredths in FEE_DENOMINATOR as u32..=u32::MAX,
+        forwarding_fee in u256_strategy(),
+    ) {
+        let quote = ForwardingTransferFee::new(
+            1_000,
+            FeeBps::from_hundredths(fee_hundredths),
+            ForwardingFee::new(forwarding_fee, forwarding_fee, forwarding_fee),
+        );
+
+        prop_assert_eq!(
+            quote.minimum_burn_plan(recipient_amount, ForwardingFeeLevel::Medium),
+            Err(AmountError::ForwardingFeeRateTooHigh { fee_hundredths }),
+        );
     }
 }
