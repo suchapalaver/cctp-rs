@@ -154,8 +154,12 @@ The lifecycle slice uses a staged combination:
    Iris selection input through arrays of length two (273 scenarios). Length
    two covers every pairwise precedence interaction in the production
    selector; payload-presence booleans mean missing or non-empty bytes. Rust
-   normalization tests separately cover present-but-empty bytes and pin
-   first-usable-message data selection.
+   property tests independently generate missing, present-empty, and arbitrary
+   non-empty payloads for every v1/v2 status, then exercise longer sibling
+   lists and reorderings. They pin the operational outcome class and the
+   documented first-usable/first-malformed content selection. Proptest uses
+   fixed seeds, prints shrunk inputs, and persists minimal regressions beside
+   the source test when a property fails.
 4. Rust correspondence tests replay those selection verdicts against the
    production `select_v2_attestation` helper used by `get_attestation`.
    Deterministic HTTP and RPC tests exercise the real `get_attestation`,
@@ -248,6 +252,7 @@ the existing unit suite):
 | Production bridge support, `NamedChain::is_testnet`, and chain→domain mappings match the model; parser-only domains are outside the bridge-chain image | `chain_classification_matches_lean_model` |
 | `CctpV2Route::new` matches the model over every pair of modeled supported and unsupported chains | `route_validity_matches_lean_model` |
 | Production Iris normalization/selection matches the Lean model for empty, every singleton, and every ordered pair of modeled missing/non-empty status/data combinations | `bridge::v2::tests::lifecycle_model_correspondence::iris_selection_matches_lean_model` |
+| Generated v1/v2 wire states partition into the exact typed operational category; arbitrary longer v2 sibling lists preserve Ready > Pending > Malformed > Failed > Empty precedence under reordering | `protocol::attestation::tests`, `bridge::v2::tests::select_v2_attestation` property suites |
 | Real `is_message_received`/`mint_if_needed` RPC paths short-circuit pre-received messages, submit unused messages, treat a nonce race as `AlreadyRelayed`, and propagate unrelated failures | `bridge::v2::tests::mint_if_needed_lifecycle` |
 | Real v1/v2 `get_attestation` HTTP polling rejects status-inconsistent and present-but-empty payloads with typed errors; v2 preserves complete/valid-pending/malformed/failed multi-message precedence | `tests/attestation_normalization.rs`, `tests/v2_multi_message_attestation.rs` |
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
@@ -284,6 +289,11 @@ Everything below is **unverified** and trusted:
   domain/network/capability/address-table mistakes relative to the captured
   authority, but shared semantic mistakes outside that artifact remain
   possible.
+- **The property-testing gap**: generated Rust cases exercise arbitrary payload
+  bytes, present-empty values, and longer sibling arrays that the Lean presence
+  abstraction omits. They provide reproducible counterexamples, not proofs,
+  and cannot establish Iris authenticity, liveness, or deployed-contract
+  behavior.
 - **Hardware, OS, CI infrastructure.**
 
 ## Formal-verification failure modes (and mitigations)
