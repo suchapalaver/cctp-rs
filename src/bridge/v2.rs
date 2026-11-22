@@ -2792,24 +2792,6 @@ mod tests {
             Empty,
         }
 
-        #[derive(Clone, Debug)]
-        struct RawMessageCase {
-            status: AttestationStatus,
-            message: Option<Vec<u8>>,
-            attestation: Option<Vec<u8>>,
-        }
-
-        impl RawMessageCase {
-            fn into_state(self) -> AttestationState<V2Attestation> {
-                V2Message {
-                    status: self.status,
-                    message: self.message.map(Bytes::from),
-                    attestation: self.attestation.map(Bytes::from),
-                }
-                .into_state()
-            }
-        }
-
         fn property_config() -> ProptestConfig {
             ProptestConfig {
                 cases: 512,
@@ -2821,15 +2803,16 @@ mod tests {
             }
         }
 
-        fn raw_payload_strategy() -> impl Strategy<Value = Option<Vec<u8>>> {
+        fn raw_payload_strategy() -> impl Strategy<Value = Option<Bytes>> {
             prop_oneof![
                 Just(None),
-                Just(Some(Vec::new())),
-                prop::collection::vec(any::<u8>(), 1..65).prop_map(Some),
+                Just(Some(Bytes::new())),
+                prop::collection::vec(any::<u8>(), 1..65)
+                    .prop_map(|bytes| Some(Bytes::from(bytes))),
             ]
         }
 
-        fn raw_message_strategy() -> impl Strategy<Value = RawMessageCase> {
+        fn raw_message_strategy() -> impl Strategy<Value = V2Message> {
             (
                 prop_oneof![
                     Just(AttestationStatus::Complete),
@@ -2840,7 +2823,7 @@ mod tests {
                 raw_payload_strategy(),
                 raw_payload_strategy(),
             )
-                .prop_map(|(status, message, attestation)| RawMessageCase {
+                .prop_map(|(status, message, attestation)| V2Message {
                     status,
                     message,
                     attestation,
@@ -2892,7 +2875,7 @@ mod tests {
             ) {
                 let states = raw_messages
                     .into_iter()
-                    .map(RawMessageCase::into_state)
+                    .map(V2Message::into_state)
                     .collect::<Vec<_>>();
                 let expected = expected_class(&states);
                 let actual = select_v2_attestation(&states);
@@ -2931,7 +2914,7 @@ mod tests {
             ) {
                 let states = raw_messages
                     .into_iter()
-                    .map(RawMessageCase::into_state)
+                    .map(V2Message::into_state)
                     .collect::<Vec<_>>();
                 let original_class = outcome_class(&select_v2_attestation(&states));
 

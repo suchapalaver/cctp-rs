@@ -323,31 +323,27 @@ mod tests {
         status: &AttestationStatus,
         attestation: &PayloadCase,
     ) -> AttestationState<AttestationBytes> {
-        match (status, attestation) {
-            (AttestationStatus::Complete, PayloadCase::Missing) => {
-                AttestationState::Malformed(AttestationFailureKind::AttestationMissing)
+        match attestation {
+            PayloadCase::Missing => match status {
+                AttestationStatus::Complete => {
+                    AttestationState::Malformed(AttestationFailureKind::AttestationMissing)
+                }
+                AttestationStatus::Pending | AttestationStatus::PendingConfirmations => {
+                    AttestationState::Pending
+                }
+                AttestationStatus::Failed => AttestationState::Failed,
+            },
+            PayloadCase::Empty => {
+                AttestationState::Malformed(AttestationFailureKind::AttestationEmpty)
             }
-            (AttestationStatus::Complete, PayloadCase::Empty)
-            | (
+            PayloadCase::NonEmpty(bytes) => match status {
+                AttestationStatus::Complete => AttestationState::Ready(bytes.clone()),
                 AttestationStatus::Pending
                 | AttestationStatus::PendingConfirmations
-                | AttestationStatus::Failed,
-                PayloadCase::Empty,
-            ) => AttestationState::Malformed(AttestationFailureKind::AttestationEmpty),
-            (AttestationStatus::Complete, PayloadCase::NonEmpty(bytes)) => {
-                AttestationState::Ready(bytes.clone())
-            }
-            (
-                AttestationStatus::Pending | AttestationStatus::PendingConfirmations,
-                PayloadCase::Missing,
-            ) => AttestationState::Pending,
-            (AttestationStatus::Failed, PayloadCase::Missing) => AttestationState::Failed,
-            (
-                AttestationStatus::Pending
-                | AttestationStatus::PendingConfirmations
-                | AttestationStatus::Failed,
-                PayloadCase::NonEmpty(_),
-            ) => AttestationState::Malformed(AttestationFailureKind::UnexpectedAttestation),
+                | AttestationStatus::Failed => {
+                    AttestationState::Malformed(AttestationFailureKind::UnexpectedAttestation)
+                }
+            },
         }
     }
 
