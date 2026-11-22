@@ -672,7 +672,7 @@ impl<P: Provider<Ethereum> + Clone> CctpV2<P> {
             });
         };
 
-        Ok(fee.max_fee_with_buffer_percent(amount, buffer_percent))
+        Ok(fee.max_fee_with_buffer_percent(amount, buffer_percent)?)
     }
 
     /// Gets the `MessageSent` event data from a CCTP v2 bridge transaction

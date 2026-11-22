@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (planned for 9.0.0):** made `FeeBps::apply_to_amount`,
+  `FeeBps::apply_to_amount_with_buffer_percent`, and
+  `TransferFee::max_fee_with_buffer_percent` return typed `AmountError` values
+  instead of silently wrapping fee calculations that exceed `uint256`.
+  `ForwardingTransferFee::minimum_burn_amount` now provides the checked sum of
+  the desired recipient amount and its combined fee cap.
+
+  Migration: handle the `Result` returned by percentage-fee helpers, and use
+  `minimum_burn_amount` instead of adding a forwarding fee cap with unchecked
+  arithmetic.
 - Extended the Lean route model and generated Rust correspondence vectors to
   cover every newly enabled bridge network and official testnet.
 - **Breaking (planned for 9.0.0):** validated lower-level protocol metadata

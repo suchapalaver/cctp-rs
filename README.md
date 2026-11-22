@@ -663,7 +663,7 @@ let quote = bridge
     .find(|fee| fee.finality() == Some(FinalityThreshold::Fast))
     .expect("Iris returned a Fast Transfer forwarding quote");
 let max_fee = quote.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium)?;
-let burn_amount = recipient_amount.checked_add(max_fee).expect("USDC amount fits uint256");
+let burn_amount = quote.minimum_burn_amount(recipient_amount, ForwardingFeeLevel::Medium)?;
 let mode = TransferMode::FastForwarded {
     max_fee,
     hook_data: route.hook_data(),

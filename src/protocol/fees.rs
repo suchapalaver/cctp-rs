@@ -118,35 +118,48 @@ impl FeeBps {
     ///
     /// The result is rounded up to avoid returning a cap below the route's
     /// minimum fee when the percentage produces a fractional atomic unit.
-    #[must_use]
-    pub fn apply_to_amount(self, amount: U256) -> U256 {
-        ceil_div(
-            amount * U256::from(self.hundredths),
-            U256::from(BPS_HUNDREDTH_DENOMINATOR),
-        )
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AmountError::FeeOverflow`] when the exact rounded fee exceeds
+    /// the on-chain `uint256` range.
+    pub fn apply_to_amount(self, amount: U256) -> Result<U256, AmountError> {
+        self.checked_apply_to_amount(amount)
+            .ok_or(AmountError::FeeOverflow {
+                amount,
+                fee_hundredths: self.hundredths,
+            })
     }
 
     fn checked_apply_to_amount(self, amount: U256) -> Option<U256> {
-        let denominator = U256::from(BPS_HUNDREDTH_DENOMINATOR);
-        let multiplier = U256::from(self.hundredths);
-
-        // Split before multiplying so an intermediate `uint256` overflow does
-        // not corrupt a mathematically representable quotient.
-        let whole = (amount / denominator).checked_mul(multiplier)?;
-        let remainder = (amount % denominator).checked_mul(multiplier)?;
-        whole.checked_add(ceil_div(remainder, denominator))
+        checked_mul_div_ceil(
+            amount,
+            U256::from(self.hundredths),
+            U256::from(BPS_HUNDREDTH_DENOMINATOR),
+        )
     }
 
     /// Calculates the fee amount with a percentage buffer.
     ///
     /// `buffer_percent = 20` returns `fee * 1.2`, rounded up to an atomic unit.
-    #[must_use]
-    pub fn apply_to_amount_with_buffer_percent(self, amount: U256, buffer_percent: u32) -> U256 {
-        let base_fee = self.apply_to_amount(amount);
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AmountError::FeeOverflow`] when the unbuffered fee exceeds
+    /// `uint256`, or [`AmountError::FeeBufferOverflow`] when only the buffered
+    /// fee exceeds it.
+    pub fn apply_to_amount_with_buffer_percent(
+        self,
+        amount: U256,
+        buffer_percent: u32,
+    ) -> Result<U256, AmountError> {
+        let base_fee = self.apply_to_amount(amount)?;
         let multiplier = U256::from(u64::from(buffer_percent) + BUFFER_PERCENT_DENOMINATOR);
-        ceil_div(
-            base_fee * multiplier,
-            U256::from(BUFFER_PERCENT_DENOMINATOR),
+        checked_mul_div_ceil(base_fee, multiplier, U256::from(BUFFER_PERCENT_DENOMINATOR)).ok_or(
+            AmountError::FeeBufferOverflow {
+                fee: base_fee,
+                buffer_percent,
+            },
         )
     }
 }
@@ -290,8 +303,15 @@ impl TransferFee {
     }
 
     /// Calculates a `maxFee` cap in burn-token atomic units with the given buffer.
-    #[must_use]
-    pub fn max_fee_with_buffer_percent(self, amount: U256, buffer_percent: u32) -> U256 {
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed [`AmountError`] when the fee cannot fit in `uint256`.
+    pub fn max_fee_with_buffer_percent(
+        self,
+        amount: U256,
+        buffer_percent: u32,
+    ) -> Result<U256, AmountError> {
         self.minimum_fee
             .apply_to_amount_with_buffer_percent(amount, buffer_percent)
     }
@@ -431,8 +451,8 @@ impl ForwardingTransferFee {
 
     /// Minimum `maxFee` covering both the percentage protocol fee on the
     /// desired recipient amount and the selected fixed forwarding tier.
-    /// Burn `recipient_amount + minimum_max_fee(...)` so the destination
-    /// recipient receives the intended amount after fees.
+    /// Use [`Self::minimum_burn_amount`] for the checked total that leaves the
+    /// intended amount with the destination recipient after fees.
     ///
     /// # Errors
     ///
@@ -458,6 +478,28 @@ impl ForwardingTransferFee {
             .ok_or(AmountError::ForwardingFeeOverflow {
                 protocol_fee,
                 forwarding_fee,
+            })
+    }
+
+    /// Minimum burn amount that leaves `recipient_amount` after the selected
+    /// protocol and Forwarding Service fees.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same typed overflow errors as [`Self::minimum_max_fee`], or
+    /// [`AmountError::ForwardingBurnAmountOverflow`] when the fee fits but its
+    /// sum with the recipient amount does not.
+    pub fn minimum_burn_amount(
+        self,
+        recipient_amount: U256,
+        level: ForwardingFeeLevel,
+    ) -> Result<U256, AmountError> {
+        let max_fee = self.minimum_max_fee(recipient_amount, level)?;
+        recipient_amount
+            .checked_add(max_fee)
+            .ok_or(AmountError::ForwardingBurnAmountOverflow {
+                recipient_amount,
+                max_fee,
             })
     }
 }
@@ -522,6 +564,14 @@ fn ceil_div(numerator: U256, denominator: U256) -> U256 {
     } else {
         ((numerator - U256::from(1)) / denominator) + U256::from(1)
     }
+}
+
+fn checked_mul_div_ceil(value: U256, multiplier: U256, denominator: U256) -> Option<U256> {
+    // Split before multiplying so intermediate `uint256` overflow cannot
+    // corrupt a mathematically representable quotient.
+    let whole = (value / denominator).checked_mul(multiplier)?;
+    let remainder = (value % denominator).checked_mul(multiplier)?;
+    whole.checked_add(ceil_div(remainder, denominator))
 }
 
 fn parse_fee_hundredths(input: &str) -> Result<FeeBps, String> {
@@ -922,9 +972,9 @@ mod tests {
         let amount = U256::from(10_500_000u64);
         let fee = FeeBps::from_hundredths(100);
 
-        assert_eq!(fee.apply_to_amount(amount), U256::from(1050u64));
+        assert_eq!(fee.apply_to_amount(amount).unwrap(), U256::from(1050u64));
         assert_eq!(
-            fee.apply_to_amount_with_buffer_percent(amount, 20),
+            fee.apply_to_amount_with_buffer_percent(amount, 20).unwrap(),
             U256::from(1260u64)
         );
     }
@@ -934,7 +984,7 @@ mod tests {
         let amount = U256::from(1u64);
         let fee = FeeBps::from_hundredths(100);
 
-        assert_eq!(fee.apply_to_amount(amount), U256::from(1u64));
+        assert_eq!(fee.apply_to_amount(amount).unwrap(), U256::from(1u64));
     }
 
     #[test]
@@ -943,17 +993,26 @@ mod tests {
         let fractional_fee = FeeBps::from_hundredths(130);
         let zero_fee = FeeBps::from_hundredths(0);
 
-        assert_eq!(fractional_fee.apply_to_amount(U256::ZERO), U256::ZERO);
         assert_eq!(
-            zero_fee.apply_to_amount_with_buffer_percent(large_burn_token_amount, 20),
+            fractional_fee.apply_to_amount(U256::ZERO).unwrap(),
             U256::ZERO
         );
         assert_eq!(
-            fractional_fee.apply_to_amount(large_burn_token_amount),
+            zero_fee
+                .apply_to_amount_with_buffer_percent(large_burn_token_amount, 20)
+                .unwrap(),
+            U256::ZERO
+        );
+        assert_eq!(
+            fractional_fee
+                .apply_to_amount(large_burn_token_amount)
+                .unwrap(),
             U256::from(130_000_000u64)
         );
         assert_eq!(
-            fractional_fee.apply_to_amount_with_buffer_percent(large_burn_token_amount, 20),
+            fractional_fee
+                .apply_to_amount_with_buffer_percent(large_burn_token_amount, 20)
+                .unwrap(),
             U256::from(156_000_000u64)
         );
     }

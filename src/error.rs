@@ -142,6 +142,25 @@ pub enum AmountError {
         protocol_fee: U256,
         forwarding_fee: U256,
     },
+    /// The desired recipient amount and combined forwarding fee could not be
+    /// added without exceeding the on-chain `uint256` range.
+    #[error(
+        "Forwarding Service burn amount exceeds uint256 (recipient amount {recipient_amount}, max fee {max_fee})"
+    )]
+    ForwardingBurnAmountOverflow {
+        recipient_amount: U256,
+        max_fee: U256,
+    },
+    /// A percentage fee could not be represented in the on-chain `uint256`
+    /// range.
+    #[error(
+        "fee exceeds uint256 for amount {amount} at {fee_hundredths} hundredths of a basis point"
+    )]
+    FeeOverflow { amount: U256, fee_hundredths: u32 },
+    /// A buffered percentage fee could not be represented in the on-chain
+    /// `uint256` range.
+    #[error("buffered fee exceeds uint256 for base fee {fee} with {buffer_percent}% buffer")]
+    FeeBufferOverflow { fee: U256, buffer_percent: u32 },
 }
 
 #[derive(Error, Debug)]
