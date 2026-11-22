@@ -25,7 +25,11 @@ fn property_config() -> ProptestConfig {
 }
 
 fn u256_strategy() -> impl Strategy<Value = U256> {
-    any::<[u64; 4]>().prop_map(U256::from_limbs)
+    prop_oneof![
+        Just(U256::ZERO),
+        Just(U256::MAX),
+        any::<[u64; 4]>().prop_map(U256::from_limbs),
+    ]
 }
 
 fn widen(value: U256) -> U512 {
@@ -76,11 +80,13 @@ proptest! {
     #![proptest_config(property_config())]
 
     #[test]
-    fn formatted_usdc_round_trip_preserves_u128_atomic_amounts(atomic in 1u128..=u128::MAX) {
-        let formatted = UsdcAmount::from_atomic(U256::from(atomic)).to_string();
+    fn formatted_usdc_round_trip_preserves_u256_atomic_amounts(
+        atomic in u256_strategy().prop_filter("USDC amounts must be nonzero", |amount| *amount != U256::ZERO),
+    ) {
+        let formatted = UsdcAmount::from_atomic(atomic).to_string();
         let reparsed = UsdcAmount::parse_decimal(&formatted).expect("formatted amount must parse");
 
-        prop_assert_eq!(reparsed.atomic(), U256::from(atomic));
+        prop_assert_eq!(reparsed.atomic(), atomic);
     }
 
     #[test]
@@ -282,23 +288,27 @@ proptest! {
         prop_assert_eq!(actual_fee, expected_fee);
 
         let actual_plan = quote.minimum_burn_plan(recipient_amount, level);
-        match expected_fee {
-            Err(error) => prop_assert_eq!(actual_plan, Err(error)),
-            Ok(max_fee) => {
-                let burn_wide = widen(recipient_amount) + widen(max_fee);
-                match narrow(burn_wide) {
-                    Some(expected) => {
-                        let plan = actual_plan.expect("wide burn amount fits uint256");
-                        prop_assert_eq!(plan.max_fee(), max_fee);
-                        prop_assert_eq!(plan.burn_amount(), expected);
+        if recipient_amount == U256::ZERO {
+            prop_assert_eq!(actual_plan, Err(AmountError::Zero));
+        } else {
+            match expected_fee {
+                Err(error) => prop_assert_eq!(actual_plan, Err(error)),
+                Ok(max_fee) => {
+                    let burn_wide = widen(recipient_amount) + widen(max_fee);
+                    match narrow(burn_wide) {
+                        Some(expected) => {
+                            let plan = actual_plan.expect("wide burn amount fits uint256");
+                            prop_assert_eq!(plan.max_fee(), max_fee);
+                            prop_assert_eq!(plan.burn_amount(), expected);
+                        }
+                        None => prop_assert_eq!(
+                            actual_plan,
+                            Err(AmountError::ForwardingBurnAmountOverflow {
+                                recipient_amount,
+                                max_fee,
+                            }),
+                        ),
                     }
-                    None => prop_assert_eq!(
-                        actual_plan,
-                        Err(AmountError::ForwardingBurnAmountOverflow {
-                            recipient_amount,
-                            max_fee,
-                        }),
-                    ),
                 }
             }
         }

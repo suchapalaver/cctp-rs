@@ -508,7 +508,8 @@ impl ForwardingTransferFee {
     ///
     /// # Errors
     ///
-    /// Returns the same typed overflow errors as [`Self::minimum_max_fee`], or
+    /// Returns [`AmountError::Zero`] when `recipient_amount` is zero, the same
+    /// typed overflow errors as [`Self::minimum_max_fee`], or
     /// [`AmountError::ForwardingBurnAmountOverflow`] when the fee fits but its
     /// sum with the recipient amount does not.
     pub fn minimum_burn_plan(
@@ -516,6 +517,10 @@ impl ForwardingTransferFee {
         recipient_amount: U256,
         level: ForwardingFeeLevel,
     ) -> Result<ForwardingBurnPlan, AmountError> {
+        if recipient_amount == U256::ZERO {
+            return Err(AmountError::Zero);
+        }
+
         let max_fee = self.minimum_max_fee(recipient_amount, level)?;
         let burn_amount = recipient_amount.checked_add(max_fee).ok_or(
             AmountError::ForwardingBurnAmountOverflow {
@@ -864,6 +869,24 @@ mod tests {
                 fee_hundredths: u32::MAX,
             })
         ));
+    }
+
+    #[test]
+    fn forwarding_burn_plan_rejects_zero_recipient_amount() {
+        let fee = ForwardingTransferFee::new(
+            FinalityThreshold::Fast.as_u32(),
+            FeeBps::from_hundredths(130),
+            ForwardingFee::new(
+                U256::from(56_035_u64),
+                U256::from(57_543_u64),
+                U256::from(59_052_u64),
+            ),
+        );
+
+        assert_eq!(
+            fee.minimum_burn_plan(U256::ZERO, ForwardingFeeLevel::Medium),
+            Err(AmountError::Zero)
+        );
     }
 
     #[test]

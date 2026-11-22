@@ -37,7 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of silently wrapping fee calculations that exceed `uint256`.
   `ForwardingTransferFee::minimum_burn_plan` now returns a typed
   `ForwardingBurnPlan` containing the related fee cap and checked total burn
-  amount.
+  amount, rejects a zero recipient amount, and `UsdcAmount` decimal parsing now
+  covers its full public `uint256` atomic-unit range.
 
   Migration: handle the `Result` returned by percentage-fee helpers, and use
   `minimum_burn_plan` instead of adding a forwarding fee cap with unchecked
