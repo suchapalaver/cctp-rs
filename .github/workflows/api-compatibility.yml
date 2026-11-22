@@ -33,7 +33,7 @@ jobs:
       - name: Install cargo-semver-checks
         uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2
         with:
-          tool: cargo-semver-checks
+          tool: cargo-semver-checks@0.51.0
 
       - name: Compare public API with pull request base
         env:
