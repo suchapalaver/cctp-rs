@@ -41,7 +41,10 @@ jobs:
       with:
         tool: cargo-semver-checks
     
-    - name: Check semver compatibility
+    # This release gate compares with crates.io. Pull requests separately compare
+    # with their merge base in CI so unrelated changes already on main are not
+    # attributed to the candidate branch.
+    - name: Check compatibility with published release
       run: cargo semver-checks check-release
 
     - name: Authenticate with crates.io

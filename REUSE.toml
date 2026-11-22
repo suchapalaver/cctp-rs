@@ -124,6 +124,7 @@ SPDX-License-Identifier = "Apache-2.0"
 # Touched GitHub configuration files
 [[annotations]]
 path = [
+    ".github/workflows/api-compatibility.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/fresh-dependencies.yml",
     ".github/pull_request_template.md",

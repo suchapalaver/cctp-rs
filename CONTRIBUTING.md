@@ -11,6 +11,7 @@ Thank you for your interest in contributing to cctp-rs! This guide will help you
 - [Testing](#testing)
 - [Code Style](#code-style)
 - [Submitting Changes](#submitting-changes)
+- [API Compatibility](#api-compatibility)
 - [Security](#security)
 
 ## Code of Conduct
@@ -174,6 +175,54 @@ security, and fresh-dependencies workflows.
 - Address reviewer feedback promptly
 - Keep PRs focused and reasonably sized
 - Squash commits before merging if requested
+
+## API Compatibility
+
+Pull requests run two distinct SemVer checks at different points in the
+development lifecycle:
+
+- **Pull request API compatibility** compares the candidate head with its
+  actual merge base. It answers whether that pull request alone introduces an
+  unintentional public API break. The normal path evaluates the change as a
+  compatible minor release regardless of branch-local version edits.
+- **Release API compatibility** compares a release candidate with the latest
+  published crate. It answers whether the package version permits all public
+  API changes accumulated since the last release.
+
+Do not suppress individual `cargo-semver-checks` lints or add permanent
+allowlists for intentional breaking work. Instead, describe the break and its
+major-release plan in the pull request and ask a maintainer to apply the
+`semver-major-approved` label. The pull request check still runs against the
+merge base, but evaluates the change as a major release. Remove the label if
+the breaking change is removed.
+
+Implicit enum discriminants are part of the API that this check protects. For
+example, appending to a non-exhaustive enum preserves the values of existing
+variants:
+
+```rust
+#[non_exhaustive]
+pub enum TransferMode {
+    Standard,    // 0
+    FastWithHook, // 1 -- unchanged
+    Forwarded,   // 2 -- appended safely
+}
+```
+
+Inserting the new variant changes the value of the existing second variant and
+is therefore a breaking change:
+
+```rust
+#[non_exhaustive]
+pub enum TransferMode {
+    Standard,    // 0
+    Forwarded,   // 1 -- inserted
+    FastWithHook, // 2 -- changed from 1
+}
+```
+
+Prefer appending variants unless an intentional major-version change has been
+reviewed explicitly.
 
 ## Chain Support
 
