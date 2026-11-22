@@ -42,7 +42,7 @@ use thiserror::Error;
 /// let domain_value: u32 = ethereum_domain.into();
 /// assert_eq!(domain_value, 0);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumIter)]
 #[serde(rename_all = "snake_case")]
 #[repr(u32)]
 #[non_exhaustive]
@@ -274,6 +274,7 @@ pub struct InvalidDomainId(pub u32);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::IntoEnumIterator;
 
     #[test]
     fn test_domain_id_values() {
@@ -308,41 +309,6 @@ mod tests {
         assert_eq!(DomainId::Cronos.as_u32(), 32);
         assert_eq!(DomainId::Plasma.as_u32(), 33);
         assert_eq!(DomainId::XLayer.as_u32(), 37);
-    }
-
-    #[test]
-    fn test_from_u32_valid() {
-        assert_eq!(DomainId::from_u32(0), Some(DomainId::Ethereum));
-        assert_eq!(DomainId::from_u32(1), Some(DomainId::Avalanche));
-        assert_eq!(DomainId::from_u32(2), Some(DomainId::Optimism));
-        assert_eq!(DomainId::from_u32(3), Some(DomainId::Arbitrum));
-        assert_eq!(DomainId::from_u32(5), Some(DomainId::Solana));
-        assert_eq!(DomainId::from_u32(6), Some(DomainId::Base));
-        assert_eq!(DomainId::from_u32(7), Some(DomainId::Polygon));
-        assert_eq!(DomainId::from_u32(8), Some(DomainId::Sui));
-        assert_eq!(DomainId::from_u32(9), Some(DomainId::Aptos));
-        assert_eq!(DomainId::from_u32(10), Some(DomainId::Unichain));
-        assert_eq!(DomainId::from_u32(11), Some(DomainId::Linea));
-        assert_eq!(DomainId::from_u32(12), Some(DomainId::Codex));
-        assert_eq!(DomainId::from_u32(13), Some(DomainId::Sonic));
-        assert_eq!(DomainId::from_u32(14), Some(DomainId::WorldChain));
-        assert_eq!(DomainId::from_u32(15), Some(DomainId::Monad));
-        assert_eq!(DomainId::from_u32(16), Some(DomainId::Sei));
-        assert_eq!(DomainId::from_u32(17), Some(DomainId::BnbSmartChain));
-        assert_eq!(DomainId::from_u32(18), Some(DomainId::Xdc));
-        assert_eq!(DomainId::from_u32(19), Some(DomainId::HyperEvm));
-        assert_eq!(DomainId::from_u32(21), Some(DomainId::Ink));
-        assert_eq!(DomainId::from_u32(22), Some(DomainId::Plume));
-        assert_eq!(DomainId::from_u32(25), Some(DomainId::StarknetTestnet));
-        assert_eq!(DomainId::from_u32(26), Some(DomainId::ArcTestnet));
-        assert_eq!(DomainId::from_u32(27), Some(DomainId::Stellar));
-        assert_eq!(DomainId::from_u32(28), Some(DomainId::Edge));
-        assert_eq!(DomainId::from_u32(29), Some(DomainId::Injective));
-        assert_eq!(DomainId::from_u32(30), Some(DomainId::Morph));
-        assert_eq!(DomainId::from_u32(31), Some(DomainId::Pharos));
-        assert_eq!(DomainId::from_u32(32), Some(DomainId::Cronos));
-        assert_eq!(DomainId::from_u32(33), Some(DomainId::Plasma));
-        assert_eq!(DomainId::from_u32(37), Some(DomainId::XLayer));
     }
 
     #[test]
@@ -439,42 +405,10 @@ mod tests {
 
     #[test]
     fn test_conversion_roundtrip() {
-        for domain in [
-            DomainId::Ethereum,
-            DomainId::Avalanche,
-            DomainId::Optimism,
-            DomainId::Arbitrum,
-            DomainId::Solana,
-            DomainId::Base,
-            DomainId::Polygon,
-            DomainId::Sui,
-            DomainId::Aptos,
-            DomainId::Unichain,
-            DomainId::Linea,
-            DomainId::Codex,
-            DomainId::Sonic,
-            DomainId::WorldChain,
-            DomainId::Monad,
-            DomainId::Sei,
-            DomainId::BnbSmartChain,
-            DomainId::Xdc,
-            DomainId::HyperEvm,
-            DomainId::Ink,
-            DomainId::Plume,
-            DomainId::StarknetTestnet,
-            DomainId::ArcTestnet,
-            DomainId::Stellar,
-            DomainId::Edge,
-            DomainId::Injective,
-            DomainId::Morph,
-            DomainId::Pharos,
-            DomainId::Cronos,
-            DomainId::Plasma,
-            DomainId::XLayer,
-        ] {
+        for domain in DomainId::iter() {
             let value: u32 = domain.into();
-            let parsed = DomainId::try_from(value).unwrap();
-            assert_eq!(domain, parsed);
+            assert_eq!(DomainId::from_u32(value), Some(domain));
+            assert_eq!(DomainId::try_from(value), Ok(domain));
         }
     }
 }

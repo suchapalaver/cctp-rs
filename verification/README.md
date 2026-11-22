@@ -199,7 +199,10 @@ Mapped to the checklist in issue #11:
    selection scenarios, and chain/domain classifications. Rust tests replay
    them against the production parser, route constructor, and attestation
    selector. Message vectors are self-checked against the model during
-   generation.
+   generation. A separate deterministic Proptest suite generates arbitrary
+   message fields and malformed wire mutations, shrinks counterexamples, and
+   persists regression seeds; this explores the production implementation but
+   does not strengthen or replace the Lean proofs.
 5. **Equivalence/correspondence checking.** The same fixture tests are the
    equivalence check between production Rust and the reference model: finite
    parser edge cases plus the exhaustive Cartesian product of every modeled
@@ -258,6 +261,7 @@ the existing unit suite):
 | Production parser accepts the model's accept vectors with identical fields, re-encodes byte-for-byte, hashes to `keccak256(raw)` | `accepted_messages_parse_to_lean_model_fields` |
 | Production header, full-message, and summary Fast Transfer flags agree with Lean for zero-fee Fast and nonzero-fee Standard messages | `zero_fee_fast_ethereum_to_base`, `fee_switch_standard_sei_to_base` vectors in `accepted_messages_parse_to_lean_model_fields` |
 | Production parser rejects the model's reject vectors, including unsupported header/body versions, naming the offending field or version | `rejected_messages_fail_to_parse` |
+| Independently generated canonical headers, burn bodies, and full messages preserve every field and re-encode byte-for-byte; generated truncations, unsupported versions, unknown domains, and non-canonical EVM words return the exact typed parser error without panicking | `tests/message_parser_properties.rs` |
 | Real Circle Iris message (Arbitrum→Base) parses identically in model and production | first accept vector |
 | Non-EVM source/destination body words are retained as `bytes32`, with EVM address projections omitted from summaries where misleading | `solana_source_placeholder_nonce`, `starknet_destination_caller_set`, and `stellar_source_standard_transfer` vectors; `src/protocol/message.rs` unit tests |
 | Lean executable domain/network tables and production Rust independently match the committed Circle authority snapshot, including bidirectional membership, environments, bridge/parse-only classification, capabilities, USDC/EURC addresses, and v2 contract addresses | `tests/authority_oracle.rs`; mismatch-injection test proves each comparator rejects a changed input |
@@ -289,10 +293,13 @@ Everything below is **unverified** and trusted:
   domain/network/capability/address-table mistakes relative to the captured
   authority, but shared semantic mistakes outside that artifact remain
   possible.
-- **The property-testing gap**: generated Rust cases exercise arbitrary payload
-  bytes, present-empty values, and longer sibling arrays that the Lean presence
-  abstraction omits. They provide reproducible counterexamples, not proofs,
-  and cannot establish Iris authenticity, liveness, or deployed-contract
+- **The property-testing gap**: generated Rust cases exercise arbitrary message
+  fields, hook lengths, fee words, malformed wire mutations, attestation payload
+  bytes, present-empty values, and longer sibling arrays beyond the finite Lean
+  fixtures. Fixed seeds make runs deterministic, while persisted shrunk
+  regressions can be promoted into named examples. These tests provide
+  reproducible counterexamples, not proofs, and cannot establish parser
+  correctness for every input, Iris authenticity, liveness, or deployed-contract
   behavior.
 - **Hardware, OS, CI infrastructure.**
 
