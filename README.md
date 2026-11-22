@@ -662,15 +662,14 @@ let quote = bridge
     .into_iter()
     .find(|fee| fee.finality() == Some(FinalityThreshold::Fast))
     .expect("Iris returned a Fast Transfer forwarding quote");
-let max_fee = quote.minimum_max_fee(recipient_amount, ForwardingFeeLevel::Medium)?;
-let burn_amount = quote.minimum_burn_amount(recipient_amount, ForwardingFeeLevel::Medium)?;
+let burn_plan = quote.minimum_burn_plan(recipient_amount, ForwardingFeeLevel::Medium)?;
 let mode = TransferMode::FastForwarded {
-    max_fee,
+    max_fee: burn_plan.max_fee(),
     hook_data: route.hook_data(),
 };
 ```
 
-Pass `mode` when building the bridge, then burn `burn_amount`; the fixed
+Pass `mode` when building the bridge, then burn `burn_plan.burn_amount()`; the fixed
 forwarding fee and percentage protocol fee are deducted so the recipient gets
 the intended amount. Circle recommends the medium tier or higher. The generic
 Forwarding Service requires the all-zero, permissionless `destinationCaller`,

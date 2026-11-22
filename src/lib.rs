@@ -120,7 +120,7 @@
 //! - [`PollingConfig`] - Configuration for attestation polling behavior
 //! - [`TransferMode`] - Selects which v2 burn variant (standard / fast / with hook) the bridge sends
 //! - [`CctpTransferAsset`], [`CctpV2Route`], [`ForwardingServiceRoute`], [`RestrictedDestinationCaller`], and [`UsdcAmount`] - Shared application primitives for asset, route, forwarding, caller, and amount validation
-//! - [`FeeBps`], [`TransferFee`], and [`ForwardingTransferFee`] - Live Iris fee response types and max-fee helpers
+//! - [`FeeBps`], [`TransferFee`], [`ForwardingTransferFee`], and [`ForwardingBurnPlan`] - Live Iris fee responses and checked transfer amounts
 //! - [`ParsedV2Message`] and [`ParsedV2MessageSummary`] - Parse canonical v2 messages into serializable structs
 //! - [`ParseMessageError`] - Error type for canonical v2 message parsing
 //! - [`InvalidDestinationCaller`], [`InvalidDomainId`], and [`InvalidFinalityThreshold`] - Typed primitive-construction errors
@@ -188,10 +188,10 @@ pub use primitives::{
 };
 pub use protocol::{
     AttestationBytes, AttestationResponse, AttestationStatus, BurnMessageV2, DomainId,
-    FastTransferAllowance, FeeBps, FinalityThreshold, ForwardingFee, ForwardingFeeLevel,
-    ForwardingTransferFee, InvalidDomainId, InvalidFinalityThreshold, InvalidIrisTimestamp,
-    IrisTimestamp, MessageHeader, ParseMessageError, ParsedV2Message, ParsedV2MessageSummary,
-    TransferFee, V2AttestationResponse, V2Message,
+    FastTransferAllowance, FeeBps, FinalityThreshold, ForwardingBurnPlan, ForwardingFee,
+    ForwardingFeeLevel, ForwardingTransferFee, InvalidDomainId, InvalidFinalityThreshold,
+    InvalidIrisTimestamp, IrisTimestamp, MessageHeader, ParseMessageError, ParsedV2Message,
+    ParsedV2MessageSummary, TransferFee, V2AttestationResponse, V2Message,
 };
 pub use provider::{
     calculate_gas_price_with_buffer, estimate_gas_with_buffer, ProviderConfig,

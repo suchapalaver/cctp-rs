@@ -105,7 +105,9 @@ behavior.
 - **Forwarding Service capability belongs to the destination chain.** Use
   `ForwardingServiceRoute` to validate an EVM route and construct Circle's
   canonical version-1 hook, and `get_forwarding_fees()` immediately before the
-  burn to quote the fixed forwarding fee plus protocol fee. Select
+  burn to quote the fixed forwarding fee plus protocol fee. Use
+  `ForwardingTransferFee::minimum_burn_plan()` to construct the related checked
+  `maxFee` and burn amount together. Select
   `TransferMode::StandardForwarded` or `FastForwarded`; high-level bridge burns
   keep `destinationCaller` permissionless as Circle requires. Injective
   and Pharos remain valid direct bridge destinations but do not support
@@ -135,7 +137,7 @@ All exports live in `src/lib.rs` under `pub use`. Quick map for navigation:
 | `CctpTransferAsset`, `CctpV2Route`, `ForwardingServiceRoute`, `RestrictedDestinationCaller`, `UsdcAmount` | Asset, route, forwarding, restricted-caller, and amount primitives | `src/primitives.rs` |
 | `CctpV1`, `CctpV2` traits | Chain config on `NamedChain` | `src/chain/config.rs`, `src/chain/v2.rs` |
 | `FastTransferFee` | `Known(FeeBps)` / `Unknown` — static per-chain fee metadata; not current route quotes | `src/chain/v2.rs` |
-| `FeeBps`, `TransferFee`, `ForwardingTransferFee`, `FastTransferAllowance`, `IrisTimestamp` | Live Iris route-fee, forwarding-fee, and allowance response types plus max-fee helpers | `src/protocol/fees.rs` |
+| `FeeBps`, `TransferFee`, `ForwardingTransferFee`, `ForwardingBurnPlan`, `FastTransferAllowance`, `IrisTimestamp` | Live Iris route-fee, forwarding-fee, checked burn-plan, and allowance response types | `src/protocol/fees.rs` |
 | `CCTP_V2_*_MAINNET/TESTNET`, `*_USDC_ADDRESS`, `*_EURC_ADDRESS` | Unified v2 contract addresses and native token addresses | `src/chain/addresses.rs` |
 | `TokenMessengerContract`, `MessageTransmitterContract` | V1 contract wrappers | `src/contracts/` |
 | `TokenMessengerV2Contract`, `MessageTransmitterV2Contract` | V2 contract wrappers | `src/contracts/v2/` |

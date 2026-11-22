@@ -124,19 +124,15 @@ impl FeeBps {
     /// Returns [`AmountError::FeeOverflow`] when the exact rounded fee exceeds
     /// the on-chain `uint256` range.
     pub fn apply_to_amount(self, amount: U256) -> Result<U256, AmountError> {
-        self.checked_apply_to_amount(amount)
-            .ok_or(AmountError::FeeOverflow {
-                amount,
-                fee_hundredths: self.hundredths,
-            })
-    }
-
-    fn checked_apply_to_amount(self, amount: U256) -> Option<U256> {
         checked_mul_div_ceil(
             amount,
             U256::from(self.hundredths),
             U256::from(BPS_HUNDREDTH_DENOMINATOR),
         )
+        .ok_or(AmountError::FeeOverflow {
+            amount,
+            fee_hundredths: self.hundredths,
+        })
     }
 
     /// Calculates the fee amount with a percentage buffer.
@@ -397,11 +393,37 @@ impl<'de> Deserialize<'de> for ForwardingFee {
     }
 }
 
+/// Checked fee cap and burn amount for a Forwarding Service transfer.
+///
+/// Constructed by [`ForwardingTransferFee::minimum_burn_plan`] so the burn
+/// amount is guaranteed to equal the desired recipient amount plus `max_fee`
+/// without overflowing the on-chain `uint256` range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ForwardingBurnPlan {
+    max_fee: U256,
+    burn_amount: U256,
+}
+
+impl ForwardingBurnPlan {
+    /// Combined protocol and Forwarding Service fee cap.
+    #[must_use]
+    pub const fn max_fee(self) -> U256 {
+        self.max_fee
+    }
+
+    /// Total amount to burn so the recipient receives the intended amount.
+    #[must_use]
+    pub const fn burn_amount(self) -> U256 {
+        self.burn_amount
+    }
+}
+
 /// A single entry from Circle's Forwarding Service fee query.
 ///
 /// The protocol fee is percentage-based while the forwarding fee is a fixed
-/// atomic-USDC amount. Use [`Self::minimum_max_fee`] to combine them without
-/// floating-point money math.
+/// atomic-USDC amount. Use [`Self::minimum_max_fee`] when only the cap is
+/// needed, or [`Self::minimum_burn_plan`] to construct the related cap and burn
+/// amount without floating-point money math.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardingTransferFee {
@@ -451,7 +473,7 @@ impl ForwardingTransferFee {
 
     /// Minimum `maxFee` covering both the percentage protocol fee on the
     /// desired recipient amount and the selected fixed forwarding tier.
-    /// Use [`Self::minimum_burn_amount`] for the checked total that leaves the
+    /// Use [`Self::minimum_burn_plan`] for the checked total that leaves the
     /// intended amount with the destination recipient after fees.
     ///
     /// # Errors
@@ -467,8 +489,8 @@ impl ForwardingTransferFee {
     ) -> Result<U256, AmountError> {
         let protocol_fee = self
             .minimum_fee
-            .checked_apply_to_amount(recipient_amount)
-            .ok_or(AmountError::ForwardingProtocolFeeOverflow {
+            .apply_to_amount(recipient_amount)
+            .map_err(|_| AmountError::ForwardingProtocolFeeOverflow {
                 recipient_amount,
                 fee_hundredths: self.minimum_fee.as_hundredths(),
             })?;
@@ -481,26 +503,30 @@ impl ForwardingTransferFee {
             })
     }
 
-    /// Minimum burn amount that leaves `recipient_amount` after the selected
-    /// protocol and Forwarding Service fees.
+    /// Checked fee cap and burn amount that leave `recipient_amount` after the
+    /// selected protocol and Forwarding Service fees.
     ///
     /// # Errors
     ///
     /// Returns the same typed overflow errors as [`Self::minimum_max_fee`], or
     /// [`AmountError::ForwardingBurnAmountOverflow`] when the fee fits but its
     /// sum with the recipient amount does not.
-    pub fn minimum_burn_amount(
+    pub fn minimum_burn_plan(
         self,
         recipient_amount: U256,
         level: ForwardingFeeLevel,
-    ) -> Result<U256, AmountError> {
+    ) -> Result<ForwardingBurnPlan, AmountError> {
         let max_fee = self.minimum_max_fee(recipient_amount, level)?;
-        recipient_amount
-            .checked_add(max_fee)
-            .ok_or(AmountError::ForwardingBurnAmountOverflow {
+        let burn_amount = recipient_amount.checked_add(max_fee).ok_or(
+            AmountError::ForwardingBurnAmountOverflow {
                 recipient_amount,
                 max_fee,
-            })
+            },
+        )?;
+        Ok(ForwardingBurnPlan {
+            max_fee,
+            burn_amount,
+        })
     }
 }
 
@@ -558,20 +584,12 @@ impl<'de> Deserialize<'de> for FastTransferAllowance {
     }
 }
 
-fn ceil_div(numerator: U256, denominator: U256) -> U256 {
-    if numerator == U256::ZERO {
-        U256::ZERO
-    } else {
-        ((numerator - U256::from(1)) / denominator) + U256::from(1)
-    }
-}
-
 fn checked_mul_div_ceil(value: U256, multiplier: U256, denominator: U256) -> Option<U256> {
     // Split before multiplying so intermediate `uint256` overflow cannot
     // corrupt a mathematically representable quotient.
     let whole = (value / denominator).checked_mul(multiplier)?;
     let remainder = (value % denominator).checked_mul(multiplier)?;
-    whole.checked_add(ceil_div(remainder, denominator))
+    whole.checked_add(remainder.div_ceil(denominator))
 }
 
 fn parse_fee_hundredths(input: &str) -> Result<FeeBps, String> {

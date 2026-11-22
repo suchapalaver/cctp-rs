@@ -33,12 +33,7 @@ fn widen(value: U256) -> U512 {
 }
 
 fn narrow(value: U512) -> Option<U256> {
-    let limbs = value.into_limbs();
-    if limbs[4..].iter().any(|limb| *limb != 0) {
-        None
-    } else {
-        Some(U256::from_limbs([limbs[0], limbs[1], limbs[2], limbs[3]]))
-    }
+    U256::checked_from_limbs_slice(value.as_limbs())
 }
 
 fn ceil_div(numerator: U512, denominator: U512) -> U512 {
@@ -286,15 +281,19 @@ proptest! {
         };
         prop_assert_eq!(actual_fee, expected_fee);
 
-        let actual_burn = quote.minimum_burn_amount(recipient_amount, level);
+        let actual_plan = quote.minimum_burn_plan(recipient_amount, level);
         match expected_fee {
-            Err(error) => prop_assert_eq!(actual_burn, Err(error)),
+            Err(error) => prop_assert_eq!(actual_plan, Err(error)),
             Ok(max_fee) => {
                 let burn_wide = widen(recipient_amount) + widen(max_fee);
                 match narrow(burn_wide) {
-                    Some(expected) => prop_assert_eq!(actual_burn, Ok(expected)),
+                    Some(expected) => {
+                        let plan = actual_plan.expect("wide burn amount fits uint256");
+                        prop_assert_eq!(plan.max_fee(), max_fee);
+                        prop_assert_eq!(plan.burn_amount(), expected);
+                    }
                     None => prop_assert_eq!(
-                        actual_burn,
+                        actual_plan,
                         Err(AmountError::ForwardingBurnAmountOverflow {
                             recipient_amount,
                             max_fee,
