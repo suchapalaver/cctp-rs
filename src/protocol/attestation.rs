@@ -273,6 +273,169 @@ fn normalize_failed_v2(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, RngSeed};
+
+    #[derive(Clone, Debug)]
+    enum PayloadCase {
+        Missing,
+        Empty,
+        NonEmpty(Vec<u8>),
+    }
+
+    impl PayloadCase {
+        fn as_bytes(&self) -> Option<Bytes> {
+            match self {
+                Self::Missing => None,
+                Self::Empty => Some(Bytes::new()),
+                Self::NonEmpty(bytes) => Some(Bytes::copy_from_slice(bytes)),
+            }
+        }
+    }
+
+    fn property_config() -> ProptestConfig {
+        ProptestConfig {
+            cases: 512,
+            rng_seed: RngSeed::Fixed(0xA77E_57A7_10A1_0001),
+            failure_persistence: Some(Box::new(FileFailurePersistence::WithSource("regressions"))),
+            ..ProptestConfig::default()
+        }
+    }
+
+    fn status_strategy() -> impl Strategy<Value = AttestationStatus> {
+        prop_oneof![
+            Just(AttestationStatus::Complete),
+            Just(AttestationStatus::Pending),
+            Just(AttestationStatus::PendingConfirmations),
+            Just(AttestationStatus::Failed),
+        ]
+    }
+
+    fn payload_strategy() -> impl Strategy<Value = PayloadCase> {
+        prop_oneof![
+            Just(PayloadCase::Missing),
+            Just(PayloadCase::Empty),
+            prop::collection::vec(any::<u8>(), 1..65).prop_map(PayloadCase::NonEmpty),
+        ]
+    }
+
+    fn expected_v1_state(
+        status: &AttestationStatus,
+        attestation: &PayloadCase,
+    ) -> AttestationState<AttestationBytes> {
+        match attestation {
+            PayloadCase::Missing => match status {
+                AttestationStatus::Complete => {
+                    AttestationState::Malformed(AttestationFailureKind::AttestationMissing)
+                }
+                AttestationStatus::Pending | AttestationStatus::PendingConfirmations => {
+                    AttestationState::Pending
+                }
+                AttestationStatus::Failed => AttestationState::Failed,
+            },
+            PayloadCase::Empty => {
+                AttestationState::Malformed(AttestationFailureKind::AttestationEmpty)
+            }
+            PayloadCase::NonEmpty(bytes) => match status {
+                AttestationStatus::Complete => AttestationState::Ready(bytes.clone()),
+                AttestationStatus::Pending
+                | AttestationStatus::PendingConfirmations
+                | AttestationStatus::Failed => {
+                    AttestationState::Malformed(AttestationFailureKind::UnexpectedAttestation)
+                }
+            },
+        }
+    }
+
+    fn expected_v2_state(
+        status: &AttestationStatus,
+        message: &PayloadCase,
+        attestation: &PayloadCase,
+    ) -> AttestationState<V2Attestation> {
+        match attestation {
+            PayloadCase::Empty => {
+                return AttestationState::Malformed(AttestationFailureKind::AttestationEmpty);
+            }
+            PayloadCase::NonEmpty(_) if !matches!(status, AttestationStatus::Complete) => {
+                return AttestationState::Malformed(AttestationFailureKind::UnexpectedAttestation);
+            }
+            PayloadCase::Missing if matches!(status, AttestationStatus::Complete) => {
+                return AttestationState::Malformed(AttestationFailureKind::AttestationMissing);
+            }
+            PayloadCase::Missing | PayloadCase::NonEmpty(_) => {}
+        }
+
+        match status {
+            AttestationStatus::Complete => match message {
+                PayloadCase::Missing => {
+                    AttestationState::Malformed(AttestationFailureKind::MessageMissing)
+                }
+                PayloadCase::Empty => {
+                    AttestationState::Malformed(AttestationFailureKind::MessageEmpty)
+                }
+                PayloadCase::NonEmpty(message) => {
+                    let PayloadCase::NonEmpty(attestation) = attestation else {
+                        unreachable!("complete attestation was validated above");
+                    };
+                    AttestationState::Ready(V2Attestation {
+                        message: message.clone(),
+                        attestation: attestation.clone(),
+                    })
+                }
+            },
+            AttestationStatus::Pending | AttestationStatus::PendingConfirmations => match message {
+                PayloadCase::Empty => {
+                    AttestationState::Malformed(AttestationFailureKind::MessageEmpty)
+                }
+                PayloadCase::Missing | PayloadCase::NonEmpty(_) => AttestationState::Pending,
+            },
+            AttestationStatus::Failed => match message {
+                PayloadCase::Missing => AttestationState::Failed,
+                PayloadCase::Empty => {
+                    AttestationState::Malformed(AttestationFailureKind::MessageEmpty)
+                }
+                PayloadCase::NonEmpty(_) => {
+                    AttestationState::Malformed(AttestationFailureKind::UnexpectedMessage)
+                }
+            },
+        }
+    }
+
+    proptest! {
+        #![proptest_config(property_config())]
+
+        #[test]
+        fn v1_normalization_matches_the_status_payload_partition(
+            status in status_strategy(),
+            attestation in payload_strategy(),
+        ) {
+            let expected = expected_v1_state(&status, &attestation);
+            let actual = AttestationResponse {
+                status,
+                attestation: attestation.as_bytes(),
+            }
+            .into_state();
+
+            prop_assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn v2_normalization_matches_the_status_payload_partition(
+            status in status_strategy(),
+            message in payload_strategy(),
+            attestation in payload_strategy(),
+        ) {
+            let expected = expected_v2_state(&status, &message, &attestation);
+            let actual = V2Message {
+                status,
+                message: message.as_bytes(),
+                attestation: attestation.as_bytes(),
+            }
+            .into_state();
+
+            prop_assert_eq!(actual, expected);
+        }
+    }
 
     #[test]
     fn test_deserialize_attestation_with_valid_hex() {

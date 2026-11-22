@@ -2780,6 +2780,162 @@ mod tests {
         //! response fails.
         use super::super::{select_v2_attestation, V2AttestationOutcome};
         use super::*;
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, RngSeed};
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum OutcomeClass {
+            Ready,
+            Pending,
+            Malformed,
+            Failed,
+            Empty,
+        }
+
+        fn property_config() -> ProptestConfig {
+            ProptestConfig {
+                cases: 512,
+                rng_seed: RngSeed::Fixed(0xA77E_57A7_53E1_0001),
+                failure_persistence: Some(Box::new(FileFailurePersistence::WithSource(
+                    "regressions",
+                ))),
+                ..ProptestConfig::default()
+            }
+        }
+
+        fn raw_payload_strategy() -> impl Strategy<Value = Option<Bytes>> {
+            prop_oneof![
+                Just(None),
+                Just(Some(Bytes::new())),
+                prop::collection::vec(any::<u8>(), 1..65)
+                    .prop_map(|bytes| Some(Bytes::from(bytes))),
+            ]
+        }
+
+        fn raw_message_strategy() -> impl Strategy<Value = V2Message> {
+            (
+                prop_oneof![
+                    Just(AttestationStatus::Complete),
+                    Just(AttestationStatus::Pending),
+                    Just(AttestationStatus::PendingConfirmations),
+                    Just(AttestationStatus::Failed),
+                ],
+                raw_payload_strategy(),
+                raw_payload_strategy(),
+            )
+                .prop_map(|(status, message, attestation)| V2Message {
+                    status,
+                    message,
+                    attestation,
+                })
+        }
+
+        fn outcome_class(outcome: &V2AttestationOutcome) -> OutcomeClass {
+            match outcome {
+                V2AttestationOutcome::Ready { .. } => OutcomeClass::Ready,
+                V2AttestationOutcome::Pending => OutcomeClass::Pending,
+                V2AttestationOutcome::Malformed(_) => OutcomeClass::Malformed,
+                V2AttestationOutcome::Failed => OutcomeClass::Failed,
+                V2AttestationOutcome::Empty => OutcomeClass::Empty,
+            }
+        }
+
+        fn expected_class(states: &[AttestationState<V2Attestation>]) -> OutcomeClass {
+            if states
+                .iter()
+                .any(|state| matches!(state, AttestationState::Ready(_)))
+            {
+                OutcomeClass::Ready
+            } else if states
+                .iter()
+                .any(|state| matches!(state, AttestationState::Pending))
+            {
+                OutcomeClass::Pending
+            } else if states
+                .iter()
+                .any(|state| matches!(state, AttestationState::Malformed(_)))
+            {
+                OutcomeClass::Malformed
+            } else if states
+                .iter()
+                .any(|state| matches!(state, AttestationState::Failed))
+            {
+                OutcomeClass::Failed
+            } else {
+                OutcomeClass::Empty
+            }
+        }
+
+        proptest! {
+            #![proptest_config(property_config())]
+
+            #[test]
+            fn arbitrary_sibling_lists_follow_documented_precedence(
+                raw_messages in prop::collection::vec(raw_message_strategy(), 0..13),
+            ) {
+                let states = raw_messages
+                    .into_iter()
+                    .map(V2Message::into_state)
+                    .collect::<Vec<_>>();
+                let expected = expected_class(&states);
+                let actual = select_v2_attestation(&states);
+
+                prop_assert_eq!(outcome_class(&actual), expected);
+
+                match actual {
+                    V2AttestationOutcome::Ready { message, attestation } => {
+                        let first_ready = states.iter().find_map(|state| match state {
+                            AttestationState::Ready(ready) => Some(ready),
+                            _ => None,
+                        }).expect("ready class requires a ready sibling");
+                        prop_assert_eq!(message.as_slice(), first_ready.message.as_slice());
+                        prop_assert_eq!(
+                            attestation.as_slice(),
+                            first_ready.attestation.as_slice()
+                        );
+                    }
+                    V2AttestationOutcome::Malformed(kind) => {
+                        let first_kind = states.iter().find_map(|state| match state {
+                            AttestationState::Malformed(kind) => Some(*kind),
+                            _ => None,
+                        }).expect("malformed class requires a malformed sibling");
+                        prop_assert_eq!(kind, first_kind);
+                    }
+                    V2AttestationOutcome::Pending
+                    | V2AttestationOutcome::Failed
+                    | V2AttestationOutcome::Empty => {}
+                }
+            }
+
+            #[test]
+            fn sibling_reordering_preserves_the_operational_outcome_class(
+                raw_messages in prop::collection::vec(raw_message_strategy(), 0..13),
+                rotation in any::<usize>(),
+            ) {
+                let states = raw_messages
+                    .into_iter()
+                    .map(V2Message::into_state)
+                    .collect::<Vec<_>>();
+                let original_class = outcome_class(&select_v2_attestation(&states));
+
+                let mut reversed = states.clone();
+                reversed.reverse();
+                prop_assert_eq!(
+                    outcome_class(&select_v2_attestation(&reversed)),
+                    original_class,
+                );
+
+                if !states.is_empty() {
+                    let mut rotated = states.clone();
+                    let len = rotated.len();
+                    rotated.rotate_left(rotation % len);
+                    prop_assert_eq!(
+                        outcome_class(&select_v2_attestation(&rotated)),
+                        original_class,
+                    );
+                }
+            }
+        }
 
         fn message(
             status: AttestationStatus,
