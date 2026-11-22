@@ -38,10 +38,5 @@ jobs:
       - name: Compare public API with pull request base
         env:
           BASELINE_REV: ${{ steps.baseline.outputs.revision }}
-          SEMVER_MAJOR_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'semver-major-approved') }}
-        run: |
-          if [[ "$SEMVER_MAJOR_APPROVED" == "true" ]]; then
-            cargo semver-checks check-release --baseline-rev "$BASELINE_REV" --release-type major
-          else
-            cargo semver-checks check-release --baseline-rev "$BASELINE_REV" --release-type minor
-          fi
+          SEMVER_RELEASE_TYPE: ${{ contains(github.event.pull_request.labels.*.name, 'semver-major-approved') && 'major' || 'minor' }}
+        run: cargo semver-checks check-release --baseline-rev "$BASELINE_REV" --release-type "$SEMVER_RELEASE_TYPE"
