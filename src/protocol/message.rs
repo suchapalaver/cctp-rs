@@ -59,6 +59,7 @@ fn is_canonical_evm_address_word(bytes: &[u8]) -> bool {
 
 /// Error returned when parsing a canonical CCTP v2 message fails.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[cfg_attr(test, derive(strum::EnumCount))]
 #[non_exhaustive]
 pub enum ParseMessageError {
     /// The input is shorter than the 148-byte message header.
@@ -1146,6 +1147,8 @@ mod tests {
     use super::*;
     use alloy_primitives::{address, hex};
 
+    use crate::error::assert_complete_rendering_cases;
+
     #[test]
     fn test_message_header_size() {
         assert_eq!(MessageHeader::SIZE, 148);
@@ -1192,6 +1195,7 @@ mod tests {
             ),
         ];
 
+        assert_complete_rendering_cases(&cases);
         for (error, expected) in cases {
             assert_eq!(error.to_string(), expected);
         }

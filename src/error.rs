@@ -34,6 +34,7 @@ const ALREADY_RELAYED_PATTERNS: &[&str] = &[
 /// Carried by [`CctpError::AttestationFailed`] so callers can react
 /// to specific failure modes without substring-matching on a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(strum::EnumCount))]
 #[non_exhaustive]
 pub enum AttestationFailureKind {
     /// The Iris API returned `AttestationStatus::Failed`.
@@ -72,6 +73,7 @@ impl fmt::Display for AttestationFailureKind {
 /// Carried by [`CctpError::InvalidConfig`] so callers can react to known
 /// invalid states without parsing human-readable error messages.
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(strum::EnumCount))]
 #[non_exhaustive]
 pub enum ConfigError {
     /// A polling loop was configured to make no attempts.
@@ -104,6 +106,7 @@ pub enum ConfigError {
 /// Carried by [`CctpError::InvalidAmount`] so callers can distinguish invalid
 /// user input from fee-relationship failures without parsing display text.
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(strum::EnumCount))]
 #[non_exhaustive]
 pub enum AmountError {
     /// Decimal input does not use the accepted unsigned decimal grammar.
@@ -418,6 +421,17 @@ impl CctpError {
 pub type Result<T> = std::result::Result<T, CctpError>;
 
 #[cfg(test)]
+#[track_caller]
+pub(crate) fn assert_complete_rendering_cases<E: strum::EnumCount, S>(cases: &[(E, S)]) {
+    assert_eq!(cases.len(), E::COUNT, "expected one fixture per variant");
+    let variants: std::collections::HashSet<_> = cases
+        .iter()
+        .map(|(kind, _)| std::mem::discriminant(kind))
+        .collect();
+    assert_eq!(variants.len(), cases.len(), "duplicate variant fixture");
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -516,36 +530,45 @@ mod tests {
 
     #[test]
     fn test_attestation_failure_kind_renders_prose() {
-        let render = |kind: AttestationFailureKind| CctpError::AttestationFailed(kind).to_string();
+        let cases = [
+            (
+                AttestationFailureKind::ApiReportedFailed,
+                "Iris API reported failed status",
+            ),
+            (
+                AttestationFailureKind::AttestationMissing,
+                "attestation field missing in complete response",
+            ),
+            (
+                AttestationFailureKind::MessageMissing,
+                "message field missing in complete response",
+            ),
+            (
+                AttestationFailureKind::AttestationEmpty,
+                "attestation field is empty",
+            ),
+            (
+                AttestationFailureKind::MessageEmpty,
+                "message field is empty",
+            ),
+            (
+                AttestationFailureKind::UnexpectedAttestation,
+                "attestation field present in a non-complete response",
+            ),
+            (
+                AttestationFailureKind::UnexpectedMessage,
+                "message field present in a failed response",
+            ),
+        ];
 
-        assert_eq!(
-            render(AttestationFailureKind::ApiReportedFailed),
-            "Attestation failed: Iris API reported failed status",
-        );
-        assert_eq!(
-            render(AttestationFailureKind::AttestationMissing),
-            "Attestation failed: attestation field missing in complete response",
-        );
-        assert_eq!(
-            render(AttestationFailureKind::MessageMissing),
-            "Attestation failed: message field missing in complete response",
-        );
-        assert_eq!(
-            render(AttestationFailureKind::AttestationEmpty),
-            "Attestation failed: attestation field is empty",
-        );
-        assert_eq!(
-            render(AttestationFailureKind::MessageEmpty),
-            "Attestation failed: message field is empty",
-        );
-        assert_eq!(
-            render(AttestationFailureKind::UnexpectedAttestation),
-            "Attestation failed: attestation field present in a non-complete response",
-        );
-        assert_eq!(
-            render(AttestationFailureKind::UnexpectedMessage),
-            "Attestation failed: message field present in a failed response",
-        );
+        assert_complete_rendering_cases(&cases);
+        for (kind, expected) in cases {
+            assert_eq!(kind.to_string(), expected);
+            assert_eq!(
+                CctpError::AttestationFailed(kind).to_string(),
+                format!("Attestation failed: {expected}")
+            );
+        }
     }
 
     #[test]
@@ -582,6 +605,7 @@ mod tests {
             ),
         ];
 
+        assert_complete_rendering_cases(&cases);
         for (kind, expected) in cases {
             assert_eq!(kind.to_string(), expected);
             assert_eq!(
@@ -616,12 +640,30 @@ mod tests {
                     .to_string(),
             ),
             (
+                AmountError::ForwardingFeeNotLessThanAmount {
+                    max_fee: U256::from(12),
+                    amount: U256::from(10),
+                },
+                "Forwarding Service max_fee (12) must be less than the burn amount (10)"
+                    .to_string(),
+            ),
+            (
                 AmountError::ForwardingProtocolFeeOverflow {
                     burn_amount: U256::MAX,
                     fee_hundredths: 130,
                 },
                 format!(
                     "Forwarding Service protocol fee exceeds uint256 for burn amount {} at 130 hundredths of a basis point",
+                    U256::MAX
+                ),
+            ),
+            (
+                AmountError::ForwardingFeeOverflow {
+                    protocol_fee: U256::from(2),
+                    forwarding_fee: U256::MAX,
+                },
+                format!(
+                    "combined Forwarding Service fee exceeds uint256 (protocol fee 2, forwarding fee {})",
                     U256::MAX
                 ),
             ),
@@ -643,8 +685,26 @@ mod tests {
                     U256::MAX
                 ),
             ),
+            (
+                AmountError::FeeOverflow {
+                    amount: U256::MAX,
+                    fee_hundredths: 2_000_000,
+                },
+                format!(
+                    "fee exceeds uint256 for amount {} at 2000000 hundredths of a basis point",
+                    U256::MAX
+                ),
+            ),
+            (
+                AmountError::FeeBufferOverflow {
+                    fee: U256::MAX,
+                    buffer_percent: 10,
+                },
+                format!("buffered fee exceeds uint256 for base fee {} with 10% buffer", U256::MAX),
+            ),
         ];
 
+        assert_complete_rendering_cases(&cases);
         for (kind, expected) in cases {
             assert_eq!(kind.to_string(), expected);
             assert_eq!(
