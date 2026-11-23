@@ -1315,6 +1315,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "strum",
  "thiserror",
  "tokio",
  "tower",
