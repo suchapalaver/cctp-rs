@@ -421,6 +421,17 @@ impl CctpError {
 pub type Result<T> = std::result::Result<T, CctpError>;
 
 #[cfg(test)]
+#[track_caller]
+pub(crate) fn assert_complete_rendering_cases<E: strum::EnumCount, S>(cases: &[(E, S)]) {
+    assert_eq!(cases.len(), E::COUNT, "expected one fixture per variant");
+    let variants: std::collections::HashSet<_> = cases
+        .iter()
+        .map(|(kind, _)| std::mem::discriminant(kind))
+        .collect();
+    assert_eq!(variants.len(), cases.len(), "duplicate variant fixture");
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -558,15 +569,6 @@ mod tests {
                 format!("Attestation failed: {expected}")
             );
         }
-    }
-
-    fn assert_complete_rendering_cases<E: strum::EnumCount, S>(cases: &[(E, S)]) {
-        let variants: std::collections::HashSet<_> = cases
-            .iter()
-            .map(|(kind, _)| std::mem::discriminant(kind))
-            .collect();
-        assert_eq!(cases.len(), E::COUNT, "expected one fixture per variant");
-        assert_eq!(variants.len(), cases.len(), "duplicate variant fixture");
     }
 
     #[test]

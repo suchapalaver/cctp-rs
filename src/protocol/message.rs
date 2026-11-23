@@ -1146,7 +1146,8 @@ impl Serialize for ParsedV2MessageSummary {
 mod tests {
     use super::*;
     use alloy_primitives::{address, hex};
-    use strum::EnumCount;
+
+    use crate::error::assert_complete_rendering_cases;
 
     #[test]
     fn test_message_header_size() {
@@ -1194,16 +1195,7 @@ mod tests {
             ),
         ];
 
-        let variants: std::collections::HashSet<_> = cases
-            .iter()
-            .map(|(error, _)| std::mem::discriminant(error))
-            .collect();
-        assert_eq!(
-            cases.len(),
-            ParseMessageError::COUNT,
-            "expected one fixture per variant"
-        );
-        assert_eq!(variants.len(), cases.len(), "duplicate variant fixture");
+        assert_complete_rendering_cases(&cases);
         for (error, expected) in cases {
             assert_eq!(error.to_string(), expected);
         }
