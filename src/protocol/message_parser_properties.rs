@@ -5,10 +5,11 @@
 //! Property checks for canonical CCTP v2 message encoding and parsing.
 
 use alloy_primitives::{Bytes, FixedBytes, U256};
-use cctp_rs::{BurnMessageV2, DomainId, MessageHeader, ParseMessageError, ParsedV2Message};
 use proptest::prelude::*;
 use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, RngSeed};
 use strum::IntoEnumIterator;
+
+use crate::{BurnMessageV2, DomainId, MessageHeader, ParseMessageError, ParsedV2Message};
 
 fn property_config() -> ProptestConfig {
     ProptestConfig {

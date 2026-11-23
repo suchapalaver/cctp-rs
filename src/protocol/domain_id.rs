@@ -42,7 +42,8 @@ use thiserror::Error;
 /// let domain_value: u32 = ethereum_domain.into();
 /// assert_eq!(domain_value, 0);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "snake_case")]
 #[repr(u32)]
 #[non_exhaustive]

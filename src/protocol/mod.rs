@@ -13,6 +13,8 @@ mod domain_id;
 mod fees;
 mod finality;
 mod message;
+#[cfg(test)]
+mod message_parser_properties;
 
 pub use attestation::{
     AttestationBytes, AttestationResponse, AttestationStatus, V2AttestationResponse, V2Message,
